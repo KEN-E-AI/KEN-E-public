@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
 import pytest
@@ -1400,3 +1400,302 @@ class TestAgentConfigToolIds:
         assert written["tool_ids"] is None
         # And the merged response surfaces the cleared value.
         assert resp.json()["tool_ids"] is None
+
+
+# ---------------------------------------------------------------------------
+# AH-95 — user-built GA agent with tool_ids round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestUserBuiltGaAgentToolIds:
+    """AH-95: POST a custom agent with GA MCP tool_ids → GET → PUT overlay
+    clearing to [] → DELETE.
+
+    Uses the same mocked-Firestore approach as ``TestAgentConfigToolIds``
+    (no emulator required) so this test runs in every CI lane.
+
+    Acceptance criteria covered:
+    * Custom agent with GA ``tool_ids`` creates successfully (201).
+    * ``tool_ids`` is persisted verbatim and returned on GET.
+    * Overlay PUT clears ``tool_ids`` to ``[]``; GET returns ``[]``.
+    * DELETE returns 204.
+    * POST with an unknown tool_id returns 422 (catalogue validation).
+    """
+
+    GA_TOOLS: ClassVar[list[str]] = [
+        "google_analytics_mcp.list_ga_accounts",
+        "google_analytics_mcp.run_report",
+        "function.create_visualization",
+    ]
+
+    @pytest.fixture(autouse=True)
+    def _reset_overrides(self):
+        app.dependency_overrides.clear()
+        yield
+        app.dependency_overrides.clear()
+
+    @pytest.fixture(autouse=True)
+    def _stub_catalogue(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.kene_api.routers import agent_configs as agent_configs_router
+
+        monkeypatch.setattr(
+            agent_configs_router,
+            "list_known_tool_ids",
+            lambda: {
+                "google_analytics_mcp.list_ga_accounts",
+                "google_analytics_mcp.run_report",
+                "function.create_visualization",
+            },
+        )
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        return TestClient(app, raise_server_exceptions=False)
+
+    @staticmethod
+    def _install_user(user: UserContext) -> None:
+        async def _get_user() -> UserContext:
+            return user
+
+        app.dependency_overrides[get_current_user_context] = _get_user
+
+    @staticmethod
+    def _install_db_for_custom(tool_ids: list[str]) -> MagicMock:
+        """Mock Firestore for a custom-agent POST + GET round-trip.
+
+        POST creates the doc; GET reads it back; a subsequent PUT overlay
+        replaces tool_ids with []; a second GET returns [].  DELETE returns 204.
+        """
+        db = MagicMock()
+
+        # No global doc for this config_id (it's a purely custom agent).
+        no_global_doc = MagicMock()
+        no_global_doc.exists = False
+        no_global_doc.to_dict.return_value = None
+
+        # The created custom doc returned on GET.
+        created_doc = MagicMock()
+        created_doc.exists = True
+        created_doc.to_dict.return_value = {
+            "title": "My GA Agent",
+            "instruction": "You are a user-built GA analyst.",
+            "model": "gemini-2.5-flash",
+            "tool_ids": tool_ids,
+            "ken_e_sub_agent": True,
+            "customization_status": "custom_agent",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "created_by": "ops@ken-e.ai",
+        }
+
+        global_col = MagicMock()
+        global_col.document.return_value.get.return_value = no_global_doc
+
+        custom_doc_ref = MagicMock()
+        custom_doc_ref.get.return_value = created_doc
+        custom_doc_ref.set.return_value = None
+        custom_doc_ref.delete.return_value = None
+        agent_configs_sub = MagicMock()
+        agent_configs_sub.document.return_value = custom_doc_ref
+        account_doc_ref = MagicMock()
+        account_doc_ref.collection.return_value = agent_configs_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc_ref
+
+        def _router(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db.collection.side_effect = _router
+        return db
+
+    def test_post_custom_ga_agent_with_tool_ids_returns_201(
+        self, client: TestClient
+    ) -> None:
+        """POST a custom agent with GA MCP + function tool_ids → 201 with
+        correct ``customization_status`` and persisted ``tool_ids``.
+        """
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: self._install_db_for_custom(
+            self.GA_TOOLS
+        )
+
+        resp = client.post(
+            BASE_URL + "/",
+            json={
+                "title": "My GA Agent",
+                "instruction": "You are a user-built GA analyst.",
+                "model": "gemini-2.5-flash",
+                "tool_ids": self.GA_TOOLS,
+                "ken_e_sub_agent": True,
+            },
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["customization_status"] == "custom_agent"
+        assert body["config_id"].startswith("custom_")
+        assert body["tool_ids"] == self.GA_TOOLS
+
+    def test_get_custom_ga_agent_returns_persisted_tool_ids(
+        self, client: TestClient
+    ) -> None:
+        """GET on the custom agent returns the persisted ``tool_ids`` list."""
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: self._install_db_for_custom(
+            self.GA_TOOLS
+        )
+
+        # POST first to create the agent.
+        resp = client.post(
+            BASE_URL + "/",
+            json={
+                "title": "My GA Agent",
+                "instruction": "You are a user-built GA analyst.",
+                "model": "gemini-2.5-flash",
+                "tool_ids": self.GA_TOOLS,
+            },
+        )
+        assert resp.status_code == 201
+        config_id = resp.json()["config_id"]
+
+        # Now GET and verify tool_ids round-trips.
+        resp = client.get(f"{BASE_URL}/{config_id}")
+        assert resp.status_code == 200
+        assert resp.json()["tool_ids"] == self.GA_TOOLS
+
+    def test_put_overlay_clears_ga_tool_ids_to_empty(
+        self, client: TestClient
+    ) -> None:
+        """PUT overlay with ``tool_ids=[]`` clears the selection (no tools)."""
+        self._install_user(_super_admin())
+
+        # Build a db where the overlay write stores tool_ids=[] and the
+        # subsequent GET reflects it.
+        db = MagicMock()
+        no_global = MagicMock()
+        no_global.exists = False
+        no_global.to_dict.return_value = None
+        global_col = MagicMock()
+        global_col.document.return_value.get.return_value = no_global
+
+        written: dict[str, Any] = {}
+        cleared_doc = MagicMock()
+        cleared_doc.exists = True
+        cleared_doc.to_dict.return_value = {
+            "title": "My GA Agent",
+            "instruction": "You are a user-built GA analyst.",
+            "model": "gemini-2.5-flash",
+            "tool_ids": [],
+            "customization_status": "custom_agent",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "created_by": "ops@ken-e.ai",
+        }
+
+        def _set_fn(data, **_kw):
+            written.update(data)
+
+        overlay_doc = MagicMock()
+        overlay_doc.get.return_value = cleared_doc
+        overlay_doc.set.side_effect = _set_fn
+        overlay_doc.update.side_effect = _set_fn
+
+        agent_configs_sub = MagicMock()
+        agent_configs_sub.document.return_value = overlay_doc
+        account_doc_ref = MagicMock()
+        account_doc_ref.collection.return_value = agent_configs_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc_ref
+
+        def _router(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db.collection.side_effect = _router
+        app.dependency_overrides[get_firestore] = lambda: db
+
+        resp = client.put(BASE_URL + "/custom_abc12345", json={"tool_ids": []})
+        assert resp.status_code == 200
+        assert resp.json()["tool_ids"] == []
+        assert "tool_ids" in written
+        assert written["tool_ids"] == []
+
+    def test_post_with_unknown_ga_tool_id_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """POST with a tool_id absent from the catalogue → 422 with the
+        correct field pointer (``body.tool_ids``) from the catalogue validator,
+        not from Pydantic format validation.
+        """
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: self._install_db_for_custom(
+            []
+        )
+
+        resp = client.post(
+            BASE_URL + "/",
+            json={
+                "title": "Bad GA Agent",
+                "instruction": "You are a test.",
+                "model": "gemini-2.5-flash",
+                "tool_ids": ["google_analytics_mcp.nonexistent_tool"],
+            },
+        )
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        # The rejection must come from the catalogue validator (_reject_unknown_tool_ids)
+        # not from the Pydantic format check — assert both the location and
+        # that the error message names the unknown tool.
+        tool_id_errors = [
+            err
+            for err in detail
+            if "tool_ids" in err.get("loc", [])
+        ]
+        assert tool_id_errors, (
+            f"Expected a 422 with loc pointing at body.tool_ids; "
+            f"got detail={detail!r}"
+        )
+        error_msgs = " ".join(str(err.get("msg", "")) for err in tool_id_errors)
+        assert "nonexistent_tool" in error_msgs or "unknown" in error_msgs.lower(), (
+            f"Error message should reference the unknown tool; got {error_msgs!r}"
+        )
+
+    def test_delete_custom_ga_agent_returns_204(self, client: TestClient) -> None:
+        """DELETE a custom agent → 204; confirms the documented DELETE coverage."""
+        self._install_user(_super_admin())
+
+        db = MagicMock()
+        no_global = MagicMock()
+        no_global.exists = False
+        no_global.to_dict.return_value = None
+        global_col = MagicMock()
+        global_col.document.return_value.get.return_value = no_global
+
+        custom_doc_ref = MagicMock()
+        custom_doc_ref.delete.return_value = None
+        agent_configs_sub = MagicMock()
+        agent_configs_sub.document.return_value = custom_doc_ref
+        account_doc_ref = MagicMock()
+        account_doc_ref.collection.return_value = agent_configs_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc_ref
+
+        def _router(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db.collection.side_effect = _router
+        app.dependency_overrides[get_firestore] = lambda: db
+
+        resp = client.delete(BASE_URL + "/custom_abc12345")
+        assert resp.status_code == 204
+        custom_doc_ref.delete.assert_called_once()

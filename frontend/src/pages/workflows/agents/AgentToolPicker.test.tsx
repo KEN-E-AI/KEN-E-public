@@ -417,3 +417,75 @@ describe("AgentToolPicker — rendering", () => {
     ).toBeInTheDocument();
   });
 });
+
+// ─── AH-95: google_analytics_mcp group rendering ─────────────────────────────
+
+describe("AgentToolPicker — GA MCP group (AH-95)", () => {
+  it("renders the google_analytics_mcp group when GA tools are in the inventory", () => {
+    render(
+      <AgentToolPicker
+        value={[]}
+        onChange={() => {}}
+        tools={fixtureTools}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    // The GA MCP group must render.
+    expect(
+      screen.getByTestId("tool-picker-group-google_analytics_mcp"),
+    ).toBeInTheDocument();
+    // Both GA tools must appear inside that group.
+    const gaGroup = screen.getByTestId(
+      "tool-picker-group-google_analytics_mcp",
+    );
+    expect(
+      within(gaGroup).getByTestId(
+        "tool-picker-tool-google_analytics_mcp.list_ga_accounts",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(gaGroup).getByTestId(
+        "tool-picker-tool-google_analytics_mcp.query_ga_report",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("selecting a GA tool adds its id to the onChange callback", () => {
+    const onChange = vi.fn();
+    render(
+      <AgentToolPicker
+        value={[]}
+        onChange={onChange}
+        tools={fixtureTools}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    fireEvent.click(
+      screen.getByTestId(
+        "tool-picker-checkbox-google_analytics_mcp.list_ga_accounts",
+      ),
+    );
+    expect(onChange).toHaveBeenCalledWith([
+      "google_analytics_mcp.list_ga_accounts",
+    ]);
+  });
+
+  it("pre-selected GA tools appear as checked checkboxes", () => {
+    render(
+      <AgentToolPicker
+        value={["google_analytics_mcp.list_ga_accounts"]}
+        onChange={() => {}}
+        tools={fixtureTools}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    const checkbox = screen.getByTestId(
+      "tool-picker-checkbox-google_analytics_mcp.list_ga_accounts",
+    );
+    // Radix Checkbox stores state as aria-checked
+    expect(checkbox).toHaveAttribute("aria-checked", "true");
+  });
+});

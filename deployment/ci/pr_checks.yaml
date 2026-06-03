@@ -126,6 +126,11 @@ steps:
   # The chat-callback files are named explicitly rather than gating the whole
   # app/adk/agents/tests/ directory — the legacy suites there (test_ken_e_agent
   # etc.) are not yet CI-clean.
+  # The GA-specialist files (test_ga_oauth_reauth_callback,
+  # test_google_analytics_specialist_e2e, test_user_built_ga_agent_e2e) are
+  # named explicitly too (AH-PRD-03 Wave 2 / AH-27/28/29/95) — they carry the
+  # only automated coverage of the OAuth-reauth and multi-tenant-isolation ACs;
+  # their @pytest.mark.llm cases self-skip when Gemini/GA creds are absent.
   # security/tests/ added in AH-101 — covers tool-permission gating
   # (before-tool callback) that is security-relevant and was previously outside
   # both the pytest and mypy gates.
@@ -146,6 +151,9 @@ steps:
           app/adk/agents/models/ \
           app/adk/agents/tests/test_chat_callbacks.py \
           app/adk/agents/tests/test_callback_writes_counters.py \
+          app/adk/agents/tests/test_ga_oauth_reauth_callback.py \
+          app/adk/agents/tests/test_google_analytics_specialist_e2e.py \
+          app/adk/agents/tests/test_user_built_ga_agent_e2e.py \
           app/adk/mcp_config/tests/ \
           app/adk/security/tests/ \
           app/adk/tracking/tests/ \

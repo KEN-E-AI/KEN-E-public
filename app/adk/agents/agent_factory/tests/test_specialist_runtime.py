@@ -3080,3 +3080,866 @@ class TestExecutorSingleton:
             "get_pool_checkout_executor().submit() was not called — "
             "_build_specialist is not using the singleton executor"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestSpecialistRuntimeCodeExecutor — AH-27 AC #2
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistRuntimeCodeExecutor:
+    """AH-27 AC #2: runtime resolver materialises BuiltInCodeExecutor when
+    code_execution_enabled=True.
+
+    Exercises the _build_specialist → build_agent → _build_code_executor chain on
+    the runtime resolver's actual entry point, including the LoopAgent wrap that
+    GA's default_acceptance_criteria triggers in _build_specialist.
+
+    The existing test_factory.py::TestCodeExecution tests build_agent directly
+    (without the LoopAgent wrap) and is necessary but not sufficient for
+    PRD AC #2: "The runtime-resolved specialist has code_executor set to a
+    BuiltInCodeExecutor when code_execution_enabled=true." This class closes
+    the gap at the resolver layer.
+    """
+
+    def _build_infra_stack(self, config: Any) -> Any:
+        """Return an ExitStack with all infrastructure patches applied.
+
+        Patches every external dependency of ``_build_specialist`` / ``build_agent``
+        that would hit GCP, Weave, or MCP in a unit-test context.  Critically,
+        ``build_agent`` and ``build_review_pipeline`` are NOT patched — the real
+        implementations run so that ``_build_code_executor`` wiring is exercised
+        end-to-end.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        fake_cached_cfg = MagicMock()
+        fake_cached_cfg.instruction = config.instruction
+
+        # Cannot use _patch_specialist_runtime_externals: that helper always
+        # mocks build_agent, which would bypass _build_code_executor entirely.
+        # We need the real build_agent so the code_executor wiring is exercised.
+        stack = ExitStack()
+        try:
+            # 1. Fresh MCP pool per test for isolation.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
+            # 2. Empty Firestore — no MCP servers needed for these tests.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            # 3 & 4. Tool registry — empty roster, no default globals.
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+            # 5. config_cache — return minimal fake so the callable instruction
+            #    provider falls back to the deploy-time instruction string.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+                    return_value=(fake_cached_cfg, {}, {}),
+                )
+            )
+            # 6-13. Callbacks - irrelevant to code_executor wiring.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.weave_before_agent_callback",
+                    new=MagicMock(name="weave_before"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.weave_after_agent_callback",
+                    new=MagicMock(name="weave_after"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.adk_before_tool_callback",
+                    new=MagicMock(name="adk_before_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.adk_after_tool_callback",
+                    new=MagicMock(name="adk_after_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_allowed_tools_before_tool_callback",
+                    new=MagicMock(name="skill_filter"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_spans_before_agent_callback",
+                    new=MagicMock(name="sk_spans_before_agent"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_spans_before_tool_callback",
+                    new=MagicMock(name="sk_spans_before_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_spans_after_tool_callback",
+                    new=MagicMock(name="sk_spans_after_tool"),
+                )
+            )
+            # 14. Skill toolset — no skills attached.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder._build_skill_toolset",
+                    return_value=(None, {}, False),
+                )
+            )
+            return stack
+        except Exception:
+            stack.close()
+            raise
+
+    def test_code_execution_enabled_no_criteria_returns_llm_agent_with_executor(
+        self,
+    ) -> None:
+        """(a) code_execution_enabled=True, no criteria → raw LlmAgent with BuiltInCodeExecutor."""
+        from google.adk.agents import LlmAgent
+        from google.adk.code_executors import BuiltInCodeExecutor
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="You are a GA specialist. Use code execution for ALL numerical analysis.",
+            model="gemini-2.0-flash",
+            description="GA specialist",
+            code_execution_enabled=True,
+            mcp_servers=[],
+        )
+
+        with self._build_infra_stack(config):
+            result = sr._build_specialist(
+                config,
+                "google_analytics_specialist",
+                account_id=None,
+            )
+
+        assert isinstance(result, LlmAgent), (
+            f"Expected LlmAgent (no criteria → no wrap); got {type(result).__name__}"
+        )
+        assert isinstance(result.code_executor, BuiltInCodeExecutor), (
+            f"Expected BuiltInCodeExecutor; got {type(result.code_executor).__name__}"
+        )
+
+    def test_code_execution_enabled_with_criteria_loop_agent_worker_has_executor(
+        self,
+    ) -> None:
+        """(b) code_execution_enabled=True + default_acceptance_criteria → LoopAgent.
+
+        The inner worker (first sub_agent) must preserve the BuiltInCodeExecutor
+        that build_agent sets on the specialist before build_review_pipeline wraps it.
+        """
+        from google.adk.agents import LlmAgent, LoopAgent
+        from google.adk.code_executors import BuiltInCodeExecutor
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="You are a GA specialist. Use code execution for ALL numerical analysis.",
+            model="gemini-2.0-flash",
+            description="GA specialist",
+            code_execution_enabled=True,
+            mcp_servers=[],
+            default_acceptance_criteria="Show the executed formula so the reviewer can verify the calculation.",
+        )
+
+        with self._build_infra_stack(config):
+            result = sr._build_specialist(
+                config,
+                "google_analytics_specialist",
+                account_id=None,
+            )
+
+        assert isinstance(result, LoopAgent), (
+            f"Expected LoopAgent (criteria set → review-pipeline wrap); got {type(result).__name__}"
+        )
+        assert result.name == "google_analytics_specialist", (
+            f"LoopAgent must be renamed to doc_id by _build_specialist; got {result.name!r}"
+        )
+
+        worker = result.sub_agents[0]
+        assert isinstance(worker, LlmAgent), (
+            f"First sub_agent must be the specialist worker LlmAgent; got {type(worker).__name__}"
+        )
+        assert worker.name == "google_analytics_specialist_worker", (
+            f"Worker must be named '<doc_id>_worker'; got {worker.name!r}"
+        )
+        assert isinstance(worker.code_executor, BuiltInCodeExecutor), (
+            "Worker must inherit BuiltInCodeExecutor from the specialist — "
+            f"build_review_pipeline propagates all LlmAgent fields; got {type(worker.code_executor).__name__}"
+        )
+
+    def test_code_execution_disabled_returns_llm_agent_without_executor(
+        self,
+    ) -> None:
+        """(c) code_execution_enabled=False → raw LlmAgent with code_executor=None."""
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="You are a GA specialist.",
+            model="gemini-2.0-flash",
+            description="GA specialist",
+            code_execution_enabled=False,
+            mcp_servers=[],
+        )
+
+        with self._build_infra_stack(config):
+            result = sr._build_specialist(
+                config,
+                "google_analytics_specialist",
+                account_id=None,
+            )
+
+        assert isinstance(result, LlmAgent), (
+            f"Expected LlmAgent (no criteria → no wrap); got {type(result).__name__}"
+        )
+        assert result.code_executor is None, (
+            f"code_execution_enabled=False must produce code_executor=None; "
+            f"got {result.code_executor!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestGaOauthCallbackWiring — AH-28
+# ---------------------------------------------------------------------------
+
+
+class TestGaOauthCallbackWiring:
+    """``_build_specialist`` must attach ``ga_oauth_after_tool_callback`` to any
+    specialist whose MCP roster includes a server with ``auth_type=="ga_oauth"``.
+
+    Specialists with no ``ga_oauth`` server must not receive the callback.
+    Two servers with ``auth_type=="ga_oauth"`` produce exactly one callback
+    entry (de-duped by the boolean flag).
+    """
+
+    def _ga_oauth_mcp_doc(self) -> dict[str, Any]:
+        """MCP server doc with auth_type=ga_oauth (enabled)."""
+        return {"enabled": True, "auth_type": "ga_oauth"}
+
+    def _non_oauth_mcp_doc(self) -> dict[str, Any]:
+        """MCP server doc without ga_oauth (e.g. a public server)."""
+        return {"enabled": True, "auth_type": None}
+
+    def test_ga_oauth_server_attaches_callback(self) -> None:
+        """AC-1: specialist with a ga_oauth MCP server gets the callback."""
+        import app.adk.agents.agent_factory.specialist_runtime as sr
+
+        from app.adk.security.hooks import ga_oauth_after_tool_callback
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): self._ga_oauth_mcp_doc()}
+        )
+
+        captured_kwargs: dict = {}
+
+        def _capture_build_agent(cfg, *, name, tools=None, **kw):  # type: ignore[no-untyped-def]
+            captured_kwargs.update(kw)
+            return MagicMock(name=f"llmagent_{name}", tools=tools or [])
+
+        stack, _, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with (
+            stack,
+            patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_capture_build_agent,
+            ),
+        ):
+            sr._build_specialist(config, "ga_specialist", "acc1", session_state={})
+
+        callbacks = captured_kwargs.get("additional_after_tool_callbacks") or []
+        assert ga_oauth_after_tool_callback in callbacks, (
+            "ga_oauth_after_tool_callback not in additional_after_tool_callbacks"
+        )
+
+    def test_non_ga_oauth_server_does_not_attach_callback(self) -> None:
+        """AC-2: specialist with no ga_oauth server must not get the callback."""
+        import app.adk.agents.agent_factory.specialist_runtime as sr
+
+        from app.adk.security.hooks import ga_oauth_after_tool_callback
+
+        config = _make_specialist_config(mcp_servers=["public_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "public_mcp"): self._non_oauth_mcp_doc()}
+        )
+
+        captured_kwargs: dict = {}
+
+        def _capture_build_agent(cfg, *, name, tools=None, **kw):  # type: ignore[no-untyped-def]
+            captured_kwargs.update(kw)
+            return MagicMock(name=f"llmagent_{name}", tools=tools or [])
+
+        stack, _, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with (
+            stack,
+            patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_capture_build_agent,
+            ),
+        ):
+            sr._build_specialist(config, "public_specialist", "acc1", session_state={})
+
+        callbacks = captured_kwargs.get("additional_after_tool_callbacks") or []
+        assert ga_oauth_after_tool_callback not in callbacks, (
+            "ga_oauth_after_tool_callback should NOT be attached for non-ga_oauth specialist"
+        )
+
+    def test_no_mcp_servers_does_not_attach_callback(self) -> None:
+        """AC-2: specialist with no MCP servers must not get the callback."""
+        import app.adk.agents.agent_factory.specialist_runtime as sr
+
+        from app.adk.security.hooks import ga_oauth_after_tool_callback
+
+        config = _make_specialist_config(mcp_servers=[])
+        fake_db = _FakeFirestoreDb({})
+
+        captured_kwargs: dict = {}
+
+        def _capture_build_agent(cfg, *, name, tools=None, **kw):  # type: ignore[no-untyped-def]
+            captured_kwargs.update(kw)
+            return MagicMock(name=f"llmagent_{name}", tools=tools or [])
+
+        stack, _, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with (
+            stack,
+            patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_capture_build_agent,
+            ),
+        ):
+            sr._build_specialist(config, "no_mcp_specialist", "acc1", session_state={})
+
+        callbacks = captured_kwargs.get("additional_after_tool_callbacks") or []
+        assert ga_oauth_after_tool_callback not in callbacks
+
+    def test_two_ga_oauth_servers_produce_one_callback_entry(self) -> None:
+        """AC-4: two MCP servers both with ga_oauth produce exactly one callback entry."""
+        import app.adk.agents.agent_factory.specialist_runtime as sr
+
+        from app.adk.security.hooks import ga_oauth_after_tool_callback
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp_1", "ga_mcp_2"])
+        fake_db = _FakeFirestoreDb(
+            {
+                ("mcp_server_configs", "ga_mcp_1"): self._ga_oauth_mcp_doc(),
+                ("mcp_server_configs", "ga_mcp_2"): self._ga_oauth_mcp_doc(),
+            }
+        )
+
+        captured_kwargs: dict = {}
+
+        def _capture_build_agent(cfg, *, name, tools=None, **kw):  # type: ignore[no-untyped-def]
+            captured_kwargs.update(kw)
+            return MagicMock(name=f"llmagent_{name}", tools=tools or [])
+
+        stack, _, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with (
+            stack,
+            patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_capture_build_agent,
+            ),
+        ):
+            sr._build_specialist(config, "dual_ga_specialist", "acc1", session_state={})
+
+        callbacks = captured_kwargs.get("additional_after_tool_callbacks") or []
+        count = callbacks.count(ga_oauth_after_tool_callback)
+        assert count == 1, (
+            f"Expected exactly 1 ga_oauth_after_tool_callback entry, got {count}"
+        )
+
+    def test_auth_type_read_failure_is_nonfatal(self) -> None:
+        """AC: Firestore read failure during auth_type check is non-fatal; specialist still builds."""
+        import app.adk.agents.agent_factory.specialist_runtime as sr
+
+        from app.adk.security.hooks import ga_oauth_after_tool_callback
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+
+        # DB that raises on the auth_type pre-check read
+        class _ErrorDb:
+            def collection(self, name: str) -> Any:
+                return _ErrorCollection()
+
+        class _ErrorCollection:
+            def document(self, doc_id: str) -> Any:
+                return _ErrorDocRef()
+
+        class _ErrorDocRef:
+            def get(self) -> Any:
+                raise RuntimeError("Firestore unavailable")
+
+        captured_kwargs: dict = {}
+
+        def _capture_build_agent(cfg, *, name, tools=None, **kw):  # type: ignore[no-untyped-def]
+            captured_kwargs.update(kw)
+            return MagicMock(name=f"llmagent_{name}", tools=tools or [])
+
+        # Use the error DB; _build_firestore_client is patched to return it
+        stack, _, _ = _patch_specialist_runtime_externals(
+            fake_db=_FakeFirestoreDb({})  # toolset fetch uses the standard fake
+        )
+        with (
+            stack,
+            patch(
+                "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                return_value=_ErrorDb(),
+            ),
+            patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_capture_build_agent,
+            ),
+        ):
+            # Should not raise even though the auth_type Firestore read fails
+            sr._build_specialist(config, "ga_specialist", "acc1", session_state={})
+
+        # The specialist still built successfully; callback not attached (fail-safe)
+        callbacks = captured_kwargs.get("additional_after_tool_callbacks") or []
+        assert ga_oauth_after_tool_callback not in callbacks
+
+
+# ---------------------------------------------------------------------------
+# TestUserBuiltGaAgent — AH-95: user-built custom agent with GA MCP tools
+# ---------------------------------------------------------------------------
+
+
+class TestUserBuiltGaAgent:
+    """AH-95: Verifies that a custom agent created via the AgentToolPicker
+    (with ``tool_ids`` set but ``mcp_servers=[]``) resolves correctly.
+
+    Covers:
+    * Option A fix — ``_build_specialist`` derives the server set from
+      ``tool_ids`` prefixes when ``mcp_servers`` is falsy (AH-95 Task 3).
+    * ``McpToolsetPool`` keying isolation (AH-95 Task 5).
+    * Review-loop opt-in via ``default_acceptance_criteria`` (AH-95 Task 6).
+
+    Sub-agent attachment tests (Task 4 / AH-82 delegation gate) live in
+    ``test_sub_agent_attacher.py::TestUserBuiltGaAgentAttach`` where the
+    required ``attach_account_specialists`` helpers already exist.
+    """
+
+    # -----------------------------------------------------------------
+    # Task 3: resolver derives mcp_servers from tool_ids (Option A)
+    # -----------------------------------------------------------------
+
+    def test_custom_agent_derives_mcp_server_from_tool_ids(self) -> None:
+        """A custom agent with ``mcp_servers=[]`` and ``tool_ids`` containing
+        GA tool IDs builds an ``LlmAgent`` with a single ``McpToolset`` for
+        ``google_analytics_mcp`` filtered to the selected tool.
+
+        This validates the ~5 LoC Option A fix in ``_build_specialist``:
+        when ``config.mcp_servers`` is falsy and ``config.tool_ids`` is
+        non-None, the server set is derived from the ``tool_ids`` prefixes.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(
+            mcp_servers=[],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, mock_ba = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(
+                config, "custom_ga_agent", "acc1", mcp_pool=fresh_pool
+            )
+
+        # build_toolset_for_doc must be called for google_analytics_mcp
+        assert mock_btf.call_count == 1, (
+            f"Expected exactly one toolset build for google_analytics_mcp; "
+            f"got {mock_btf.call_count}"
+        )
+        called_server_id = mock_btf.call_args.args[0]
+        assert called_server_id == "google_analytics_mcp"
+
+        # The toolset must pass the per-server allowlist
+        assert mock_btf.call_args.kwargs.get("allowed_tool_names") == [
+            "list_ga_accounts"
+        ], (
+            f"allowed_tool_names must be ['list_ga_accounts']; "
+            f"got {mock_btf.call_args.kwargs!r}"
+        )
+
+        # build_agent must have been called (specialist was constructed)
+        mock_ba.assert_called_once()
+
+    def test_custom_agent_with_multiple_ga_tools_derives_single_server(self) -> None:
+        """Multiple tool_ids from the same server still produce one toolset."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(
+            mcp_servers=[],
+            tool_ids=[
+                "google_analytics_mcp.list_ga_accounts",
+                "google_analytics_mcp.run_report",
+                "function.create_visualization",
+            ],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, _mock_ba = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(
+                config, "custom_ga_agent", "acc1", mcp_pool=fresh_pool
+            )
+
+        # Only one server — google_analytics_mcp
+        assert mock_btf.call_count == 1
+        assert mock_btf.call_args.args[0] == "google_analytics_mcp"
+
+        # Both GA tools in the allowlist
+        allowed = mock_btf.call_args.kwargs.get("allowed_tool_names")
+        assert set(allowed) == {"list_ga_accounts", "run_report"}, (
+            f"Both GA tools must be in the allowlist; got {allowed!r}"
+        )
+
+    def test_legacy_mcp_servers_set_is_not_affected_by_option_a(self) -> None:
+        """When ``mcp_servers`` is explicitly set (e.g. the seeded global GA
+        specialist), Option A is not triggered — the existing server list is
+        used verbatim, preserving the pre-AH-95 behaviour.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(
+            mcp_servers=["google_analytics_mcp"],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(
+                config, "google_analytics_specialist", "acc1", mcp_pool=fresh_pool
+            )
+
+        # Exactly one call — same as before; no duplication
+        assert mock_btf.call_count == 1
+        assert mock_btf.call_args.args[0] == "google_analytics_mcp"
+
+    def test_tool_ids_none_with_empty_mcp_servers_builds_no_toolsets(self) -> None:
+        """``tool_ids=None`` with ``mcp_servers=[]`` must not trigger the
+        Option A derivation — ``None`` signals legacy "every tool" semantics
+        which requires ``mcp_servers`` to be set explicitly.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=None)
+        stack, mock_btf, mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            sr._build_specialist(config, "no_server_agent", "acc1")
+
+        assert mock_btf.call_count == 0, (
+            "tool_ids=None with no mcp_servers must produce zero toolset builds"
+        )
+        mock_ba.assert_called_once()  # agent itself is still built
+
+    def test_tool_ids_empty_list_with_empty_mcp_servers_builds_no_toolsets(
+        self,
+    ) -> None:
+        """``tool_ids=[]`` with ``mcp_servers=[]`` must trigger Option A but
+        produce an empty ``effective_mcp_servers`` (``per_server_allowed`` is
+        ``{}`` — non-None but empty — so ``list({}.keys()) == []``).
+
+        Explicitly tests the AH-95 code path for the empty-allowlist case:
+        ``per_server_allowed is not None`` but ``per_server_allowed.keys()``
+        is empty, so no toolset build is attempted.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=[])
+        stack, mock_btf, mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            sr._build_specialist(config, "empty_tools_agent", "acc1")
+
+        assert mock_btf.call_count == 0, (
+            "tool_ids=[] must derive empty effective_mcp_servers and build "
+            "no toolsets"
+        )
+        mock_ba.assert_called_once()  # agent is still built (with zero tools)
+
+    # -----------------------------------------------------------------
+    # Task 5: McpToolsetPool keying — OAuth isolation
+    # -----------------------------------------------------------------
+
+    def test_different_ga_creds_produce_distinct_pool_entries_for_custom_agent(
+        self,
+    ) -> None:
+        """Two sessions with different ``ga_credentials`` for the same
+        custom GA agent produce distinct pool entries (no cross-account token
+        reuse).
+
+        Pool key: ``(server_id, account_id, sha256(creds_json))``.
+        Mirrors the AH-29 isolation test for the global GA specialist.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(
+            mcp_servers=[],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+
+        cred_key = "mcp_creds_google_analytics_mcp"
+        with stack:
+            sr._build_specialist(
+                config,
+                "custom_ga_agent",
+                "acc1",
+                session_state={cred_key: {"access_token": "tok_account_1"}},
+                mcp_pool=fresh_pool,
+            )
+            sr._build_specialist(
+                config,
+                "custom_ga_agent",
+                "acc1",
+                session_state={cred_key: {"access_token": "tok_account_2"}},
+                mcp_pool=fresh_pool,
+            )
+
+        assert len(fresh_pool._pool) == 2, (
+            f"Different creds must produce distinct pool entries; "
+            f"got {len(fresh_pool._pool)} entry/entries"
+        )
+
+    def test_different_account_ids_produce_distinct_pool_entries(self) -> None:
+        """Two different accounts with the same GA creds payload still get
+        separate pool entries because account_id is part of the pool key.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(
+            mcp_servers=[],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+
+        shared_creds = {"access_token": "shared_tok"}
+        cred_key = "mcp_creds_google_analytics_mcp"
+        with stack:
+            sr._build_specialist(
+                config,
+                "custom_ga_agent",
+                "acc_alpha",
+                session_state={cred_key: shared_creds},
+                mcp_pool=fresh_pool,
+            )
+            sr._build_specialist(
+                config,
+                "custom_ga_agent",
+                "acc_beta",
+                session_state={cred_key: shared_creds},
+                mcp_pool=fresh_pool,
+            )
+
+        assert len(fresh_pool._pool) == 2, (
+            f"Different account_ids must produce distinct pool entries even with "
+            f"identical creds; got {len(fresh_pool._pool)} entry/entries"
+        )
+
+    def test_four_combinations_produce_four_distinct_pool_entries(self) -> None:
+        """2 account_ids x 2 creds payloads -> 4 distinct pool entries."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(
+            mcp_servers=[],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+
+        cred_key = "mcp_creds_google_analytics_mcp"
+        combos = [
+            ("acc_alpha", "tok_1"),
+            ("acc_alpha", "tok_2"),
+            ("acc_beta", "tok_1"),
+            ("acc_beta", "tok_2"),
+        ]
+        with stack:
+            for account_id, token in combos:
+                sr._build_specialist(
+                    config,
+                    "custom_ga_agent",
+                    account_id,
+                    session_state={cred_key: {"access_token": token}},
+                    mcp_pool=fresh_pool,
+                )
+
+        assert len(fresh_pool._pool) == 4, (
+            f"2 accounts x 2 creds must yield 4 distinct pool entries; "
+            f"got {len(fresh_pool._pool)}"
+        )
+
+    # -----------------------------------------------------------------
+    # Task 6: review loop engages when default_acceptance_criteria is set
+    # -----------------------------------------------------------------
+
+    def test_review_loop_wraps_custom_ga_agent_when_criteria_set(self) -> None:
+        """When ``default_acceptance_criteria`` is set on a custom GA agent
+        (with ``mcp_servers=[]``, ``tool_ids`` set), ``_build_specialist``
+        calls ``build_review_pipeline`` and renames the returned pipeline to
+        the doc_id so ``transfer_to_agent`` resolves.
+
+        Mirrors the pattern from ``TestSpecialistRuntimeReviewWrap`` —
+        ``build_review_pipeline`` is mocked so no real ``LoopAgent``
+        construction is required, keeping the test isolated from ADK
+        internals.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        custom_id = "custom_ga_with_review"
+        config = MergedAgentConfig(
+            instruction="You are a custom GA agent with review.",
+            model="gemini-2.5-flash",
+            description="Custom GA + review loop",
+            mcp_servers=[],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            default_acceptance_criteria="Must include at least one numeric figure.",
+            ken_e_sub_agent=True,
+        )
+
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        externals_stack, _mock_btf, _mock_ba = _patch_specialist_runtime_externals(
+            fake_db=fake_db
+        )
+
+        # Fake LoopAgent pipeline returned by build_review_pipeline.
+        fake_pipeline = MagicMock(name="fake_loop_agent")
+        fake_pipeline.name = f"{custom_id}_review_loop"  # pre-rename default
+        fake_pipeline.description = config.description
+
+        with ExitStack() as outer:
+            outer.enter_context(externals_stack)
+            mock_build_pipeline = outer.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=fake_pipeline,
+                )
+            )
+            result = sr._build_specialist(
+                config, custom_id, "acc1", mcp_pool=fresh_pool
+            )
+
+        # build_review_pipeline was called with the criteria.
+        mock_build_pipeline.assert_called_once()
+        call_kwargs = mock_build_pipeline.call_args.kwargs
+        assert "Must include at least one numeric figure" in call_kwargs.get(
+            "acceptance_criteria", ""
+        )
+        # Returned agent IS the pipeline, renamed to the doc_id.
+        assert result is fake_pipeline
+        assert result.name == custom_id, (
+            f"Review pipeline must be renamed to the doc_id '{custom_id}'; "
+            f"got {result.name!r}"
+        )
+
+    def test_no_review_loop_when_criteria_absent_for_custom_ga_agent(self) -> None:
+        """When ``default_acceptance_criteria`` is absent, ``_build_specialist``
+        does NOT call ``build_review_pipeline`` — a bare ``LlmAgent`` mock is
+        returned.
+        """
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        custom_id = "custom_ga_no_review"
+        config = MergedAgentConfig(
+            instruction="You are a custom GA agent without review.",
+            model="gemini-2.5-flash",
+            description="Custom GA, no review loop",
+            mcp_servers=[],
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            ken_e_sub_agent=True,
+            # default_acceptance_criteria not set
+        )
+
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals(
+            fake_db=fake_db
+        )
+        with stack:
+            with _patch(
+                "app.adk.agents.utils.review_pipeline.build_review_pipeline"
+            ) as mock_build_pipeline:
+                result = sr._build_specialist(
+                    config, custom_id, "acc1", mcp_pool=fresh_pool
+                )
+
+        # Review pipeline was NOT constructed.
+        mock_build_pipeline.assert_not_called()
+        # Returned agent is the raw build_agent mock (LlmAgent stand-in).
+        mock_ba.assert_called_once()
+        assert result._extract_mock_name() == f"llmagent_{custom_id}"

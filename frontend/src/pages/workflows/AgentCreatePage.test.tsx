@@ -464,3 +464,113 @@ describe("AgentCreatePage — ken_e_sub_agent toggle", () => {
     );
   });
 });
+
+// ─── AH-95: user-built GA agent via AgentToolPicker ───────────────────────────
+
+describe("AgentCreatePage — GA MCP tool selection (AH-95)", () => {
+  it("submits a GA MCP tool alongside a function tool in tool_ids", async () => {
+    mockCreateAgentConfig.mockResolvedValueOnce({
+      config_id: "custom_ga_abc123",
+      customization_status: "custom_agent",
+    });
+
+    // Override the inventory to include GA MCP tools.
+    const gaInventory = {
+      tools: [
+        {
+          tool_id: "function.create_visualization",
+          name: "create_visualization",
+          description: "Render a chart.",
+          category: "general",
+          source: "global_default",
+          mcp_server: null,
+          integration_platform: null,
+        },
+        {
+          tool_id: "google_analytics_mcp.list_ga_accounts",
+          name: "list_ga_accounts",
+          description: "List GA accounts.",
+          category: "analytics",
+          source: "integration",
+          mcp_server: "google_analytics_mcp",
+          integration_platform: "google_analytics",
+        },
+        {
+          tool_id: "google_analytics_mcp.run_report",
+          name: "run_report",
+          description: "Run an analytics report.",
+          category: "analytics",
+          source: "integration",
+          mcp_server: "google_analytics_mcp",
+          integration_platform: "google_analytics",
+        },
+      ],
+    };
+    mockGetAccountTools.mockResolvedValue(gaInventory);
+
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.type(screen.getByTestId("title-input"), "My GA Agent");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a GA analytics assistant.",
+    );
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    // Select the GA tool and the function tool.
+    const gaCheckbox = await screen.findByTestId(
+      "tool-picker-checkbox-google_analytics_mcp.list_ga_accounts",
+    );
+    await user.click(gaCheckbox);
+
+    const vizCheckbox = screen.getByTestId(
+      "tool-picker-checkbox-function.create_visualization",
+    );
+    await user.click(vizCheckbox);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() =>
+      expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+        "acc_test",
+        expect.objectContaining({
+          tool_ids: expect.arrayContaining([
+            "google_analytics_mcp.list_ga_accounts",
+            "function.create_visualization",
+          ]),
+        }),
+      ),
+    );
+  });
+
+  it("shows the google_analytics_mcp group when GA tools are in inventory", async () => {
+    const gaInventory = {
+      tools: [
+        {
+          tool_id: "google_analytics_mcp.list_ga_accounts",
+          name: "list_ga_accounts",
+          description: "List GA accounts.",
+          category: "analytics",
+          source: "integration",
+          mcp_server: "google_analytics_mcp",
+          integration_platform: "google_analytics",
+        },
+      ],
+    };
+    mockGetAccountTools.mockResolvedValue(gaInventory);
+
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    // Wait for the picker to load and render the GA group.
+    await screen.findByTestId("tool-picker-group-google_analytics_mcp");
+  });
+});

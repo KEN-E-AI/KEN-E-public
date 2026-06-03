@@ -1,20 +1,36 @@
 """Google Analytics Agent V4 - McpToolset + Header-Based OAuth.
 
 .. deprecated::
-   **AH-25 / AH-PRD-03 Phase 1 — Do not use in new code.**
+   **DEPRECATED 2026-06-01 — Do not use in new code. Target removal: 2026-09-01.**
 
-   This file is the transitional hardcoded GA agent installed in the
-   R1.0 deploy-time specialist pattern. It is superseded by the
-   AH-PRD-09 per-turn runtime resolver: the GA Specialist now lives at
-   ``agent_configs/google_analytics_specialist`` in Firestore and is
-   constructed per-turn by ``specialist_runtime.resolve_agent`` via
-   ADK-native ``transfer_to_agent("google_analytics_specialist")``.
+   This file is the transitional hardcoded GA agent installed in the R1.0
+   deploy-time specialist pattern (AH-PRD-02). It was superseded on 2026-06-01
+   when AH-25 (PR #777) seeded the ``agent_configs/google_analytics_specialist``
+   Firestore document and patched ``mcp_servers/google_analytics_mcp`` with
+   ``kind="cloud_run"``.
 
-   The root agent (``ken_e_agent.py``) no longer references this module.
-   This file is retained until a follow-up grep confirms no callers remain,
-   at which point it will be deleted. Expected removal: once the
-   ``google_analytics_agent_v4`` name no longer appears in any import,
-   Makefile target, or deploy script. Track via the AH-26 follow-up story.
+   **Replacement mechanism:** The GA Specialist now lives at
+   ``agent_configs/google_analytics_specialist`` in Firestore and is resolved
+   per chat turn by ``specialist_runtime.resolve_agent``. The root agent reaches
+   it via ADK-native ``transfer_to_agent(agent_name="google_analytics_specialist")``
+   — not via a function-tool dispatch. See ``app/adk/agents/agent_factory/
+   specialist_runtime.py`` and ``app/adk/agents/agent_factory/sub_agent_attacher.py``.
+
+   **Remaining callers (all owned by AH-PRD-09 Phase 5 cleanup; removal of each
+   unblocks final deletion of this file):**
+
+   * ``app/adk/agents/__init__.py`` — lazy-load registry entry for
+     ``"google_analytics_agent_v4"``; owned by AH-PRD-09 Phase 5 cleanup.
+   * ``app/adk/agents/registry.py`` — ``AgentRegistry`` lazy-load registration
+     (``module_path=".google_analytics_agent_v4"``); owned by AH-PRD-09 Phase 5.
+   * ``app/adk/agents/utils/dispatch_handlers.py`` — legacy
+     ``dispatch_to_google_analytics`` handler; owned by AH-PRD-09 Phase 5.
+   * ``app/adk/agents/tests/test_ga_agent.py`` — import-time smoke test asserting
+     ``agent.name == "google_analytics_agent_v4"``; owned by AH-PRD-09 Phase 5.
+   * ``tests/integration/test_review_loop_single_step.py`` — integration test using
+     the legacy dispatch path; owned by AH-PRD-09 Phase 5.
+   * ``tests/unit/test_adk_agents/test_dispatch_handlers.py`` — unit tests for the
+     legacy ``dispatch_to_google_analytics`` function; owned by AH-PRD-09 Phase 5.
 
 Uses ADK McpToolset with SSE transport to connect to the GA MCP server.
 OAuth credentials flow automatically from session state through the

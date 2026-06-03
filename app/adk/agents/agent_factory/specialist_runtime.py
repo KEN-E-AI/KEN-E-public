@@ -413,11 +413,36 @@ def _build_specialist(
 
     toolsets: dict[str, Any] = {}
 
-    if config.mcp_servers:
+    # AH-28: track whether any MCP server for this specialist uses ga_oauth.
+    # When True, ga_oauth_after_tool_callback is appended to the specialist's
+    # after_tool chain so 401 responses from the GA MCP server set
+    # _requires_reauth in session state and return a user-visible error.
+    # Gating on auth_type (not on config_id) means future custom GA-tool-
+    # equipped agents (AH-95) automatically inherit the same reauth handling.
+    _has_ga_oauth_server: bool = False
+
+    # AH-95 (Option A): when a user-built custom agent sets tool_ids but leaves
+    # mcp_servers empty (AH-PRD-06 §2 — "users see tools, not servers"), derive
+    # the server set from the tool_ids prefixes so the toolset loop runs.
+    # Triggers only when mcp_servers is falsy AND tool_ids is non-None
+    # (the non-None guard preserves legacy tool_ids=None → "every tool" semantics).
+    #
+    # Security invariants that must not be removed (defence-in-depth):
+    # 1. ``_VALID_DOC_ID_RE`` validates each derived server_id before any Firestore
+    #    read — rejects injected paths even if a direct Firestore write bypassed
+    #    the API's catalogue-validation gate.
+    # 2. The ``enabled=True`` check in ``_build_fn`` is the authoritative gate;
+    #    a Firestore doc for a retired or non-existent server must stay
+    #    ``enabled=False`` to prevent residual access.
+    effective_mcp_servers: list[str] = config.mcp_servers or (
+        list(per_server_allowed.keys()) if per_server_allowed is not None else []
+    )
+
+    if effective_mcp_servers:
         project_id = _resolve_project_id(None)
         db = _build_firestore_client(project_id)
 
-        for server_id in config.mcp_servers:
+        for server_id in effective_mcp_servers:
             if not _VALID_DOC_ID_RE.match(server_id):
                 logger.error(
                     "MCP server ID %r for specialist %r fails format validation; skipping",
@@ -425,6 +450,7 @@ def _build_specialist(
                     name,
                 )
                 continue
+
             # AH-PRD-06: skip servers with no tool_ids match — no point
             # paying the Firestore + connection cost for a toolset whose
             # tools are all filtered out downstream.
@@ -435,6 +461,25 @@ def _build_specialist(
                     name,
                 )
                 continue
+
+            # AH-28: lightweight auth_type read — placed after the tool_ids guard
+            # so we only read Firestore for servers that will actually be used
+            # (avoids an N+1 read for tool-filter-skipped servers).  Fail-safe on
+            # any error (missing doc, network blip) — worst case the callback is
+            # not attached for this server.
+            if not _has_ga_oauth_server:
+                try:
+                    _snap = db.collection(MCP_COLLECTION).document(server_id).get()
+                    if _snap.exists:
+                        _server_doc = _snap.to_dict() or {}
+                        if _server_doc.get("auth_type") == "ga_oauth":
+                            _has_ga_oauth_server = True
+                except Exception:
+                    logger.warning(
+                        "Could not read auth_type for MCP server %r; "
+                        "ga_oauth callback will not be attached for this server",
+                        server_id,
+                    )
 
             # Phase 3 (AH-62): pool-backed checkout.
             # Compute creds_hash from session state so that credential rotation
@@ -569,8 +614,25 @@ def _build_specialist(
         )
         raise
 
+    # AH-28: attach ga_oauth_after_tool_callback to any specialist whose MCP
+    # roster includes a server with auth_type=="ga_oauth".  The callback detects
+    # 401 responses at the tool boundary, sets _requires_reauth / _reauth_service
+    # in session state, and replaces the raw MCP error with a user-visible
+    # message.  Gating on auth_type (not on config_id) means custom GA-tool-
+    # equipped agents (AH-95) inherit the same handling automatically.
+    _additional_after_tool: list[Any] = []
+    if _has_ga_oauth_server:
+        from app.adk.security.hooks import ga_oauth_after_tool_callback
+
+        _additional_after_tool.append(ga_oauth_after_tool_callback)
+
     specialist = build_agent(
-        config, name=name, account_id=account_id, tools=tools, config_doc_id=name
+        config,
+        name=name,
+        account_id=account_id,
+        tools=tools,
+        config_doc_id=name,
+        additional_after_tool_callbacks=_additional_after_tool or None,
     )
 
     # AH-75: prevent multi-turn "stuck on specialist" routing. ADK's Runner

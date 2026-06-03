@@ -349,3 +349,152 @@ async def verify_tool_for_user(
         account_id=account_id,
         token_info=token_info,
     )
+
+
+# ---------------------------------------------------------------------------
+# GA OAuth after-tool callback (AH-28)
+# ---------------------------------------------------------------------------
+
+# Indicator strings that signal a 401 / expired-token response from the GA MCP
+# server.  Checked case-insensitively; update when the GA MCP server changes
+# its error format.
+#
+# Strong indicators: specific OAuth error codes safe to match in the message-
+# only path (no error flag required) because they are unlikely to appear in
+# legitimate GA API data payloads.
+_GA_401_STRONG_INDICATORS = (
+    "token expired",
+    "token has been revoked",
+    "invalid_grant",
+)
+# Weak indicators: common HTTP / OAuth status words that could also appear in
+# legitimate domain data (e.g. "401" in a GA property ID or report count,
+# "unauthorized" in a domain-specific resource name).  Only matched when the
+# response also carries an explicit error/isError/sentinel flag.
+_GA_401_WEAK_INDICATORS = (
+    "401",
+    "unauthorized",
+    "authentication_required",
+)
+
+_GA_REAUTH_MESSAGE = (
+    "Your Google Analytics access has expired. "
+    "Please reconnect Google Analytics to continue."
+)
+_GA_REAUTH_RESPONSE: dict[str, Any] = {
+    "error": "authentication_required",
+    "message": _GA_REAUTH_MESSAGE,
+    "requires_reauth": True,
+}
+
+
+def _is_ga_401(tool_response: Any) -> bool:
+    """Return True when *tool_response* indicates a GA OAuth 401.
+
+    Detection is split into two indicator tiers:
+    * ``_GA_401_STRONG_INDICATORS``: specific OAuth error codes matched in ALL
+      paths, including the message-only dict path.
+    * ``_GA_401_WEAK_INDICATORS``: generic HTTP/OAuth status words (``"401"``,
+      ``"unauthorized"``) matched only when the response also carries an
+      explicit ``error``/``isError``/``_error`` flag — these strings are common
+      enough in legitimate GA data (e.g., ``"Processed 401 rows"``, a property
+      ID containing ``"401"``) that matching them without an error flag would
+      produce false-positive reauth prompts.
+
+    Returns False on any unexpected type or when no indicator matches.
+    """
+    try:
+        if isinstance(tool_response, dict):
+            # ADK exception sentinel path — carries both strong and weak indicators.
+            if "_error" in tool_response:
+                err_val = str(tool_response["_error"]).lower()
+                all_inds = _GA_401_STRONG_INDICATORS + _GA_401_WEAK_INDICATORS
+                return any(ind in err_val for ind in all_inds)
+
+            # Explicit error/isError flag — carry both tiers.
+            if tool_response.get("error") or tool_response.get("isError"):
+                msg = str(tool_response.get("message", "")).lower()
+                err = str(tool_response.get("error", "")).lower()
+                haystack = msg + " " + err
+                all_inds = _GA_401_STRONG_INDICATORS + _GA_401_WEAK_INDICATORS
+                return any(ind in haystack for ind in all_inds)
+
+            # Message-only path (no error flag): only match strong indicators to
+            # avoid false positives on GA numeric data or domain-specific terms.
+            msg = str(tool_response.get("message", "")).lower()
+            if msg:
+                return any(ind in msg for ind in _GA_401_STRONG_INDICATORS)
+
+        elif isinstance(tool_response, str):
+            # Plain string: only match strong indicators for the same reason.
+            lower = tool_response.lower()
+            return any(ind in lower for ind in _GA_401_STRONG_INDICATORS)
+    except Exception:
+        pass
+    return False
+
+
+async def ga_oauth_after_tool_callback(
+    tool: BaseTool,
+    args: dict[str, Any],
+    tool_context: ToolContext,
+    tool_response: Any,
+) -> dict[str, Any] | None:
+    """ADK ``after_tool_callback`` that detects GA OAuth 401 errors.
+
+    When a GA MCP tool returns a 401-shaped response (expired or revoked
+    token), this callback:
+
+    1. Sets ``tool_context.state["_requires_reauth"] = True`` and
+       ``tool_context.state["_reauth_service"] = "google-analytics"`` so the
+       chat router's reauth-polling path (``chat.py:2450-2466``) surfaces a
+       re-auth prompt on the next turn.
+    2. Returns a replacement dict with the canonical ``authentication_required``
+       shape (same as ``adk_before_tool_callback`` on the pre-flight path) so
+       the LLM context is consistent regardless of which detection layer
+       caught the expiry.
+
+    Returns ``None`` (passthrough) on:
+    * Successful tool responses
+    * Non-401 errors (e.g., ``permission_denied``)
+    * Any exception inside the detection logic (degrades gracefully — the
+      upstream MCP error reaches the LLM unchanged)
+
+    The ``_requires_reauth`` / ``_reauth_service`` pair is idempotent: if the
+    pre-flight ``adk_before_tool_callback`` already wrote the same keys, the
+    second write is a no-op.
+
+    Forward-compat: ``_make_header_provider`` is retrofitted by IN-PRD-06 to
+    fetch credentials from the Integrations endpoint rather than session state.
+    The ``_requires_reauth`` contract this callback writes stays valid because
+    the chat router reads session state, not headers.
+    """
+    try:
+        if not _is_ga_401(tool_response):
+            return None
+
+        if hasattr(tool_context, "state") and hasattr(
+            tool_context.state, "__setitem__"
+        ):
+            tool_context.state["_requires_reauth"] = True
+            tool_context.state["_reauth_service"] = "google-analytics"
+            logger.info(
+                "ga_oauth_reauth_detected",
+                extra=log_context(
+                    component="ga_oauth_callback",
+                    action="reauth_detected",
+                    extra={
+                        "tool_name": getattr(tool, "name", "unknown"),
+                        "reauth_service": "google-analytics",
+                    },
+                ),
+            )
+
+        return dict(_GA_REAUTH_RESPONSE)
+    except Exception:
+        logger.warning(
+            "ga_oauth_after_tool_callback: detection logic raised unexpectedly; "
+            "passing response through unchanged",
+            exc_info=True,
+        )
+        return None

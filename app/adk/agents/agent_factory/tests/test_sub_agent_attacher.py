@@ -1530,3 +1530,130 @@ class TestModelLocationWiring:
         ):
             attach_specialists_before_agent_callback(ctx)
             assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us-central1"
+
+
+# ---------------------------------------------------------------------------
+# TestUserBuiltGaAgentAttach — AH-95 Task 4: delegation gate for custom GA
+# ---------------------------------------------------------------------------
+
+
+class TestUserBuiltGaAgentAttach:
+    """AH-95 Task 4: sub-agent attachment gate for custom agents created
+    via the ``AgentToolPicker`` (``tool_ids`` set, ``mcp_servers=[]``).
+
+    Verifies that ``attach_account_specialists`` honours the
+    ``ken_e_sub_agent`` flag for user-built custom agents — the same
+    gate tested for global specialists in ``TestReconcile``.
+    """
+
+    def test_custom_ga_agent_attached_when_ken_e_sub_agent_true(
+        self,
+    ) -> None:
+        """A resolved custom GA agent (``custom_*`` config_id) with
+        ``ken_e_sub_agent=True`` lands in ``root.sub_agents`` and is
+        reachable via ``root.find_agent``.
+        """
+        custom_id = "custom_abc12345"
+        specialist = _make_specialist(custom_id)
+
+        config_record = MergedAgentConfig(
+            instruction="Custom GA agent.",
+            model="gemini-2.5-flash",
+            description="User-built GA agent",
+            visible_in_frontend=True,
+            ken_e_sub_agent=True,
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+
+        def _resolve_config(doc_id, _account_id=None, _ttl=60):
+            return config_record
+
+        def _resolve_agent(doc_id, _account_id=None, _ttl=60, session_state=None):
+            return specialist
+
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "app.adk.agents.agent_factory.sub_agent_attacher."
+                    "list_account_agent_configs_cached",
+                    return_value=[custom_id],
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                    side_effect=_resolve_config,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                    side_effect=_resolve_agent,
+                )
+            )
+
+            root = _make_root()
+            attach_account_specialists(root, "acc1")
+
+        assert root.find_agent(custom_id) is specialist, (
+            f"Custom GA agent '{custom_id}' must be findable via root.find_agent"
+        )
+
+    def test_custom_ga_agent_not_attached_when_ken_e_sub_agent_false(
+        self,
+    ) -> None:
+        """A custom agent config with ``ken_e_sub_agent=False`` must NOT be
+        attached to ``root.sub_agents`` (delegation gate — AH-82).
+
+        This covers the scenario where a user creates a workflow-visible agent
+        (``visible_in_frontend=True``) that should not be chat-delegatable.
+        """
+        custom_id = "custom_workflow_only"
+        specialist = _make_specialist(custom_id)
+
+        config_record = MergedAgentConfig(
+            instruction="Workflow-only custom agent.",
+            model="gemini-2.5-flash",
+            description="Not delegatable from chat",
+            visible_in_frontend=True,
+            ken_e_sub_agent=False,
+            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        )
+
+        def _resolve_config(doc_id, _account_id=None, _ttl=60):
+            return config_record
+
+        def _resolve_agent(doc_id, _account_id=None, _ttl=60, session_state=None):
+            return specialist
+
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch(
+                    "app.adk.agents.agent_factory.sub_agent_attacher."
+                    "list_account_agent_configs_cached",
+                    return_value=[custom_id],
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                    side_effect=_resolve_config,
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                    side_effect=_resolve_agent,
+                )
+            )
+
+            root = _make_root()
+            attach_account_specialists(root, "acc1")
+
+        assert root.find_agent(custom_id) is None, (
+            "Agent with ken_e_sub_agent=False must not be attached to root.sub_agents"
+        )
