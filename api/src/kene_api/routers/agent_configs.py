@@ -364,6 +364,13 @@ def _build_redeploy_warnings(
 ) -> list[str]:
     """Surface "redeploy required" warnings for root-agent fields ADK bakes at deploy.
 
+    Removal of this function and ``AgentConfigUpdateResponse.warnings`` was
+    considered in AH-81 (2026-06-03) and declined per Option A — see
+    AH-PRD-09 §7 AC #24 (superseded). The field is load-bearing as the only
+    admin signal that root-agent edits to ``model`` / ``temperature`` /
+    ``max_output_tokens`` / ``thinking_budget`` silently no-op until the next
+    ``make backend`` run.
+
     Per AH-PRD-09 Phase 2 the per-turn resolver hot-reloads every specialist
     field within the 60 s TTL, so specialist edits never warn. The root agent
     (``ken_e_chatbot``) is still built once at deploy by ``build_hierarchy()``,

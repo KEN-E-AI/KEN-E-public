@@ -32,7 +32,7 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 
 **Phase 1 — Cache-backed instruction wiring (1 week; independent of Phase 0).** Extend `_make_factory_instruction_provider` in `builder.py:33` to read from `config_cache.get_cached_config(doc_id)` per turn. Apply to the root + every factory-built specialist. Decorate `config_cache.get_cached_config` with `@safe_weave_op(name="load_config_from_firestore")` so the MER-E eval contract returns. **Quick win that ships value before Phases 2+ land.**
 
-**Phase 2 — Single-dispatch root + specialist runtime (1.5–2 weeks).** New `app/adk/agents/agent_factory/specialist_runtime.py` (`resolve_config`, `resolve_agent`, `run`, `available_specialists_provider`). New `app/adk/agents/agent_factory/dispatch.py` (`delegate_to_specialist`). `build_hierarchy()` reduced to build the root only. Per-account overlay merge moved from deploy-time to runtime. Inner Runner wiring inside `delegate_to_specialist`. `_REDEPLOY_REQUIRED_FIELDS` shrinks to the empty set for specialists; `MergedAgentConfig.warnings` marked `deprecated=true`. **Chat + Billing parity tests are merge blockers** (see [RFC §4.9](../../../per-turn-dispatch-rfc.md#49-cross-component-contracts-preserved)).
+**Phase 2 — Single-dispatch root + specialist runtime (1.5–2 weeks).** New `app/adk/agents/agent_factory/specialist_runtime.py` (`resolve_config`, `resolve_agent`, `run`, `available_specialists_provider`). New `app/adk/agents/agent_factory/dispatch.py` (`delegate_to_specialist`). `build_hierarchy()` reduced to build the root only. Per-account overlay merge moved from deploy-time to runtime. Inner Runner wiring inside `delegate_to_specialist`. `_REDEPLOY_REQUIRED_FIELDS` shrinks to the empty set for specialists; `AgentConfigUpdateResponse.warnings` was marked vestigial in Phase 2 but became load-bearing in AH-60 Finding #1 — see AC #24. **Chat + Billing parity tests are merge blockers** (see [RFC §4.9](../../../per-turn-dispatch-rfc.md#49-cross-component-contracts-preserved)).
 
 **Phase 3 — `McpToolsetPool` + hybrid kinds (1.5–2 weeks).** New `app/adk/agents/agent_factory/mcp_pool.py` with kind-specific keying, LRU + idle-TTL eviction, `aclose()`-on-eviction, 60 s background sweep. Extend `build_toolset_for_doc` with a `kind` branch (`cloud_run` existing path now goes through the pool; `zapier` new path). Add `kind` field to `mcp_servers/{server_id}` schema with migration script defaulting existing docs to `cloud_run`. Port AH-PRD-06 PR-C's `default_global` function-tool injection into the runtime resolver. **1-hour sustained-load SSE-leak stress test is a merge blocker.**
 
@@ -219,7 +219,7 @@ Phase 1 (cache instruction) ──parallel──► (independent — ships value
 
 | Endpoint | Change |
 |---|---|
-| `PUT /api/v1/accounts/{account_id}/agent-configs/{config_id}` (router: `api/src/kene_api/routers/agent_configs.py`) | `_REDEPLOY_REQUIRED_FIELDS` shrinks from `{model, temperature, max_output_tokens}` to the empty set for specialists. `MergedAgentConfig.warnings: list[str]` becomes vestigial — kept for backwards compatibility with older clients but always returned empty. Marked `deprecated=true` in the OpenAPI schema in Phase 2; slated for removal one release after Phase 5 rollout. |
+| `PUT /api/v1/accounts/{account_id}/agent-configs/{config_id}` (router: `api/src/kene_api/routers/agent_configs.py`) | `_REDEPLOY_REQUIRED_FIELDS` shrinks from `{model, temperature, max_output_tokens}` to the empty set for specialists. `AgentConfigUpdateResponse.warnings: list[str]` is empty for specialist edits and populated for root-agent `model` / `temperature` / `max_output_tokens` / `thinking_budget` edits. Reverted by AH-60 Finding #1: the field is retained as the admin-visible redeploy signal for root-agent edits (see AC #24). |
 | `POST /api/v1/accounts/{account_id}/agent-configs/` | Same — no "redeploy required" warnings on creation. |
 
 ### New endpoints (Phase 4 — deferred to R2)
@@ -248,7 +248,7 @@ ACs are organized by phase. Each phase merges only when its criteria are met.
 8. p95 dispatch latency on a warm cache ≤ 1.2× the current p95.
 9. **Chat per-turn token accumulator parity test passes** — token aggregates under inner-Runner dispatch match the deploy-time baseline (CH-PRD-01 contract preserved; see [RFC §4.9](../../../per-turn-dispatch-rfc.md#49-cross-component-contracts-preserved)). **Merge blocker.**
 10. **Billing token meter parity test passes** — per-org billing totals under inner-Runner dispatch match the deploy-time baseline (BL-PRD-02 contract preserved; same test fixture as Chat). **Merge blocker.**
-11. `MergedAgentConfig.warnings` marked `deprecated=true` in the OpenAPI schema; always returned empty.
+11. `AgentConfigUpdateResponse.warnings` is empty for specialist edits and populated for root-agent `model` / `temperature` / `max_output_tokens` / `thinking_budget` edits (AH-60 Finding #1 supersession; see AC #24).
 
 ### Phase 3 — `McpToolsetPool` + hybrid kinds (R1; `cloud_run` only — Zapier branch shipped behind a feature flag)
 
@@ -270,7 +270,7 @@ ACs are organized by phase. Each phase merges only when its criteria are met.
 21. **MER-E eval suite passes against the new trace shape** — every prior eval set still scores correctly under `delegate_to_specialist` span structure. **Cutover gate.**
 22. **SK-PRD-02 `SandboxPool` has shipped** — verified by `test_sandbox_pool_runtime_rebuild.py` (AH-66) that a sandbox-attached specialist does not respawn its sandbox across runtime rebuilds.
 23. Legacy `generate_dispatch_functions` deleted (completed in AH-66; see DESIGN-REVIEW-LOG Review 39); remaining unused paths deleted in AH-68.
-24. `MergedAgentConfig.warnings` field scheduled for removal one release after this rollout (not blocking Phase 5).
+24. **[Superseded by AH-60 Finding #1 — resolved in AH-81 (2026-06-03).]** The original plan was to remove `AgentConfigUpdateResponse.warnings` one release after rollout, once the field became vestigial. During AH-60 Phase 2 review (commit `e2614363`), the field was found to be load-bearing: it is the **only** admin-visible signal that edits to the root agent's `model` / `temperature` / `max_output_tokens` / `thinking_budget` silently no-op until `make backend` runs. AH-PRD-09 §2 explicitly keeps the root agent deploy-time-bound (only specialists hot-reload via `specialist_runtime`), so the warning is necessary. The field and `_build_redeploy_warnings` in `api/src/kene_api/routers/agent_configs.py` are **NOT** scheduled for removal. They become removable only if a future PRD makes the root agent hot-reloadable — at that point, the comment at `agent_configs.py:353-361` names the removal path. See also AC #11 and §6 above.
 
 ## 8. Test plan
 

@@ -440,7 +440,7 @@ Six phases. Phases 0 and 1 are gating: if Phase 0 fails to validate Zapier MCP, 
 - p95 dispatch latency on a warm cache ≤ 1.2× the current p95 (acceptable overhead).
 - **Chat per-turn token accumulator parity test passes** — token aggregates under inner-Runner dispatch match the deploy-time baseline (CH-PRD-01 contract preserved; see §4.9). Merge blocker.
 - **Billing token meter parity test passes** — per-org billing totals under inner-Runner dispatch match the deploy-time baseline (BL-PRD-02 contract preserved; same test fixture as Chat). Merge blocker.
-- **`MergedAgentConfig.warnings`** marked `deprecated=true` in the OpenAPI schema; always returned empty.
+- **`AgentConfigUpdateResponse.warnings`** is empty for specialist edits and populated for root-agent `model` / `temperature` / `max_output_tokens` / `thinking_budget` edits. (Note: field was initially described as vestigial; AH-60 Finding #1 reversed that — the field is load-bearing and retained. See AH-PRD-09 §7 AC #24.)
 
 **Owner:** 1–2 engineers.
 **Risk:** Medium. ADK-internal — `Runner` semantics, callback wiring, and session-state flow need care. Cache invalidation correctness is the subtle bit.
@@ -516,7 +516,7 @@ Six phases. Phases 0 and 1 are gating: if Phase 0 fails to validate Zapier MCP, 
 **Exit criteria:**
 - All documentation reflects the new architecture; `[PLANNED]` tags collapsed where work shipped.
 - **MER-E eval suite passes against the new trace shape** — every prior eval set still scores correctly under `delegate_to_specialist` span structure. Verified in dev + staging before default-on; this is the **cutover gate** (see §9.1 MER-E coordination plan).
-- **`MergedAgentConfig.warnings`** field scheduled for removal from the API contract one release after this rollout (does not block Phase 5).
+- **`AgentConfigUpdateResponse.warnings`** — removal was considered in AH-81 (2026-06-03) and declined per Option A: the field is retained as the load-bearing admin signal for root-agent redeploy-required edits. See AH-PRD-09 §7 AC #24 (superseded).
 
 **Owner:** 1 engineer (AH team) + writer review.
 **Risk:** Low.
