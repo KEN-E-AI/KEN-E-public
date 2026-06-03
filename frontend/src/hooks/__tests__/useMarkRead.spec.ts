@@ -11,6 +11,7 @@ import type { ListChatSessionsResponse } from "@/lib/chatApi";
 vi.mock("@/lib/chatApi", () => ({
   markRead: vi.fn(),
   toChatSessionId: (v: string) => v,
+  isPendingSessionId: (id: string) => id.startsWith("pending_"),
 }));
 
 vi.mock("@/hooks/useChatSessions", () => ({
@@ -55,6 +56,7 @@ vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
 
 const SESSION_A = "sess_a";
 const SESSION_B = "sess_b";
+const PENDING_SESSION = "pending_161bca48-5b10-4fd5-a286-c34b34c568ea";
 const LAST_VIEWED_AT = "2026-01-01T12:00:00Z";
 
 function makeInfiniteData(
@@ -141,6 +143,66 @@ describe("useMarkRead", () => {
     );
     expect(MockIntersectionObserver).not.toHaveBeenCalled();
     expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+
+  // ── AC-1b: no-op for pending_ placeholder session ids ─────────────────────
+  it("no-ops and does not construct IntersectionObserver when sessionId is a pending_ placeholder", () => {
+    const el = document.createElement("div");
+    const { wrapper } = createWrapper();
+    renderHook(
+      () => {
+        const ref = useTestRef(el);
+        useMarkRead({
+          sessionId: PENDING_SESSION,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
+      },
+      { wrapper },
+    );
+    expect(MockIntersectionObserver).not.toHaveBeenCalled();
+    expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+
+  // ── AC-1c: fires once the pending id resolves to a real session id ────────
+  it("fires markRead after a pending_ id resolves to a real session id", async () => {
+    vi.useFakeTimers();
+    const el = document.createElement("div");
+    const { wrapper } = createWrapper();
+    let sessionId = PENDING_SESSION;
+    const { rerender } = renderHook(
+      () => {
+        const ref = useTestRef(el);
+        useMarkRead({
+          sessionId,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
+      },
+      { wrapper },
+    );
+
+    // While pending: visible for 500ms, but the guard suppresses the call.
+    act(() => {
+      triggerIntersect(el, true);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(mockMarkRead).not.toHaveBeenCalled();
+
+    // Pending id resolves to the real session id → effect re-runs and arms.
+    sessionId = SESSION_A;
+    rerender();
+    act(() => {
+      triggerIntersect(el, true);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(mockMarkRead).toHaveBeenCalledTimes(1);
+    expect(mockMarkRead).toHaveBeenCalledWith(SESSION_A);
   });
 
   // ── AC-2: no-op when ref.current is null ─────────────────────────────────

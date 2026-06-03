@@ -30,6 +30,17 @@ export const OPTIMISTIC_SESSION_ID_PREFIX = "optimistic:" as const;
 export const isOptimisticSessionId = (id: string): boolean =>
   id.startsWith(OPTIMISTIC_SESSION_ID_PREFIX);
 
+// Server-issued placeholder id returned by POST /conversations while the real
+// ADK session is created in the background (~3.8s). A pending_ id is valid only
+// for the single /completions call that resolves it to the real id; it is never
+// persisted to the chat_sessions side-table, so any other endpoint keyed on it
+// (mark-read, etc.) 404s until resolution. Callers must skip those requests for
+// pending ids. See chat.py resolve_pending_session + useActiveChatSession.
+export const PENDING_SESSION_ID_PREFIX = "pending_" as const;
+
+export const isPendingSessionId = (id: string): boolean =>
+  id.startsWith(PENDING_SESSION_ID_PREFIX);
+
 export type ChatCategoryId = Brand<string, "ChatCategoryId">;
 
 export const isChatCategoryId = (value: string): value is ChatCategoryId =>
@@ -246,10 +257,16 @@ export async function listChatConversationsLegacy(): Promise<ConversationListRes
 
 /**
  * POST /api/v1/chat/conversations/{session_id}/mark-read
+ *
+ * No-ops (returns null) for pending_ placeholder ids: they are not persisted to
+ * the side-table, so the request would 404. The hook-level guard normally skips
+ * these before we get here; this is belt-and-braces. Returning null lets callers
+ * distinguish "skipped" from a real { last_viewed_at } response.
  */
 export async function markRead(
   sessionId: ChatSessionId,
-): Promise<{ last_viewed_at: string }> {
+): Promise<{ last_viewed_at: string } | null> {
+  if (isPendingSessionId(sessionId)) return null;
   const { data } = await api.post<{ last_viewed_at: string }>(
     `${CHAT_BASE}/conversations/${encodeURIComponent(sessionId)}/mark-read`,
   );

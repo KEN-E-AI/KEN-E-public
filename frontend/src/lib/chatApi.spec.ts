@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   isChatSessionId,
+  isPendingSessionId,
   toChatSessionId,
   tryChatSessionId,
   isChatCategoryId,
@@ -97,6 +98,21 @@ describe("tryChatSessionId", () => {
 
   it("returns undefined for empty string", () => {
     expect(tryChatSessionId("")).toBeUndefined();
+  });
+});
+
+// ─── isPendingSessionId ───────────────────────────────────────────────────────
+
+describe("isPendingSessionId", () => {
+  it("returns true for server-issued pending_ placeholder ids", () => {
+    expect(
+      isPendingSessionId("pending_161bca48-5b10-4fd5-a286-c34b34c568ea"),
+    ).toBe(true);
+  });
+
+  it("returns false for real persisted session ids", () => {
+    expect(isPendingSessionId("session_abc")).toBe(false);
+    expect(isPendingSessionId("")).toBe(false);
   });
 });
 
@@ -313,6 +329,14 @@ describe("markRead", () => {
       "/api/v1/chat/conversations/session_abc/mark-read",
     );
     expect(result).toEqual(fixture);
+  });
+
+  it("no-ops (returns null, no request) for pending_ placeholder ids", async () => {
+    const result = await markRead(
+      mkSessionId("pending_161bca48-5b10-4fd5-a286-c34b34c568ea"),
+    );
+    expect(result).toBeNull();
+    expect(mockApi.post).not.toHaveBeenCalled();
   });
 });
 

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
-import { markRead, toChatSessionId } from "@/lib/chatApi";
+import { isPendingSessionId, markRead, toChatSessionId } from "@/lib/chatApi";
 import { CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
 import type {
   ListChatSessionsResponse,
@@ -29,7 +29,10 @@ export function useMarkRead({
 
   useEffect(() => {
     const el = latestMessageRef.current;
-    if (!sessionId || !el) return;
+    // Skip pending_ placeholder ids: they aren't persisted server-side, so
+    // mark-read would 404. The effect re-fires once the id resolves to the real
+    // session id (sessionId is a dependency), at which point mark-read works.
+    if (!sessionId || isPendingSessionId(sessionId) || !el) return;
 
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let isCancelled = false;
@@ -42,7 +45,7 @@ export function useMarkRead({
 
       try {
         const result = await markRead(toChatSessionId(sessionId));
-        if (isCancelled) return;
+        if (isCancelled || !result) return;
         // Stamp only on success so transient errors don't consume the 5s window
         lastFireRef.current.set(sessionId, Date.now());
         const newLastViewedAt = result.last_viewed_at;
