@@ -364,10 +364,7 @@ export function ChatInterface({
           {messages.map((message, index) => (
             <div key={message.id} className="flex justify-start">
               <div
-                className={cn(
-                  compact ? "max-w-full" : "max-w-[80%]",
-                  "space-y-2",
-                )}
+                className={compact ? "max-w-full" : "max-w-[80%]"}
                 ref={
                   index === lastAssistantIndex ? latestAssistantRef : undefined
                 }
@@ -377,51 +374,65 @@ export function ChatInterface({
                     : undefined
                 }
               >
-                {message.reasoning && (
-                  <ThinkingBlock
-                    isThinking={false}
-                    thoughts={message.reasoning.thoughts}
-                    durationSeconds={message.reasoning.durationSeconds}
-                  />
-                )}
-                {message.artifacts?.map((a) => (
-                  <ArtifactBlock
-                    key={a.filename}
-                    filename={a.filename}
-                    mime_type={a.mime_type}
-                  />
-                ))}
-                <div
-                  className={cn(
-                    "rounded-[var(--radius-lg)] px-5 py-4 transition-all",
-                    message.role === "user"
-                      ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
-                      : "bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)]",
-                  )}
-                  style={{
-                    transitionTimingFunction: "var(--ease-default)",
-                    transitionDuration: "var(--duration-fast)",
-                  }}
-                >
-                  <p
-                    className={cn(
-                      textSizeClass,
-                      "whitespace-pre-wrap leading-relaxed",
-                    )}
-                  >
-                    {message.content}
-                  </p>
-                  {message.stopped && (
-                    <button
-                      onClick={() => handleRetry(message.id)}
-                      disabled={isStreaming}
-                      className="flex items-center gap-1.5 px-3 py-1.5 mt-1 rounded-[var(--radius-md)] text-[var(--text-caption)] text-[var(--color-text-secondary)] hover:text-[var(--color-violet-500)] hover:bg-[var(--color-violet-500)]/10 border border-[var(--color-border-default)] hover:border-[var(--color-violet-500)]/40 transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
+                {message.role === "user" ? (
+                  // User prompt: the question carries the visual weight, as a
+                  // neutral elevated card (border only in light mode).
+                  <div className="rounded-[var(--radius-lg)] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] dark:border-transparent px-5 py-4">
+                    <p
+                      className={cn(
+                        textSizeClass,
+                        "whitespace-pre-wrap leading-relaxed",
+                      )}
                     >
-                      <RotateCcw className="size-3" />
-                      <span>Retry</span>
-                    </button>
-                  )}
-                </div>
+                      {message.content}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Reasoning, demoted to an inline line, grouped with the response it produced */}
+                    {message.reasoning && (
+                      <div className="mb-2">
+                        <ThinkingBlock
+                          isThinking={false}
+                          thoughts={message.reasoning.thoughts}
+                          durationSeconds={message.reasoning.durationSeconds}
+                        />
+                      </div>
+                    )}
+                    {/* Assistant response: plain, document-like text — no card */}
+                    <div className="px-1 py-1">
+                      <p
+                        className={cn(
+                          textSizeClass,
+                          "whitespace-pre-wrap leading-relaxed",
+                        )}
+                      >
+                        {message.content}
+                      </p>
+                      {message.artifacts && message.artifacts.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {message.artifacts.map((a) => (
+                            <ArtifactBlock
+                              key={a.filename}
+                              filename={a.filename}
+                              mime_type={a.mime_type}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {message.stopped && (
+                        <button
+                          onClick={() => handleRetry(message.id)}
+                          disabled={isStreaming}
+                          className="flex items-center gap-1.5 px-3 py-1.5 mt-1 rounded-[var(--radius-md)] text-[var(--text-caption)] text-[var(--color-text-secondary)] hover:text-[var(--color-violet-500)] hover:bg-[var(--color-violet-500)]/10 border border-[var(--color-border-default)] hover:border-[var(--color-violet-500)]/40 transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <RotateCcw className="size-3" />
+                          <span>Retry</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ))}

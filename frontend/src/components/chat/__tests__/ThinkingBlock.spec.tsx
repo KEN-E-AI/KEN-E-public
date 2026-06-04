@@ -24,23 +24,23 @@ describe("ThinkingBlock", () => {
     expect(screen.getByText("Reasoning...")).toBeInTheDocument();
   });
 
-  test('renders singular "Thought for 1 second" when durationSeconds=1', () => {
+  test('renders the demoted duration label "1s" when durationSeconds=1', () => {
     render(
       <ThinkingBlock isThinking={false} thoughts={[]} durationSeconds={1} />,
     );
-    expect(screen.getByText("Thought for 1 second")).toBeInTheDocument();
+    expect(screen.getByText("1s")).toBeInTheDocument();
   });
 
-  test('renders plural "Thought for N seconds" when durationSeconds !== 1', () => {
+  test('renders the demoted duration label "5s" when durationSeconds=5', () => {
     render(
       <ThinkingBlock isThinking={false} thoughts={[]} durationSeconds={5} />,
     );
-    expect(screen.getByText("Thought for 5 seconds")).toBeInTheDocument();
+    expect(screen.getByText("5s")).toBeInTheDocument();
   });
 
-  test('renders "Thought for 0 seconds" when durationSeconds is omitted', () => {
+  test('renders "0s" when durationSeconds is omitted', () => {
     render(<ThinkingBlock isThinking={false} thoughts={[]} />);
-    expect(screen.getByText("Thought for 0 seconds")).toBeInTheDocument();
+    expect(screen.getByText("0s")).toBeInTheDocument();
   });
 
   test("stop button is not rendered when isThinking=false", () => {

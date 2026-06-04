@@ -14,6 +14,10 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
   const [isOpen, setIsOpen] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  // Promote to the full bordered "card" treatment only while actively thinking.
+  // Once reasoning ends, the block demotes to an inline metadata line.
+  const isPromoted = isThinking;
+
   // Auto-expand when thinking starts, auto-collapse when it ends
   useEffect(() => {
     if (isThinking) {
@@ -32,14 +36,12 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
     }
   }, [thoughts, isOpen]);
 
-  const summaryText = isThinking
-    ? 'Reasoning...'
-    : `Thought for ${durationSeconds ?? 0} second${(durationSeconds ?? 0) !== 1 ? 's' : ''}`;
+  const summaryText = isThinking ? 'Reasoning...' : `${durationSeconds ?? 0}s`;
 
   return (
     <div className="relative rounded-[var(--radius-lg)] overflow-hidden">
       {/* Animated gradient border while thinking */}
-      {isThinking && (
+      {isPromoted && (
         <motion.div
           className="absolute inset-0 rounded-[var(--radius-lg)]"
           style={{
@@ -62,9 +64,8 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
 
       <div
         className={cn(
-          'relative rounded-[var(--radius-lg)] bg-[var(--color-bg-elevated)]',
-          !isThinking && 'border-2 border-[var(--color-border-default)]',
-          isThinking && 'm-[2px]'
+          'relative',
+          isPromoted && 'rounded-[var(--radius-lg)] bg-[var(--color-bg-elevated)] m-[2px]'
         )}
       >
         {/* Trigger / Summary Bar */}
@@ -78,17 +79,23 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
               setIsOpen(prev => !prev);
             }
           }}
-          className="w-full flex items-center gap-2 px-4 py-3 text-left group transition-colors hover:bg-[var(--color-accent)] rounded-[var(--radius-lg)] cursor-pointer"
+          className={cn(
+            'w-full flex items-center text-left group transition-colors hover:bg-[var(--color-accent)] cursor-pointer',
+            isPromoted
+              ? 'gap-2 px-4 py-3 rounded-[var(--radius-lg)]'
+              : 'gap-1.5 px-1 py-0.5 rounded-[var(--radius-md)]'
+          )}
         >
           <Brain
             className={cn(
-              'size-4 shrink-0 transition-colors',
+              'shrink-0 transition-colors',
+              isPromoted ? 'size-4' : 'size-3',
               isThinking ? 'text-[var(--color-violet-500)]' : 'text-[var(--color-text-tertiary)]'
             )}
           />
           <span
             className={cn(
-              'flex-1 text-[var(--text-body-sm)]',
+              isPromoted ? 'flex-1 text-[var(--text-body-sm)]' : 'text-[11px]',
               isThinking ? 'text-[var(--color-violet-500)] italic' : 'text-[var(--color-text-tertiary)]'
             )}
           >
@@ -127,7 +134,8 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
 
           <ChevronDown
             className={cn(
-              'size-4 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200',
+              'shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200',
+              isPromoted ? 'size-4' : 'size-3',
               isOpen && 'rotate-180'
             )}
           />
@@ -145,16 +153,24 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
             >
               <div
                 ref={contentRef}
-                className="px-4 pb-3 max-h-40 overflow-y-auto"
+                className={cn(
+                  'max-h-40 overflow-y-auto',
+                  isPromoted ? 'px-4 pb-3' : 'px-1 pb-1 pt-1'
+                )}
               >
-                <div className="border-t border-[var(--color-border-default)] pt-3 space-y-2">
+                <div
+                  className={cn(
+                    'space-y-2',
+                    isPromoted && 'border-t border-[var(--color-border-default)] pt-3'
+                  )}
+                >
                   {thoughts.map((thought, index) => (
                     <motion.p
                       key={index}
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.05 }}
-                      className="text-[var(--text-caption)] text-[var(--color-text-secondary)] leading-relaxed"
+                      className="text-[11px] text-[var(--color-text-tertiary)] leading-relaxed"
                     >
                       {thought}
                     </motion.p>
