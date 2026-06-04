@@ -12,10 +12,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Step concurrency (DAG): Cloud Build runs steps sequentially by default, which
+# left this build single-threaded on an 8-vCPU machine (~10 min wall-clock).
+# The steps below run as a parallel DAG via `waitFor`:
+#
+#   * `install-dependencies` is the SOLE builder of the root `/workspace/.venv`.
+#     Every root-venv consumer waits on it and then reads the venv read-only with
+#     `uv run --no-sync` — `--no-sync` is REQUIRED so concurrent steps never race
+#     to write the shared venv (plain `uv run` would re-sync on each invocation).
+#   * The two api steps each spin up their own Firestore emulator on port 8090 and
+#     sync `api/.venv`, so they cannot run concurrently with each other — they are
+#     chained (api-unit waits on api-integration). The pair runs in parallel with
+#     everything else.
+#   * Frontend + markdown steps are independent (`waitFor: ['-']`). a11y waits on
+#     BOTH frontend steps that run `npm ci` (typecheck + e2e) so its own `npm ci`
+#     never overlaps either into the shared `frontend/node_modules` — e2e's
+#     path-guard `exit 0` still satisfies the wait on non-frontend PRs, and the
+#     typecheck dep closes the window where a fast e2e exit would otherwise let
+#     a11y start while typecheck's `npm ci` is still in flight.
+#     typecheck and e2e do still run `npm ci` concurrently with each other into
+#     that directory (pre-existing). A single shared install step would remove
+#     that overlap too, but e2e runs on the Playwright image while typecheck/a11y
+#     run on node:20-slim, so one shared node_modules would span two images —
+#     left unchanged here rather than altered without a way to validate that
+#     cross-image.
 steps:
-  # Install uv package manager and sync dependencies
+  # Install uv package manager and sync dependencies. Sole builder of the root
+  # /workspace/.venv (persisted across steps); all root-venv steps waitFor this.
   - name: "python:3.11-slim"
     id: install-dependencies
+    waitFor: ['-']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -27,23 +53,25 @@ steps:
   # Run unit tests using pytest
   - name: "python:3.11-slim"
     id: unit-tests
+    waitFor: ['install-dependencies']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
-        uv run pytest tests/unit
+        uv run --no-sync pytest tests/unit
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
   # Run root integration tests (if any remain)
   - name: "python:3.11-slim"
     id: integration-tests
+    waitFor: ['install-dependencies']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         if [ -d "tests/integration" ] && [ "$(ls -A tests/integration)" ]; then
-          uv run pytest tests/integration
+          uv run --no-sync pytest tests/integration
         else
           echo "No integration tests in root project"
         fi
@@ -64,6 +92,7 @@ steps:
   # not survive.
   - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
     id: api-integration-tests
+    waitFor: ['-']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -100,6 +129,7 @@ steps:
   # flaky file; its triage is a DM-90 follow-up.
   - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
     id: api-unit-tests
+    waitFor: ['api-integration-tests']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -139,13 +169,12 @@ steps:
   # See AH-23 for the full gate rationale.
   - name: "python:3.11-slim"
     id: app-adk-tests
+    waitFor: ['install-dependencies']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
-        pip install uv --user
-        uv sync --frozen
-        uv run pytest \
+        uv run --no-sync pytest \
           app/adk/agents/agent_factory/tests/ \
           app/adk/agents/utils/ \
           app/adk/agents/models/ \
@@ -171,13 +200,12 @@ steps:
   # behavioural value.
   - name: "python:3.11-slim"
     id: lint
+    waitFor: ['install-dependencies']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
-        pip install uv --user
-        uv sync --frozen
-        uv run ruff check \
+        uv run --no-sync ruff check \
           app/adk/agents/agent_factory/ \
           app/adk/mcp_config/ \
           app/adk/tracking/ \
@@ -185,8 +213,8 @@ steps:
           app/adk/tools/ \
           app/adk/deploy_packaging.py \
           app/adk/deploy_ken_e.py
-        uv run codespell --toml pyproject.toml .
-        uv run mypy \
+        uv run --no-sync codespell --toml pyproject.toml .
+        uv run --no-sync mypy \
           app/adk/agents/agent_factory/ \
           app/adk/mcp_config/ \
           app/adk/tracking/ \
@@ -204,13 +232,12 @@ steps:
   # See AH-23 and deployment/ci/scripts/verify_deploy_tree.py for details.
   - name: "python:3.11-slim"
     id: deploy-tree-smoke
+    waitFor: ['install-dependencies']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
-        pip install uv --user
-        uv sync --frozen
-        uv run python deployment/ci/scripts/verify_deploy_tree.py
+        uv run --no-sync python deployment/ci/scripts/verify_deploy_tree.py
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
@@ -220,12 +247,13 @@ steps:
   # See docs/trace-structure-spec.md §11 and story 1.1.2-1.
   - name: "python:3.11-slim"
     id: trace-compliance-check
+    waitFor: ['install-dependencies']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
-        uv run pytest app/adk/tracking/tests/test_compliance.py -v
-        PYTHONPATH=. uv run python -m app.adk.tracking.compliance_check \
+        uv run --no-sync pytest app/adk/tracking/tests/test_compliance.py -v
+        PYTHONPATH=. uv run --no-sync python -m app.adk.tracking.compliance_check \
           --fixtures app/adk/tracking/tests/fixtures/
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
@@ -257,22 +285,6 @@ steps:
         cd frontend
         npm ci --prefer-offline
         npm run typecheck
-
-  # Run frontend accessibility test suite (axe-core, WCAG contrast, focus-ring audit,
-  # keyboard navigation, and reduced-motion smoke tests).
-  # Glob patterns let new a11y test files (src/test/*.test.{ts,tsx}) be picked up
-  # automatically without editing this file.
-  # See docs/design/components/ui/accessibility-baseline.md for the full gate description.
-  - name: "node:20-slim"
-    id: frontend-a11y-tests
-    entrypoint: /bin/bash
-    args:
-      - "-c"
-      - |
-        set -euo pipefail
-        cd frontend
-        npm ci --prefer-offline
-        npx vitest --run src/test/*.test.ts src/test/*.test.tsx
 
   # Run Playwright E2E tests for the feature-flag admin-to-hook loop (FF-PRD-03 §5.4).
   # Starts Firestore + Auth emulators, seeds test users, runs the FastAPI backend at TTL=1s,
@@ -359,6 +371,27 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'
 
+  # Run frontend accessibility test suite (axe-core, WCAG contrast, focus-ring audit,
+  # keyboard navigation, and reduced-motion smoke tests).
+  # Glob patterns let new a11y test files (src/test/*.test.{ts,tsx}) be picked up
+  # automatically without editing this file.
+  # Declared after the other frontend steps so its `waitFor` can reference them —
+  # Cloud Build only permits waitFor on steps defined earlier in the list. a11y
+  # waits on both frontend `npm ci` writers (typecheck + e2e) so its own `npm ci`
+  # never overlaps either into the shared node_modules.
+  # See docs/design/components/ui/accessibility-baseline.md for the full gate description.
+  - name: "node:20-slim"
+    id: frontend-a11y-tests
+    waitFor: ['frontend-e2e-tests', 'frontend-typecheck']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        cd frontend
+        npm ci --prefer-offline
+        npx vitest --run src/test/*.test.ts src/test/*.test.tsx
+
   # Validate markdown link integrity using lychee (offline mode — file:// links only).
   # Scope: docs/**/*.md and root-level *.md per lychee.toml. No network calls.
   # See docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md (CH-3)
@@ -370,6 +403,7 @@ steps:
   #     glibc-linked `:latest` image (see PR #271 build 9c746656). Bump deliberately.
   - name: "lycheeverse/lychee:0.24.1-alpine"
     id: markdown-link-check
+    waitFor: ['-']
     entrypoint: lychee
     args:
       - "--config"
