@@ -46,6 +46,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         pip install uv --user && uv sync --frozen
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
@@ -58,6 +59,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run --no-sync pytest tests/unit
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
@@ -70,6 +72,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         if [ -d "tests/integration" ] && [ "$(ls -A tests/integration)" ]; then
           uv run --no-sync pytest tests/integration
         else
@@ -174,6 +177,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run --no-sync pytest \
           app/adk/agents/agent_factory/tests/ \
           app/adk/agents/utils/ \
@@ -205,6 +209,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run --no-sync ruff check \
           app/adk/agents/agent_factory/ \
           app/adk/mcp_config/ \
@@ -237,6 +242,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run --no-sync python deployment/ci/scripts/verify_deploy_tree.py
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
@@ -252,6 +258,7 @@ steps:
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run --no-sync pytest app/adk/tracking/tests/test_compliance.py -v
         PYTHONPATH=. uv run --no-sync python -m app.adk.tracking.compliance_check \
           --fixtures app/adk/tracking/tests/fixtures/

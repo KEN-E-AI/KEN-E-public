@@ -3360,7 +3360,6 @@ class TestGaOauthCallbackWiring:
     def test_ga_oauth_server_attaches_callback(self) -> None:
         """AC-1: specialist with a ga_oauth MCP server gets the callback."""
         import app.adk.agents.agent_factory.specialist_runtime as sr
-
         from app.adk.security.hooks import ga_oauth_after_tool_callback
 
         config = _make_specialist_config(mcp_servers=["ga_mcp"])
@@ -3392,7 +3391,6 @@ class TestGaOauthCallbackWiring:
     def test_non_ga_oauth_server_does_not_attach_callback(self) -> None:
         """AC-2: specialist with no ga_oauth server must not get the callback."""
         import app.adk.agents.agent_factory.specialist_runtime as sr
-
         from app.adk.security.hooks import ga_oauth_after_tool_callback
 
         config = _make_specialist_config(mcp_servers=["public_mcp"])
@@ -3424,7 +3422,6 @@ class TestGaOauthCallbackWiring:
     def test_no_mcp_servers_does_not_attach_callback(self) -> None:
         """AC-2: specialist with no MCP servers must not get the callback."""
         import app.adk.agents.agent_factory.specialist_runtime as sr
-
         from app.adk.security.hooks import ga_oauth_after_tool_callback
 
         config = _make_specialist_config(mcp_servers=[])
@@ -3452,7 +3449,6 @@ class TestGaOauthCallbackWiring:
     def test_two_ga_oauth_servers_produce_one_callback_entry(self) -> None:
         """AC-4: two MCP servers both with ga_oauth produce exactly one callback entry."""
         import app.adk.agents.agent_factory.specialist_runtime as sr
-
         from app.adk.security.hooks import ga_oauth_after_tool_callback
 
         config = _make_specialist_config(mcp_servers=["ga_mcp_1", "ga_mcp_2"])
@@ -3488,7 +3484,6 @@ class TestGaOauthCallbackWiring:
     def test_auth_type_read_failure_is_nonfatal(self) -> None:
         """AC: Firestore read failure during auth_type check is non-fatal; specialist still builds."""
         import app.adk.agents.agent_factory.specialist_runtime as sr
-
         from app.adk.security.hooks import ga_oauth_after_tool_callback
 
         config = _make_specialist_config(mcp_servers=["ga_mcp"])

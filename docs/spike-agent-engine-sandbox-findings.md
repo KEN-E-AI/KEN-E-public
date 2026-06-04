@@ -1382,7 +1382,7 @@ from each finding.
   superseded by this spike's findings: set `_MAX_ENTRIES = 8` (from Q2 billing
   reconciliation + Q4 resource limits) and `_IDLE_TTL_SECONDS` to a value in `[15, 300]`
   (floor from Q2 p50; ceiling from Q4 empirical cap). Update the §4.6 pseudocode before
-  implementation begins so implementors do not use the stale defaults.
+  implementation begins so implementers do not use the stale defaults.
 
 - **Document default-deny egress in `_build_code_executor` docstring and `SandboxPool._construct`.**
   Add a pointer to Q1's "Implication for Skills" section (lines 320–342). Do **not** add

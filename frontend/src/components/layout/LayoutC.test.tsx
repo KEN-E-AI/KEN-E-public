@@ -659,7 +659,7 @@ describe("LayoutC — cross-surface widget session wiring (CH-61)", () => {
     });
     // No session in storage before render.
     const { default: userEvent } = await import("@testing-library/user-event");
-    const ue = userEvent.setup();
+    const user = userEvent.setup();
     renderLayoutC({
       initialPath: "/performance",
       authOverrides: {
@@ -679,7 +679,7 @@ describe("LayoutC — cross-surface widget session wiring (CH-61)", () => {
     // Open the widget — this is the trigger that must cause widgetSessionId to
     // re-read storage (via miniChatOpen entering the memo deps).
     const trigger = screen.getByRole("button", { name: /KEN-E/i });
-    await ue.click(trigger);
+    await user.click(trigger);
 
     const chatEl = await screen.findByTestId("chat-interface");
     expect(chatEl).toHaveAttribute("data-session-id", "post_mount_session");

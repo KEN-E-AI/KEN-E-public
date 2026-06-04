@@ -92,11 +92,13 @@ exclude = [".venv"]
 ignore-words-list = "rouge,nd,vew,bu,trough,ist,afterall,pre-empt,datea,preferr,ment,mis,overrideable,noone,coo,devlop,deques,hel,couldn,invokable,re-use"
 
 # Skip generated lockfiles, virtual environments, vendored npm packages,
-# Jupyter checkpoints, the locust performance-test environment (third-party
-# artifacts with identifiers that look like typos), and pyproject.toml itself
-# (the ignore-words-list value is scanned before the ignore list is applied
-# to this file).
-skip = "./locust_env/*,uv.lock,.venv,**/node_modules,**/*.ipynb,./docs/figma-export/package-lock.json,./frontend/package-lock.json,./pyproject.toml"
+# the frontend production build output (minified bundles, gitignored — absent
+# in CI, but skipped so local runs match CI and a stray committed dist/ can't
+# break the gate), Jupyter checkpoints, the locust performance-test environment
+# (third-party artifacts with identifiers that look like typos), and
+# pyproject.toml itself (the ignore-words-list value is scanned before the
+# ignore list is applied to this file).
+skip = "./locust_env/*,uv.lock,.venv,**/node_modules,./frontend/dist,**/*.ipynb,./docs/figma-export/package-lock.json,./frontend/package-lock.json,./pyproject.toml"
 
 [build-system]
 requires = ["hatchling"]
