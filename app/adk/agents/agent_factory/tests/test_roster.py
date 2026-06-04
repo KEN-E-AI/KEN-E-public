@@ -121,12 +121,14 @@ class TestCountSpecialistToolRoster:
         assert result == 5
 
     def test_eight_registry_entries_plus_22_function_tools_returns_30(self) -> None:
-        registry = _registry_for(("google_analytics_mcp", 8))
+        # Neutral server id: this test exercises the count arithmetic at the cap
+        # (8 mcp + 22 function = 30), not any real server's catalogue size.
+        registry = _registry_for(("example_mcp", 8))
         function_tools = [MagicMock() for _ in range(22)]
 
         result = count_specialist_tool_roster(
-            "analytics_specialist",
-            mcp_server_ids=["google_analytics_mcp"],
+            "capacity_specialist",
+            mcp_server_ids=["example_mcp"],
             function_tools=function_tools,
             registry=registry,
         )

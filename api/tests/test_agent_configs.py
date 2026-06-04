@@ -487,12 +487,12 @@ class TestMergeFromDataToolIds:
             "model": "gemini-2.5-pro",
             "tool_ids": ["function.create_visualization"],
         }
-        overlay_data = {"tool_ids": ["google_analytics_mcp.list_ga_accounts"]}
+        overlay_data = {"tool_ids": ["google_analytics_mcp.run_report_mt"]}
 
         merged = _merge_from_data("agent_x", global_data, overlay_data)
 
         assert merged is not None
-        assert merged.tool_ids == ["google_analytics_mcp.list_ga_accounts"]
+        assert merged.tool_ids == ["google_analytics_mcp.run_report_mt"]
 
     def test_absent_overlay_field_inherits_global(self) -> None:
         from src.kene_api.routers.agent_configs import _merge_from_data

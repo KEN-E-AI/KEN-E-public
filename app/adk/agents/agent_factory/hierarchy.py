@@ -28,6 +28,7 @@ from typing import Any
 from google.adk.agents import LlmAgent
 
 import app.adk.tools.agent_tools.google_search  # agent-tool registration (AH-98)
+import app.adk.tools.agent_tools.numerical_analyst  # agent-tool registration (AH-149)
 import app.adk.tools.todo_list_tools  # noqa: F401  # default_global registration
 from app.adk.agents.agent_factory.builder import build_agent
 from app.adk.agents.agent_factory.config_loader import (

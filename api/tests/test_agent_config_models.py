@@ -443,13 +443,13 @@ class TestToolIds:
         config = AgentConfig(
             **_valid_agent_config(
                 tool_ids=[
-                    "google_analytics_mcp.list_ga_accounts",
+                    "google_analytics_mcp.run_report_mt",
                     "function.create_visualization",
                 ]
             )
         )
         assert config.tool_ids == [
-            "google_analytics_mcp.list_ga_accounts",
+            "google_analytics_mcp.run_report_mt",
             "function.create_visualization",
         ]
 

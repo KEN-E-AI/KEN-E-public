@@ -103,7 +103,7 @@ The source of truth is `app/adk/tools/registry/config/tools.yaml`, extended to t
 tools:
   # MCP-attached tools. Each tool's availability is gated on whether the account
   # has connected the integration that owns the tool's `mcp_server`.
-  - name: list_ga_accounts
+  - name: get_account_summaries_mt
     description: ...
     category: analytics
     mcp_server: google_analytics_mcp
@@ -130,7 +130,7 @@ function_tools:
 
 Single string-typed namespace, used wherever `tool_ids` appears:
 
-- MCP tools: `{mcp_server_id}.{tool_name}` — e.g., `google_analytics_mcp.list_ga_accounts`.
+- MCP tools: `{mcp_server_id}.{tool_name}` — e.g., `google_analytics_mcp.get_account_summaries_mt`.
 - Function tools: `function.{tool_name}` — e.g., `function.create_visualization`.
 
 Max 80 characters per ID (enforced via `Annotated[str, Field(max_length=80)]`).
@@ -151,8 +151,8 @@ The factory branches on `is None` vs. "set" — empty list is meaningfully diffe
 {
   "tools": [
     {
-      "tool_id": "google_analytics_mcp.list_ga_accounts",
-      "name": "list_ga_accounts",
+      "tool_id": "google_analytics_mcp.get_account_summaries_mt",
+      "name": "get_account_summaries_mt",
       "description": "List Google Analytics accounts...",
       "category": "analytics",
       "source": "integration",
@@ -252,7 +252,7 @@ Validation failures on `tool_ids` produce FastAPI 422 with per-ID `detail` entri
 1. **Tool catalogue extended.** `tools.yaml` includes per-tool entries for every MCP server registered under `mcp_server_configs/` in dev. A new top-level `function_tools:` section lists at minimum `create_visualization` tagged `default_global: true`. `ToolRegistry.list_function_tools()` and `list_default_global_tools()` return the expected entries.
 2. **`tool_ids` on agent config.** All four Pydantic models (`AgentConfig`, `AgentConfigCreate`, `AgentConfigOverlayUpdate`, `MergedAgentConfig`) declare `tool_ids: list[str] | None`. The merge in `routers/agent_configs.py:_merge_from_data` populates `MergedAgentConfig.tool_ids` from the overlay when present and the global when absent, mirroring how `mcp_servers` / `skill_ids` flow today.
 3. **Catalogue + cap validator.** `POST` and `PUT` reject `tool_ids` containing IDs absent from the catalogue, or whose length exceeds 30, with a 422 detail naming the offending field. Tools whose owning integration is currently disconnected pass validation (per §5.4 note).
-4. **Factory tool filtering.** Given an agent whose `tool_ids = ["google_analytics_mcp.list_ga_accounts"]` and `mcp_servers = ["google_analytics_mcp"]`, the factory's roster contains exactly one tool (`list_ga_accounts`) from that toolset. `tool_ids = None` continues to wire every tool from every attached server. `tool_ids = []` wires zero tools.
+4. **Factory tool filtering.** Given an agent whose `tool_ids = ["google_analytics_mcp.get_account_summaries_mt"]` and `mcp_servers = ["google_analytics_mcp"]`, the factory's roster contains exactly one tool (`get_account_summaries_mt`) from that toolset. `tool_ids = None` continues to wire every tool from every attached server. `tool_ids = []` wires zero tools.
 5. **Function-tool gating.** When `tool_ids` is set and does not include `function.create_visualization`, the function tool is not present in the agent's roster. When `tool_ids is None`, function tools are included exactly as they are today.
 6. **Inventory endpoint shape + auth.** `GET /api/v1/accounts/{account_id}/tools` returns `AccountToolsResponse`. Function tools are always present. MCP tools appear only when the account has a `connected` `platform_connections/{platform_id}` doc whose `platform_id` maps to the tool's `mcp_server`. Unauthorized callers receive 403.
 7. **Frontend client + query.** `useAccountTools(accountId)` returns the typed response shape, keyed on `accountId`. Loading + error states are surfaced to the picker.
@@ -287,7 +287,7 @@ Validation failures on `tool_ids` produce FastAPI 422 with per-ID `detail` entri
 
 - Dev server: create a fresh agent → tool picker shows function-tools group + any connected-integration groups; pick a subset; save; reopen edit view → selection persists.
 - Disconnect an integration; reload an agent that referenced its tools → picker shows the tools as unselected (or annotated as unavailable, depending on §9 UX choice); save → backend persists.
-- Agent runtime smoke (requires deploy): create an agent with `tool_ids` restricting GA to `list_ga_accounts`, send a query that would normally trigger `query_ga_report` → factory log / trace confirms only `list_ga_accounts` is wired.
+- Agent runtime smoke (requires deploy): create an agent with `tool_ids` restricting GA to `get_account_summaries_mt`, send a query that would normally trigger `run_report_mt` → factory log / trace confirms only `get_account_summaries_mt` is wired.
 
 ## 9. Risks & open questions
 

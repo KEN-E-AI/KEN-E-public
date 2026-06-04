@@ -111,15 +111,18 @@ class _GaSpecialistStubLlm(BaseLlm):
 
 _GA_TEST_INSTRUCTION = """You are a Google Analytics specialist.
 
-Use Gemini code execution for ALL numerical analysis — percentage changes, trend
-calculations, averages, and any arithmetic. Never compute numbers in-context.
+Retrieve data using the GA MCP tools, then delegate ALL arithmetic to the
+numerical_analyst tool. Never compute numbers in-context.
 
-When numerical data is provided in the question, write and execute Python code
-to compute the result, then present the answer.
+When you need to calculate a percentage, average, growth rate, or any other
+arithmetic, pass the specific numbers and a description of the calculation to
+the numerical_analyst tool, then include its returned figure and formula verbatim
+in your reply.
 
 Available tools:
 - get_account_summaries_mt - list GA accounts (no required params)
 - run_report_mt - run analytics reports (params: property_id, date_ranges, metrics)
+- numerical_analyst - compute arithmetic; pass specific numbers and calculation description
 """
 
 
@@ -279,7 +282,7 @@ class _MockToolContext:
     state: _MockState = field(default_factory=_MockState)
 
 
-def _make_tool(name: str = "list_ga_accounts") -> MagicMock:
+def _make_tool(name: str = "run_report_mt") -> MagicMock:
     t = MagicMock()
     t.name = name
     return t
@@ -309,8 +312,26 @@ def _clear_caches() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# AH-27: code execution E2E tests
+# AH-27 (AH-149 refresh): code execution E2E tests
+#
+# AH-149 restructured the GA specialist so code execution lives exclusively
+# in a ``numerical_analyst`` leaf agent exposed as an AgentTool.  These tests
+# are updated to reflect the split shape:
+#
+#   1. The parent GA specialist is built WITHOUT a code_executor (validates
+#      that it no longer triggers the Gemini 2.5+ multi-tool 400 error).
+#   2. The numerical_analyst leaf agent is driven DIRECTLY via its own Runner
+#      to assert that executable_code + code_execution_result(OUTCOME_OK) parts
+#      appear in its own event stream.  This bypasses the known AH-75 limitation
+#      (AgentTool.run_async discards inner sub-agent events from the outer
+#      stream); propagating those events to the parent stream is AH-PRD-15 scope.
 # ---------------------------------------------------------------------------
+
+_NUMERICAL_ANALYST_TEST_INSTRUCTION = """You are a numerical computation assistant.
+
+Given numbers and a description of the calculation, write and execute a short
+Python snippet to compute the result, then return the figure and the formula.
+"""
 
 
 @pytest.mark.parametrize("query_name,query_text", _NUMERICAL_QUERIES)
@@ -327,28 +348,59 @@ def _clear_caches() -> Any:
 async def test_ga_numerical_query_uses_code_execution(
     trial: int, query_name: str, query_text: str
 ) -> None:
-    """AC #6 (AH-PRD-03 §7): numerical queries must produce executable_code +
-    code_execution_result(OUTCOME_OK) parts in the ADK event stream.
+    """AC #6 (AH-PRD-03 §7, AH-149 refresh): the numerical_analyst sub-agent
+    must produce executable_code + code_execution_result(OUTCOME_OK) parts
+    when driven with a numerical prompt.
+
+    The parent GA specialist is also built to verify it can be constructed
+    without the Gemini 2.5+ multi-tool 400 error (no code_executor on the
+    parent; AgentTool carries the analyst).
     """
+    from google.adk.agents import Agent
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
+    from google.adk.tools.agent_tool import AgentTool
 
-    agent = LlmAgent(
-        name="google_analytics_specialist",
-        model="gemini-2.0-flash",
-        instruction=_GA_TEST_INSTRUCTION,
+    # --- Build the split shape (AH-149) ---
+
+    # Child: code-execution only, no function tools.
+    numerical_analyst_agent = Agent(
+        name="numerical_analyst_agent",
+        model="gemini-2.5-flash",
         code_executor=BuiltInCodeExecutor(),
-        tools=[FunctionTool(get_account_summaries_mt), FunctionTool(run_report_mt)],
+        instruction=_NUMERICAL_ANALYST_TEST_INSTRUCTION,
+    )
+
+    # Parent: modern Gemini, GA MCP stubs, AgentTool wrapping the analyst.
+    # No code_executor — building this agent with a modern Gemini model and
+    # the AgentTool validates there is no 400 multi-tool rejection.
+    parent_instruction = (
+        _GA_TEST_INSTRUCTION
+        + "\nFor any arithmetic, call the numerical_analyst tool with only the"
+        " specific numbers and a description of the calculation."
+    )
+    LlmAgent(  # built to verify no HTTP 400 on construction (Gemini 2.5+ rejects code-exec + function tools)
+        name="google_analytics_specialist",
+        model="gemini-2.5-flash",
+        instruction=parent_instruction,
+        tools=[
+            AgentTool(agent=numerical_analyst_agent),
+            FunctionTool(get_account_summaries_mt),
+            FunctionTool(run_report_mt),
+        ],
         disallow_transfer_to_parent=True,
     )
 
+    # --- Drive the numerical_analyst leaf directly (AH-75: AgentTool drops
+    #     inner events from the outer stream; assert code-exec on its own
+    #     Runner, which is the methodology validated in the issue). ---
     session_service = InMemorySessionService()
     session = await session_service.create_session(
-        app_name="ga_specialist_e2e", user_id="test_user"
+        app_name="numerical_analyst_e2e", user_id="test_user"
     )
     runner = Runner(
-        agent=agent,
-        app_name="ga_specialist_e2e",
+        agent=numerical_analyst_agent,
+        app_name="numerical_analyst_e2e",
         session_service=session_service,
     )
 
@@ -374,10 +426,9 @@ async def test_ga_numerical_query_uses_code_execution(
             )
         if exc.code == 404:
             pytest.skip(
-                f"Model {agent.model!r} is not available in this Vertex "
-                f"project/region (HTTP 404). gemini-2.0-flash is absent on some "
-                f"projects (e.g. ken-e-dev/us-central1); run where it is enabled "
-                f"or update the pinned model. Original error: {exc!s:.160}"
+                f"Model 'gemini-2.5-flash' is not available in this Vertex "
+                f"project/region (HTTP 404). Run where gemini-2.5-flash is "
+                f"enabled or check project quotas. Original error: {exc!s:.160}"
             )
         raise
 
@@ -391,11 +442,11 @@ async def test_ga_numerical_query_uses_code_execution(
     )
 
     assert has_exec_code, (
-        f"[{query_name} trial {trial}] No executable_code part in response. "
+        f"[{query_name} trial {trial}] numerical_analyst: no executable_code part. "
         f"Parts collected: {[type(p).__name__ for p in all_parts]}"
     )
     assert has_exec_result, (
-        f"[{query_name} trial {trial}] No OUTCOME_OK code_execution_result in response. "
+        f"[{query_name} trial {trial}] numerical_analyst: no OUTCOME_OK code_execution_result. "
         f"Parts collected: {[type(p).__name__ for p in all_parts]}"
     )
 

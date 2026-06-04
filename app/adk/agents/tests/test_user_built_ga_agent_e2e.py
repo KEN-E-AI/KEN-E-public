@@ -87,7 +87,7 @@ def test_user_built_ga_agent_construction_path() -> None:
         model="gemini-2.5-flash",
         description="User-built GA agent (AH-95 live E2E)",
         mcp_servers=[],
-        tool_ids=["google_analytics_mcp.list_ga_accounts"],
+        tool_ids=["google_analytics_mcp.run_report_mt"],
         ken_e_sub_agent=True,
     )
 

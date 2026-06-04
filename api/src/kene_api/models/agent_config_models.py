@@ -49,7 +49,7 @@ SUPPORTED_MODELS: frozenset[str] = frozenset(
 _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 # Tool IDs are namespaced: ``<mcp_server>.<tool_name>`` for MCP tools (e.g.
-# ``google_analytics_mcp.list_ga_accounts``) and ``function.<tool_name>`` for
+# ``google_analytics_mcp.run_report_mt``) and ``function.<tool_name>`` for
 # built-in function tools (e.g. ``function.create_visualization``). Both halves
 # must look like a normalised snake_case identifier — matches the normalisation
 # applied by ``ToolDefinition`` and the MCP server document IDs in Firestore.

@@ -42,7 +42,7 @@ def discover_tools(
     Example:
         User: "What analytics tools do I have access to?"
         Agent calls: discover_tools("analytics", category="analytics")
-        Returns: "Found 5 analytics tools:\n1. query_ga_report - ..."
+        Returns: "Found 4 analytics tools:\n1. run_report_mt - ..."
     """
     logger.info(
         f"[TOOL-DISCOVERY] Searching for tools: query='{query}', category={category}"

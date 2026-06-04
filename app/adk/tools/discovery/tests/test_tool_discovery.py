@@ -20,7 +20,7 @@ class TestToolSearchResult:
     @pytest.fixture
     def sample_tool(self) -> ToolDefinition:
         return ToolDefinition(
-            name="query_ga_report",
+            name="run_report_mt",
             description="Query Google Analytics for metrics",
             category="analytics",
             parameters=[
@@ -44,7 +44,7 @@ class TestToolSearchResult:
 
         result_dict = result.to_dict()
 
-        assert result_dict["name"] == "query_ga_report"
+        assert result_dict["name"] == "run_report_mt"
         assert result_dict["description"] == "Query Google Analytics for metrics"
         assert result_dict["category"] == "analytics"
         assert result_dict["score"] == 15.0
@@ -63,7 +63,7 @@ class TestToolDiscoveryService:
         # Add test tools
         registry.register_tool(
             ToolDefinition(
-                name="query_ga_report",
+                name="run_report_mt",
                 description="Query Google Analytics for traffic metrics",
                 category="analytics",
                 keywords=["analytics", "ga4", "traffic", "report"],
@@ -74,7 +74,7 @@ class TestToolDiscoveryService:
 
         registry.register_tool(
             ToolDefinition(
-                name="list_ga_accounts",
+                name="get_account_summaries_mt",
                 description="List GA accounts",
                 category="analytics",
                 keywords=["analytics", "accounts", "list"],
@@ -104,15 +104,15 @@ class TestToolDiscoveryService:
         # Should find both analytics tools
         assert len(results) == 2
         tool_names = [r.tool.name for r in results]
-        assert "query_ga_report" in tool_names
-        assert "list_ga_accounts" in tool_names
+        assert "run_report_mt" in tool_names
+        assert "get_account_summaries_mt" in tool_names
 
     def test_search_returns_sorted_by_score(self, discovery: ToolDiscoveryService):
         results = discovery.search("traffic analytics")
 
-        # query_ga_report should score higher (has both keywords)
+        # run_report_mt should score higher (has both keywords)
         assert len(results) >= 1
-        assert results[0].tool.name == "query_ga_report"
+        assert results[0].tool.name == "run_report_mt"
         assert results[0].score > results[1].score if len(results) > 1 else True
 
     def test_search_with_limit(self, discovery: ToolDiscoveryService):
@@ -148,8 +148,8 @@ class TestToolDiscoveryService:
         )
 
         tool_names = [t.name for t in filtered]
-        assert "query_ga_report" in tool_names
-        assert "list_ga_accounts" in tool_names
+        assert "run_report_mt" in tool_names
+        assert "get_account_summaries_mt" in tool_names
         assert "get_ads_performance" not in tool_names
 
     def test_filter_by_connected_accounts_multiple(
@@ -176,10 +176,10 @@ class TestToolDiscoveryService:
         assert len(ads_tools) == 1
 
     def test_get_tool_info(self, discovery: ToolDiscoveryService):
-        info = discovery.get_tool_info("query_ga_report")
+        info = discovery.get_tool_info("run_report_mt")
 
         assert info is not None
-        assert info["name"] == "query_ga_report"
+        assert info["name"] == "run_report_mt"
         assert info["category"] == "analytics"
         assert len(info["permissions"]) == 1
 
@@ -200,7 +200,7 @@ class TestToolDiscoveryService:
 
         assert len(suggestions) >= 1
         # Should prioritize traffic-related tools
-        assert suggestions[0].tool.name == "query_ga_report"
+        assert suggestions[0].tool.name == "run_report_mt"
 
 
 class TestDiscoverToolsAgent:
@@ -210,7 +210,7 @@ class TestDiscoverToolsAgent:
         result = discover_tools("analytics")
 
         assert "analytics" in result.lower()
-        assert "query_ga_report" in result or "Tools matching" in result
+        assert "run_report_mt" in result or "Tools matching" in result
 
     def test_discover_tools_with_category(self):
         result = discover_tools("report", category="analytics")
@@ -246,9 +246,9 @@ class TestGetToolDetails:
     """Tests for get_tool_details function."""
 
     def test_get_details_existing_tool(self):
-        result = get_tool_details("query_ga_report")
+        result = get_tool_details("run_report_mt")
 
-        assert "query_ga_report" in result
+        assert "run_report_mt" in result
         assert "Description" in result
 
     def test_get_details_nonexistent_tool(self):

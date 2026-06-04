@@ -400,11 +400,12 @@ class TestLoadFromConfig:
         config_path = Path(__file__).parent.parent / "config" / "tools.yaml"
         loaded = registry.load_from_config(config_path)
 
-        # 8 GA tools + at least one function tool (create_visualization)
-        assert loaded >= 9
+        # 4 live GA MCP tools + function tools (create_visualization, todo list)
+        # + agent tools (google_search, numerical_analyst).
+        assert loaded >= 4
 
         # GA tool: source=mcp, mcp_server set
-        tool = registry.get_tool("query_ga_report")
+        tool = registry.get_tool("run_report_mt")
         assert tool is not None
         assert tool.category == "analytics"
         assert tool.source == "mcp"
@@ -775,3 +776,41 @@ class TestDefaultRegistry:
         registry1 = get_default_registry()
         registry2 = get_default_registry()
         assert registry1 is registry2
+
+
+class TestMcpServerToolCountMatchesCatalogue:
+    """AH-149 guardrail: ``mcp_servers.yaml`` ``tool_count`` must equal the number
+    of ``tools.yaml`` entries for that server.
+
+    Catches the drift class behind the GA bug (catalogue claimed 8 GA tools while
+    the server declared/served 4). Only servers that actually have catalogue
+    entries are checked — a server can be declared before its tools are
+    catalogued, but once catalogued the two counts must agree.
+    """
+
+    def test_tool_count_matches_catalogue_entry_count(self) -> None:
+        import yaml
+
+        from .. import tool_registry as tr
+
+        registry = ToolRegistry()
+        registry.load_from_config(Path(tr.__file__).parent / "config" / "tools.yaml")
+
+        catalogue_counts: dict[str, int] = {}
+        for tool in registry.list_tools():
+            if tool.mcp_server:
+                catalogue_counts[tool.mcp_server] = (
+                    catalogue_counts.get(tool.mcp_server, 0) + 1
+                )
+
+        mcp_servers_path = (
+            Path(tr.__file__).parents[2] / "mcp_config" / "config" / "mcp_servers.yaml"
+        )
+        servers = yaml.safe_load(mcp_servers_path.read_text())["servers"]
+
+        for server_id, count in catalogue_counts.items():
+            declared = servers.get(server_id, {}).get("tool_count")
+            assert declared == count, (
+                f"mcp_servers.yaml tool_count for {server_id!r} is {declared!r}, "
+                f"but tools.yaml catalogues {count} tool(s) for it"
+            )

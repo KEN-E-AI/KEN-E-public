@@ -89,19 +89,27 @@ pass tenant_id or credentials parameters - they are injected for you.
 - run_realtime_report_mt - get live data from the last 30 minutes
 - get_property_details_mt - get GA4 property configuration details
 
-**Numerical analysis - use Gemini code execution for everything:**
-Use Gemini code execution for ALL numerical analysis: percentages, trend
-calculations, averages, sorting, and comparisons. Never perform arithmetic
-in-context. Show the executed formula in your reply so the reviewer can
-verify the calculation.
+**Numerical analysis - ALWAYS delegate to numerical_analyst:**
+For ANY arithmetic over retrieved figures (percentage changes, growth rates,
+trend calculations, averages, bounce-rate comparisons, ranking by metric, or
+any other calculation) you MUST call the numerical_analyst tool. Do NOT
+perform arithmetic in-context.
 
-Example:
-  - Retrieve raw metric values via the GA MCP tools.
-  - Write and execute a short Python snippet to compute the result.
-  - Present the output table together with the code/formula you ran.
+Delegation protocol:
+  1. Retrieve raw metric values via the GA MCP tools.
+  2. Pass ONLY the specific numbers needed for the calculation to
+     numerical_analyst (NOT entire GA reports — forward only the
+     relevant figures and a clear description of the calculation).
+  3. Include the figure AND the formula returned by numerical_analyst
+     verbatim in your reply so the reviewer can verify the calculation.
 
-This applies to: percentage changes, growth rates, session averages,
-bounce-rate comparisons, ranking by metric, and any other calculation.
+Example for a percentage-change query:
+  - Call run_report_mt to get "sessions last week: 4823, sessions this
+    week: 5391".
+  - Call numerical_analyst with:
+    "Sessions last week: 4823, sessions this week: 5391.
+     Calculate week-over-week percentage change."
+  - Present the result: "Sessions grew by 11.78% ((5391-4823)/4823*100)."
 
 **Tool usage guide:**
 
@@ -120,6 +128,9 @@ bounce-rate comparisons, ranking by metric, and any other calculation.
 4. run_realtime_report_mt - required: property_id; optional:
    metrics, dimensions; shows data from the last 30 minutes.
 
+5. numerical_analyst - pass the specific numbers and calculation
+   description; it returns the result plus the formula used.
+
 **Best practices:**
 - If the user's property ID is available in context, use it directly;
   otherwise call get_account_summaries_mt first.
@@ -133,37 +144,69 @@ bounce-rate comparisons, ranking by metric, and any other calculation.
 **Important:**
 - NEVER ask for credentials or tokens - they are handled automatically.
 - If a property_id is provided in context, use it without asking again.
+- NEVER perform arithmetic in-context; always delegate to numerical_analyst.
 """
 
 # Three format-bound, verifiable-from-draft acceptance criteria.
 # Per the planning decision (D4): ASCII-only; sanitise_criteria() is a no-op;
 # each criterion is independently verifiable from the draft text alone.
+#
+# AH-149: updated wording for the numerical-analysis criterion — the parent
+# GA specialist no longer performs code execution itself; it delegates arithmetic
+# to the numerical_analyst AgentTool and forwards the returned formula. The
+# reviewer verifies that the formula is present in the reply (shape-agnostic:
+# it does not know whether it came from code execution or delegation).
 GA_SPECIALIST_ACCEPTANCE_CRITERIA = (
     "Response includes the queried GA property identifier and the absolute date range;"
-    " numerical aggregates (totals, averages, percentage changes) are produced via"
-    " code execution and the formula is shown to the user;"
+    " numerical aggregates (totals, averages, percentage changes) are accompanied by"
+    " the formula used to compute them, shown verbatim in the reply;"
     " per-metric values are reported with their metric name and rounded to"
     " at most 2 decimal places."
 )
+
+# AH-149: explicit tool_ids list — the 4 live GA MCP tools + numerical_analyst.
+# Replaces the previous tool_ids=None (all-tools) to exclude code execution
+# from the parent GA specialist. Code execution now lives exclusively in the
+# numerical_analyst leaf agent exposed as an AgentTool.
+#
+# These MCP ids MUST match the live ``google_analytics_mcp`` server's
+# ``@mcp.tool`` names exactly: at runtime they become an ADK
+# ``McpToolset(tool_filter=...)`` that matches on the live tool name, so a name
+# that isn't served is silently dropped (the specialist would lose all GA
+# tools). The deployed server (KEN-E-AI/mcp-google-analytics, simple_server.py)
+# exposes the multi-tenant ``_mt`` variants. Keep this list in lock-step with
+# the ``google_analytics_mcp`` entries in ``tools.yaml`` — the guardrail test
+# ``test_ga_seed_tool_ids_subset_of_catalogue`` enforces it.
+_GA_MCP_TOOL_IDS: list[str] = [
+    "google_analytics_mcp.get_account_summaries_mt",
+    "google_analytics_mcp.get_property_details_mt",
+    "google_analytics_mcp.run_report_mt",
+    "google_analytics_mcp.run_realtime_report_mt",
+    "agent.numerical_analyst",
+]
 
 GA_SPECIALIST_CONFIG: dict[str, Any] = {
     # AH-84: human-readable identity surfaced in the Available Specialists block.
     "name": "Aria",
     "title": "Analytics Specialist",
 
-    "model": "gemini-2.0-flash",
+    # AH-149: bumped from gemini-2.0-flash — Gemini 2.5+ rejects mixing code
+    # execution with function tools on a single LlmAgent (HTTP 400). Code
+    # execution is now delegated to the numerical_analyst AgentTool leaf.
+    "model": "gemini-2.5-flash",
     "instruction": GA_SPECIALIST_INSTRUCTION,
     "temperature": 0.2,
     "description": (
         "Google Analytics 4 specialist. Use for any query about website or app"
         " traffic: sessions, users, pageviews, bounce rate, engagement, traffic"
         " sources, conversion events, real-time data, or custom GA4 reports."
-        " Performs accurate numerical analysis (percentages, trends, averages)"
-        " using Gemini code execution."
+        " Delegates arithmetic (percentages, trends, averages) to the"
+        " numerical_analyst sub-agent."
     ),
 
-    # AH-PRD-06: tool_ids=None → all tools from google_analytics_mcp.
-    "tool_ids": None,
+    # AH-149: explicit list of the 4 live GA MCP ids + agent.numerical_analyst (5 total).
+    # Was tool_ids=None (all tools from google_analytics_mcp, plus code executor).
+    "tool_ids": _GA_MCP_TOOL_IDS,
 
     # AH-75 / AH-PRD-09: resolve_agent wraps GA in a review LoopAgent
     # because this field is set (non-empty string).
@@ -176,27 +219,27 @@ GA_SPECIALIST_CONFIG: dict[str, Any] = {
     "ken_e_sub_agent": True,
 
     # AH-41: explicit audit fields per AUDIT_FIELDS_USER_FACING_RESEARCHER.
-    # GA-specific overrides: code_execution_enabled=True (instead of False)
-    # and mcp_servers populated (instead of []). Spread last so GA-specific
-    # values are the final source of truth for these two fields.
+    # AH-149 override: code_execution_enabled=False (was True — code execution
+    # is now in the numerical_analyst leaf) and mcp_servers populated.
     **{
         **AUDIT_FIELDS_USER_FACING_RESEARCHER,
-        "code_execution_enabled": True,
+        "code_execution_enabled": False,
         "mcp_servers": ["google_analytics_mcp"],
     },
 
     "metadata": {
-        "version": "v1.0",
+        "version": "v1.1",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
         "notes": (
-            "AH-25 / AH-PRD-03 Phase 1: initial GA Specialist config. "
-            "Replaces the deprecated google_analytics_agent_v4.py dispatch path. "
-            "Resolved by the AH-PRD-09 per-turn runtime resolver via "
-            "specialist_runtime.resolve_agent('google_analytics_specialist')."
+            "AH-149 (Phase 2): split code execution into numerical_analyst AgentTool. "
+            "model bumped to gemini-2.5-flash; code_execution_enabled=False; "
+            "tool_ids explicit list (4 live GA MCP tools + agent.numerical_analyst). "
+            "AH-25 / AH-PRD-03 Phase 1 baseline: initial GA Specialist config. "
+            "Replaces the deprecated google_analytics_agent_v4.py dispatch path."
         ),
     },
 }

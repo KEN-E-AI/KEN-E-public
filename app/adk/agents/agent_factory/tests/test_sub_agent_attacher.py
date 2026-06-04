@@ -1562,7 +1562,7 @@ class TestUserBuiltGaAgentAttach:
             description="User-built GA agent",
             visible_in_frontend=True,
             ken_e_sub_agent=True,
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
 
         def _resolve_config(doc_id, _account_id=None, _ttl=60):
@@ -1619,7 +1619,7 @@ class TestUserBuiltGaAgentAttach:
             description="Not delegatable from chat",
             visible_in_frontend=True,
             ken_e_sub_agent=False,
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
 
         def _resolve_config(doc_id, _account_id=None, _ttl=60):

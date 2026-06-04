@@ -7,15 +7,15 @@ tools:
   # Google Analytics Tools
   # ============================================================================
 
-  - name: list_ga_accounts
-    description: List Google Analytics accounts and properties the user has access to
+  # NOTE: tool names here MUST match the live google_analytics_mcp server's
+  # @mcp.tool names exactly — they become an ADK McpToolset tool_filter that
+  # matches on the live tool name. The server (KEN-E-AI/mcp-google-analytics,
+  # simple_server.py) exposes the multi-tenant (``_mt``) variants; the platform
+  # injects tenant_id + tenant_credentials, so agents never pass them.
+  - name: get_account_summaries_mt
+    description: List the Google Analytics accounts and GA4 properties the tenant has access to
     category: analytics
     mcp_server: google_analytics_mcp
-    parameters:
-      - name: account_id
-        type: string
-        description: KEN-E account ID for credential lookup
-        required: true
     permissions:
       - scope: analytics:read
         required: true
@@ -32,8 +32,8 @@ tools:
       - "Show me my analytics properties"
       - "What GA4 properties do I have access to?"
 
-  - name: get_ga_property_details
-    description: Get configuration details for a specific GA4 property including settings, data streams, and conversion events
+  - name: get_property_details_mt
+    description: Get configuration details for a specific GA4 property (display name, timezone, currency, create time)
     category: analytics
     mcp_server: google_analytics_mcp
     parameters:
@@ -56,8 +56,8 @@ tools:
       - "Get details for property 123456789"
       - "Show me the configuration of my GA4 property"
 
-  - name: query_ga_report
-    description: Query Google Analytics for traffic, engagement, and conversion metrics with customizable date ranges and dimensions
+  - name: run_report_mt
+    description: Run a GA4 Data API report for traffic, engagement, conversions, audience, and top pages — customizable date ranges, metrics, dimensions, filters, and ordering. Pass two date ranges to compare periods; group by a dimension and order to rank (e.g. top pages, sources, demographics).
     category: analytics
     mcp_server: google_analytics_mcp
     parameters:
@@ -65,17 +65,17 @@ tools:
         type: string
         description: GA4 property ID
         required: true
-      - name: date_range
-        type: object
-        description: Start and end dates for the report (YYYY-MM-DD format)
+      - name: date_ranges
+        type: array
+        description: One or more start/end date ranges (YYYY-MM-DD); pass two ranges to compare periods
         required: true
       - name: metrics
         type: array
-        description: Metrics to retrieve (e.g., sessions, users, pageviews, conversions)
+        description: Metrics to retrieve (e.g., sessions, activeUsers, screenPageViews, conversions)
         required: true
       - name: dimensions
         type: array
-        description: Dimensions to group by (e.g., date, source, medium, country)
+        description: Dimensions to group/rank by (e.g., date, pagePath, sessionSource, country, age)
         required: false
     permissions:
       - scope: analytics:read
@@ -91,14 +91,26 @@ tools:
       - metrics
       - data
       - performance
+      - compare
+      - comparison
+      - trend
+      - growth
+      - pages
+      - top
+      - audience
+      - demographics
+      - conversions
+      - goals
+      - revenue
     estimated_tokens: 250
     examples:
       - "Show me website traffic for the last 30 days"
-      - "What are my top traffic sources this month?"
-      - "How many users visited my site last week?"
+      - "Compare sessions this month vs last month"
+      - "What are my top 10 pages by pageviews?"
+      - "How many conversions did I get this week?"
 
-  - name: get_ga_realtime
-    description: Get real-time analytics data including active users, current page views, and traffic sources
+  - name: run_realtime_report_mt
+    description: Run a GA4 realtime report for activity in the last 30 minutes (active users, current page views, traffic sources)
     category: analytics
     mcp_server: google_analytics_mcp
     parameters:
@@ -128,158 +140,6 @@ tools:
       - "How many users are on my site right now?"
       - "Show me real-time traffic"
       - "What's the current activity on my website?"
-
-  - name: compare_ga_periods
-    description: Compare analytics metrics between two time periods to identify trends and changes
-    category: analytics
-    mcp_server: google_analytics_mcp
-    parameters:
-      - name: property_id
-        type: string
-        description: GA4 property ID
-        required: true
-      - name: current_period
-        type: object
-        description: Current period date range (start_date, end_date)
-        required: true
-      - name: comparison_period
-        type: object
-        description: Comparison period date range (start_date, end_date)
-        required: true
-      - name: metrics
-        type: array
-        description: Metrics to compare
-        required: true
-    permissions:
-      - scope: analytics:read
-        required: true
-    keywords:
-      - analytics
-      - ga4
-      - compare
-      - comparison
-      - trend
-      - period
-      - growth
-      - change
-      - performance
-    estimated_tokens: 280
-    examples:
-      - "Compare traffic this month vs last month"
-      - "How does this week's performance compare to last week?"
-      - "Show me year-over-year growth"
-
-  - name: get_ga_top_pages
-    description: Get the top performing pages by page views, engagement, or conversions
-    category: analytics
-    mcp_server: google_analytics_mcp
-    parameters:
-      - name: property_id
-        type: string
-        description: GA4 property ID
-        required: true
-      - name: date_range
-        type: object
-        description: Date range for the report
-        required: true
-      - name: sort_by
-        type: string
-        description: Metric to sort by (pageViews, engagementRate, conversions)
-        required: false
-        default: pageViews
-      - name: limit
-        type: integer
-        description: Number of pages to return
-        required: false
-        default: 10
-    permissions:
-      - scope: analytics:read
-        required: true
-    keywords:
-      - analytics
-      - ga4
-      - pages
-      - top
-      - content
-      - popular
-      - best
-      - performing
-    estimated_tokens: 200
-    examples:
-      - "What are my top 10 pages?"
-      - "Which content is most popular?"
-      - "Show me best performing pages this month"
-
-  - name: get_ga_audience
-    description: Get audience demographics and interests including age, gender, location, and interests
-    category: analytics
-    mcp_server: google_analytics_mcp
-    parameters:
-      - name: property_id
-        type: string
-        description: GA4 property ID
-        required: true
-      - name: date_range
-        type: object
-        description: Date range for the report
-        required: true
-      - name: dimension
-        type: string
-        description: Audience dimension (age, gender, country, interests)
-        required: true
-    permissions:
-      - scope: analytics:read
-        required: true
-    keywords:
-      - analytics
-      - ga4
-      - audience
-      - demographics
-      - users
-      - age
-      - gender
-      - location
-      - interests
-    estimated_tokens: 220
-    examples:
-      - "Who is my audience?"
-      - "Show me user demographics"
-      - "Where are my users located?"
-
-  - name: get_ga_conversions
-    description: Get conversion data including goals, events, and e-commerce transactions
-    category: analytics
-    mcp_server: google_analytics_mcp
-    parameters:
-      - name: property_id
-        type: string
-        description: GA4 property ID
-        required: true
-      - name: date_range
-        type: object
-        description: Date range for the report
-        required: true
-      - name: conversion_events
-        type: array
-        description: Specific conversion events to analyze
-        required: false
-    permissions:
-      - scope: analytics:read
-        required: true
-    keywords:
-      - analytics
-      - ga4
-      - conversions
-      - goals
-      - events
-      - ecommerce
-      - revenue
-      - transactions
-    estimated_tokens: 230
-    examples:
-      - "Show me my conversion rates"
-      - "How many conversions did I get this month?"
-      - "What's my e-commerce revenue?"
 
 # ============================================================================
 # Function Tools (Built-in, always available)
@@ -371,6 +231,26 @@ agent_tools:
     examples:
       - "Search the web for recent news about this company"
       - "Look up the latest public data on this topic"
+
+  - name: numerical_analyst
+    description: Compute numerical results (percentages, growth rates, averages, sorting) by writing and executing Python code in a sandboxed Gemini code executor. Use when a question requires arithmetic over retrieved figures.
+    category: math
+    default_global: false
+    keywords:
+      - arithmetic
+      - calculate
+      - percentage
+      - average
+      - growth
+      - code
+      - math
+      - compute
+      - formula
+    estimated_tokens: 200
+    examples:
+      - "Calculate the percentage change between these two numbers"
+      - "What is the average of these session counts?"
+      - "Compute the week-over-week growth rate"
 
 # ============================================================================
 # Placeholder for future tools (Sprint 3+)

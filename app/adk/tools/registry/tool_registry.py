@@ -48,7 +48,7 @@ class ToolRegistry:
     Example:
         >>> registry = ToolRegistry()
         >>> registry.load_from_config("tools.yaml")
-        >>> tool = registry.get_tool("list_ga_accounts")
+        >>> tool = registry.get_tool("run_report_mt")
         >>> if tool:
         ...     print(f"Tool: {tool.name}, Category: {tool.category}")
     """

@@ -52,7 +52,7 @@ class _MockToolContext:
 
 def _tool() -> MagicMock:
     t = MagicMock()
-    t.name = "list_ga_accounts"
+    t.name = "run_report_mt"
     return t
 
 

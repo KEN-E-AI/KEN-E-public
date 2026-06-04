@@ -133,6 +133,7 @@ def _fake_runner_factory(tracker: _OverlapTracker, created: list[Any]) -> type:
             try:
                 yield SimpleNamespace(
                     actions=SimpleNamespace(state_delta=None),
+                    grounding_metadata=None,
                     content=types.Content(
                         role="model",
                         parts=[types.Part(text=f"echo:{request_text}")],

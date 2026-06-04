@@ -3573,7 +3573,7 @@ class TestUserBuiltGaAgent:
 
         config = _make_specialist_config(
             mcp_servers=[],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
         fake_db = _FakeFirestoreDb(
             {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
@@ -3595,9 +3595,9 @@ class TestUserBuiltGaAgent:
 
         # The toolset must pass the per-server allowlist
         assert mock_btf.call_args.kwargs.get("allowed_tool_names") == [
-            "list_ga_accounts"
+            "run_report_mt"
         ], (
-            f"allowed_tool_names must be ['list_ga_accounts']; "
+            f"allowed_tool_names must be ['run_report_mt']; "
             f"got {mock_btf.call_args.kwargs!r}"
         )
 
@@ -3612,8 +3612,8 @@ class TestUserBuiltGaAgent:
         config = _make_specialist_config(
             mcp_servers=[],
             tool_ids=[
-                "google_analytics_mcp.list_ga_accounts",
-                "google_analytics_mcp.run_report",
+                "google_analytics_mcp.run_report_mt",
+                "google_analytics_mcp.run_realtime_report_mt",
                 "function.create_visualization",
             ],
         )
@@ -3633,8 +3633,53 @@ class TestUserBuiltGaAgent:
 
         # Both GA tools in the allowlist
         allowed = mock_btf.call_args.kwargs.get("allowed_tool_names")
-        assert set(allowed) == {"list_ga_accounts", "run_report"}, (
+        assert set(allowed) == {"run_report_mt", "run_realtime_report_mt"}, (
             f"Both GA tools must be in the allowlist; got {allowed!r}"
+        )
+
+    def test_real_ga_seed_tool_ids_wire_the_four_live_mt_tools(self) -> None:
+        """AH-149 regression proof: building the GA specialist from the REAL
+        seed ``_GA_MCP_TOOL_IDS`` wires the ``google_analytics_mcp`` toolset with
+        a ``tool_filter`` equal to the four live ``_mt`` tool names the deployed
+        server actually serves. The pre-fix seed used catalogue names that matched
+        no live tool, so the filter resolved to an empty roster (zero GA tools).
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+        from app.adk.agents.scripts.migrate_ga_specialist_to_firestore import (
+            _GA_MCP_TOOL_IDS,
+        )
+
+        config = _make_specialist_config(
+            mcp_servers=["google_analytics_mcp"],
+            tool_ids=_GA_MCP_TOOL_IDS,
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(
+                config, "google_analytics_specialist", None, mcp_pool=fresh_pool
+            )
+
+        ga_calls = [
+            c
+            for c in mock_btf.call_args_list
+            if c.args and c.args[0] == "google_analytics_mcp"
+        ]
+        assert len(ga_calls) == 1, (
+            f"expected one google_analytics_mcp toolset build; got {len(ga_calls)}"
+        )
+        allowed = ga_calls[0].kwargs.get("allowed_tool_names")
+        assert allowed is not None and set(allowed) == {
+            "get_account_summaries_mt",
+            "get_property_details_mt",
+            "run_report_mt",
+            "run_realtime_report_mt",
+        }, (
+            f"GA toolset must be filtered to the 4 live _mt tools; got {allowed!r}"
         )
 
     def test_legacy_mcp_servers_set_is_not_affected_by_option_a(self) -> None:
@@ -3647,7 +3692,7 @@ class TestUserBuiltGaAgent:
 
         config = _make_specialist_config(
             mcp_servers=["google_analytics_mcp"],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
         fake_db = _FakeFirestoreDb(
             {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
@@ -3723,7 +3768,7 @@ class TestUserBuiltGaAgent:
 
         config = _make_specialist_config(
             mcp_servers=[],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
         fake_db = _FakeFirestoreDb(
             {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
@@ -3762,7 +3807,7 @@ class TestUserBuiltGaAgent:
 
         config = _make_specialist_config(
             mcp_servers=[],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
         fake_db = _FakeFirestoreDb(
             {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
@@ -3800,7 +3845,7 @@ class TestUserBuiltGaAgent:
 
         config = _make_specialist_config(
             mcp_servers=[],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
         )
         fake_db = _FakeFirestoreDb(
             {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
@@ -3858,7 +3903,7 @@ class TestUserBuiltGaAgent:
             model="gemini-2.5-flash",
             description="Custom GA + review loop",
             mcp_servers=[],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
             default_acceptance_criteria="Must include at least one numeric figure.",
             ken_e_sub_agent=True,
         )
@@ -3918,7 +3963,7 @@ class TestUserBuiltGaAgent:
             model="gemini-2.5-flash",
             description="Custom GA, no review loop",
             mcp_servers=[],
-            tool_ids=["google_analytics_mcp.list_ga_accounts"],
+            tool_ids=["google_analytics_mcp.run_report_mt"],
             ken_e_sub_agent=True,
             # default_acceptance_criteria not set
         )

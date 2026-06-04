@@ -1,12 +1,18 @@
 """Unit tests for migrate_ga_specialist_to_firestore.py (AH-25 / AH-PRD-03 Phase 1).
 
+AH-149 (Phase 2): assertions updated to reflect the numerical_analyst split:
+  - ``code_execution_enabled`` is now ``False`` (was ``True``).
+  - ``model`` is now ``gemini-2.5-flash`` (was ``gemini-2.0-flash``).
+  - ``tool_ids`` is an explicit 5-item list (was ``None``).
+
 Coverage map:
   (a) ``GA_SPECIALIST_CONFIG`` carries every ``AUDIT_FIELDS`` entry with the
       GA-specialist matrix-row values.
   (b) Required-by-PRD fields present: ``default_acceptance_criteria``
       (non-empty, survives ``sanitise_criteria()`` unchanged),
-      ``ken_e_sub_agent=True``, ``tool_ids=None``, ``reviewer_model=None``,
-      ``code_execution_enabled=True``, ``name`` / ``title`` populated.
+      ``ken_e_sub_agent=True``, explicit ``tool_ids`` list,
+      ``reviewer_model=None``, ``code_execution_enabled=False``,
+      ``name`` / ``title`` populated.
   (c) ``MergedAgentConfig.model_validate(stripped_dict)`` succeeds — the seed
       conforms to the runtime schema under ``extra="forbid"``.
   (d) End-to-end idempotency: run ``main()`` twice against a
@@ -47,9 +53,10 @@ def test_config_carries_all_audit_fields() -> None:
 
 
 def test_config_matches_ga_specialist_audit_matrix_row() -> None:
-    """GA specialist matrix row: code_execution=True, mcp_servers=[ga_mcp], rest per researcher profile."""
+    """GA specialist matrix row: AH-149 — code_execution=False, mcp_servers=[ga_mcp], rest per researcher profile."""
     config = script.GA_SPECIALIST_CONFIG
-    assert config["code_execution_enabled"] is True
+    # AH-149: code execution moved to numerical_analyst leaf — must be False.
+    assert config["code_execution_enabled"] is False
     assert config["mcp_servers"] == ["google_analytics_mcp"]
     assert config["skill_ids"] == []
     assert config["sandbox_code_executor_enabled"] is False
@@ -71,8 +78,10 @@ def test_prd_required_fields_present() -> None:
     # Delegation gate (AH-82) — must be explicitly True.
     assert config["ken_e_sub_agent"] is True, "ken_e_sub_agent must be True"
 
-    # Code-execution gate (AH-PRD-03 §4).
-    assert config["code_execution_enabled"] is True, "code_execution_enabled must be True"
+    # AH-149: code execution moved to numerical_analyst leaf — must be False on parent.
+    assert config["code_execution_enabled"] is False, (
+        "code_execution_enabled must be False (AH-149: execution in numerical_analyst leaf)"
+    )
 
     # review-loop gate (AH-75 / AH-PRD-09) — non-empty string triggers LoopAgent wrap.
     assert "default_acceptance_criteria" in config
@@ -81,8 +90,17 @@ def test_prd_required_fields_present() -> None:
         "default_acceptance_criteria must be a non-empty string"
     )
 
-    # AH-PRD-06: None = all tools from google_analytics_mcp.
-    assert config["tool_ids"] is None, "tool_ids must be None (all tools)"
+    # AH-149: explicit tool_ids list of 5 entries (4 live GA MCP tools + agent.numerical_analyst).
+    tool_ids = config["tool_ids"]
+    assert isinstance(tool_ids, list), "tool_ids must be a list (AH-149)"
+    assert len(tool_ids) == 5, f"tool_ids must have 5 entries; got {len(tool_ids)}: {tool_ids}"
+    assert "agent.numerical_analyst" in tool_ids, (
+        "tool_ids must contain 'agent.numerical_analyst'"
+    )
+    ga_mcp_ids = [t for t in tool_ids if t.startswith("google_analytics_mcp.")]
+    assert len(ga_mcp_ids) == 4, (
+        f"tool_ids must contain 4 google_analytics_mcp.* entries; got {len(ga_mcp_ids)}"
+    )
 
     # AH-92: None = DEFAULT_REVIEWER_MODEL.
     assert config["reviewer_model"] is None, "reviewer_model must be None"
@@ -91,11 +109,18 @@ def test_prd_required_fields_present() -> None:
     assert config["name"] == "Aria", "name must be 'Aria'"
     assert config["title"] == "Analytics Specialist", "title must be 'Analytics Specialist'"
 
-    # Core fields.
-    assert config["model"] == "gemini-2.0-flash"
+    # Core fields — AH-149: model bumped to gemini-2.5-flash.
+    assert config["model"] == "gemini-2.5-flash", (
+        f"model must be 'gemini-2.5-flash' (AH-149); got {config['model']!r}"
+    )
     assert config["temperature"] == 0.2
     assert isinstance(config["instruction"], str) and config["instruction"].strip()
     assert isinstance(config["description"], str) and config["description"].strip()
+
+    # AH-149: instruction must mention numerical_analyst delegation.
+    assert "numerical_analyst" in config["instruction"], (
+        "instruction must contain 'numerical_analyst' delegation guidance"
+    )
 
 
 def test_acceptance_criteria_survives_sanitisation() -> None:
@@ -154,8 +179,9 @@ def test_config_validates_against_merged_agent_config() -> None:
     stripped = _strip_storage_internal(script.GA_SPECIALIST_CONFIG)
     # Should not raise.
     validated = MergedAgentConfig.model_validate(stripped)
-    assert validated.model == "gemini-2.0-flash"
-    assert validated.code_execution_enabled is True
+    # AH-149: model bumped; code execution moved to numerical_analyst leaf.
+    assert validated.model == "gemini-2.5-flash"
+    assert validated.code_execution_enabled is False
     assert validated.ken_e_sub_agent is True
     assert validated.default_acceptance_criteria == script.GA_SPECIALIST_ACCEPTANCE_CRITERIA
 
@@ -262,11 +288,17 @@ def test_idempotency_agent_doc_is_written(monkeypatch: pytest.MonkeyPatch) -> No
 
     agent_doc = fake_db.get_doc("agent_configs", "google_analytics_specialist")
     assert agent_doc is not None, "agent_configs/google_analytics_specialist must be written"
-    assert agent_doc["model"] == "gemini-2.0-flash"
+    # AH-149: model bumped; code execution moved to numerical_analyst leaf.
+    assert agent_doc["model"] == "gemini-2.5-flash"
     assert agent_doc["ken_e_sub_agent"] is True
-    assert agent_doc["code_execution_enabled"] is True
+    assert agent_doc["code_execution_enabled"] is False
     assert agent_doc["mcp_servers"] == ["google_analytics_mcp"]
     assert agent_doc["default_acceptance_criteria"] == script.GA_SPECIALIST_ACCEPTANCE_CRITERIA
+    # AH-149: tool_ids is the explicit 5-entry list.
+    tool_ids = agent_doc["tool_ids"]
+    assert isinstance(tool_ids, list)
+    assert len(tool_ids) == 5
+    assert "agent.numerical_analyst" in tool_ids
 
 
 def test_idempotency_mcp_kind_preserved_when_cloud_run(
@@ -361,3 +393,74 @@ def test_dry_run_returns_zero_without_real_firestore(
 
     assert result == 0, "--dry-run must return 0"
     assert firestore_calls == [], "Firestore client must not be constructed in --dry-run"
+
+
+# ---------------------------------------------------------------------------
+# AH-149 guardrail: seed tool_ids must resolve to real catalogue / live tools.
+# ---------------------------------------------------------------------------
+#
+# Regression guard for the bug where the seed listed aspirational catalogue
+# names (e.g. ``query_ga_report``) that matched NEITHER the catalogue NOR the
+# live ``google_analytics_mcp`` server. Because a non-None ``tool_ids`` becomes
+# an ADK ``McpToolset(tool_filter=...)`` matched on the LIVE tool name, a name
+# that isn't served is silently dropped — the GA specialist would lose all GA
+# tools at runtime. The live server (KEN-E-AI/mcp-google-analytics,
+# simple_server.py) exposes exactly the four multi-tenant ``_mt`` tools below.
+
+# The four live GA MCP tool names, mirrored from the deployed server. Keeping
+# this list here makes a server/​catalogue rename a deliberate, reviewed edit.
+_LIVE_GA_MCP_TOOLS = {
+    "get_account_summaries_mt",
+    "get_property_details_mt",
+    "run_report_mt",
+    "run_realtime_report_mt",
+}
+
+
+def _fresh_catalogue_registry() -> Any:
+    """Load a fresh ToolRegistry from the canonical tools.yaml (no singleton)."""
+    from pathlib import Path
+
+    from app.adk.tools.registry import tool_registry as tr
+
+    registry = tr.ToolRegistry()
+    registry.load_from_config(Path(tr.__file__).parent / "config" / "tools.yaml")
+    return registry
+
+
+def test_ga_seed_tool_ids_subset_of_catalogue() -> None:
+    """Every ``google_analytics_mcp.*`` id in the seed must be a catalogued GA
+    tool, and ``agent.numerical_analyst`` must be a catalogued agent tool."""
+    registry = _fresh_catalogue_registry()
+    ga_catalogue = {
+        t.name for t in registry.list_tools() if t.mcp_server == "google_analytics_mcp"
+    }
+    agent_catalogue = {t.name for t in registry.list_agent_tools()}
+
+    for tid in script._GA_MCP_TOOL_IDS:
+        server, _, name = tid.partition(".")
+        if server == "google_analytics_mcp":
+            assert name in ga_catalogue, (
+                f"seed tool_id {tid!r} is not in the google_analytics_mcp catalogue "
+                f"{sorted(ga_catalogue)} — the runtime tool_filter would drop it"
+            )
+        elif server == "agent":
+            assert name in agent_catalogue, (
+                f"seed agent tool {tid!r} is not catalogued: {sorted(agent_catalogue)}"
+            )
+        else:  # pragma: no cover - defensive
+            raise AssertionError(f"unexpected tool_id namespace in seed: {tid!r}")
+
+
+def test_ga_catalogue_matches_live_mt_tools() -> None:
+    """The ``google_analytics_mcp`` catalogue must equal the live server's tool
+    set (the four ``_mt`` tools). Pins the catalogue to deployed reality so a
+    future drift is a deliberate, reviewed change rather than a silent break."""
+    registry = _fresh_catalogue_registry()
+    ga_catalogue = {
+        t.name for t in registry.list_tools() if t.mcp_server == "google_analytics_mcp"
+    }
+    assert ga_catalogue == _LIVE_GA_MCP_TOOLS, (
+        f"tools.yaml google_analytics_mcp entries {sorted(ga_catalogue)} must match "
+        f"the live server tools {sorted(_LIVE_GA_MCP_TOOLS)}"
+    )
