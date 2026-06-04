@@ -87,6 +87,7 @@ class APIServerSubprocess:
         assert self._proc is not None
         deadline = time.monotonic() + self.startup_timeout_s
         assert self._proc.stdout is not None
+        marker_seen = False
         while time.monotonic() < deadline:
             line = self._proc.stdout.readline()
             if not line:
@@ -97,12 +98,38 @@ class APIServerSubprocess:
                     )
                 continue
             if _STARTUP_MARKER.encode() in line:
-                return
+                marker_seen = True
+                break
+        # The startup marker ("Application startup complete") is logged during
+        # uvicorn's lifespan startup, BEFORE the listening socket begins
+        # accepting connections. Returning on the marker alone races an
+        # immediate request against the not-yet-accepting socket — harmless
+        # under light load, but under heavy parallel CI contention the gap
+        # widens and the first request hits connection-refused. Poll the real
+        # socket until it accepts so readiness reflects the socket, not a log.
+        if marker_seen and self._wait_for_socket_accepting(deadline):
+            return
         self.terminate()
         raise TimeoutError(
-            f"API subprocess did not log {_STARTUP_MARKER!r} within "
-            f"{self.startup_timeout_s}s"
+            f"API subprocess did not log {_STARTUP_MARKER!r} and start accepting "
+            f"connections within {self.startup_timeout_s}s"
         )
+
+    def _wait_for_socket_accepting(self, deadline: float) -> bool:
+        """Poll until the subprocess accepts a TCP connection, or the shared
+        startup deadline elapses. Returns False (caller raises) if the process
+        dies or the socket never comes up in time."""
+        while time.monotonic() < deadline:
+            if self._proc is not None and self._proc.poll() is not None:
+                return False
+            try:
+                with socket.create_connection(
+                    ("127.0.0.1", self.port), timeout=0.5
+                ):
+                    return True
+            except OSError:
+                time.sleep(0.05)
+        return False
 
     def terminate(self, signal_term: bool = True) -> int:
         if self._proc is None:
