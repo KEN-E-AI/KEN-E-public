@@ -40,6 +40,18 @@ Rules:
 - Keep code short (< 20 lines). Prefer clear variable names over brevity.
 - Round displayed results to at most 2 decimal places.
 - If the input is insufficient to perform the calculation, state clearly what is missing.
+
+Failure handling:
+- If the code executor returns a failure (e.g. ZeroDivisionError, TypeError, NameError,
+  or a sandbox timeout), examine the error message carefully.
+- Attempt at most ONE corrective rewrite: fix the specific error (for example, guard
+  against division by zero, correct the wrong variable name, or simplify the expression).
+- If the corrected code also fails, stop retrying. Return a clear, human-readable error
+  message that names the calculation you attempted and the kind of error encountered
+  (e.g. "Cannot compute the week-over-week change: division by zero because the baseline
+  value is 0"). Do NOT retry indefinitely.
+- NEVER include a raw Python stack trace in your reply. Do NOT use the literal token
+  "OUTCOME_FAILED" in your response. The user-visible message must be plain English.
 """
 
 

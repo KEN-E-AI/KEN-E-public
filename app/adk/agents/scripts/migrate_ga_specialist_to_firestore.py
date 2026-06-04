@@ -103,6 +103,12 @@ Delegation protocol:
   3. Include the figure AND the formula returned by numerical_analyst
      verbatim in your reply so the reviewer can verify the calculation.
 
+If numerical_analyst returns a calculation error (e.g. "Cannot compute
+the week-over-week change: division by zero"), include that error message
+verbatim in your reply. Do NOT attempt the calculation in-context as a
+fallback. Tell the user clearly which specific calculation could not be
+performed and why.
+
 Example for a percentage-change query:
   - Call run_report_mt to get "sessions last week: 4823, sessions this
     week: 5391".
@@ -228,13 +234,15 @@ GA_SPECIALIST_CONFIG: dict[str, Any] = {
     },
 
     "metadata": {
-        "version": "v1.1",
+        "version": "v1.2",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
         "notes": (
+            "AH-32 (Phase 2): added guardrail — surface numerical_analyst errors "
+            "verbatim; do not fall back to in-context arithmetic on failure. "
             "AH-149 (Phase 2): split code execution into numerical_analyst AgentTool. "
             "model bumped to gemini-2.5-flash; code_execution_enabled=False; "
             "tool_ids explicit list (4 live GA MCP tools + agent.numerical_analyst). "

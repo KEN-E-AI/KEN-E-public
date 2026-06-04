@@ -19,6 +19,13 @@ AH-29 — Multi-tenant OAuth isolation (AC #10):
     ``McpToolsetPool`` keys on ``(kind, server_id, account_id,
     sha256(mcp_creds))`` and that no cross-session header bleed occurs.
 
+AH-32 — Code-execution error handling (AC #7):
+    Drives ``numerical_analyst_agent`` directly with a prompt that deterministically
+    triggers ``OUTCOME_FAILED`` (divide-by-zero).  Asserts the agent either retries
+    with corrected code or returns a clear, human-readable error message — and never
+    surfaces a raw stack trace or the literal ``OUTCOME_FAILED`` token, and never
+    fabricates a numerical answer as if the calculation succeeded.
+
 Marking convention:
     Tests that require a live Gemini model are marked ``@pytest.mark.llm``
     so CI can opt-in without breaking the default fast suite. AH-28 and
@@ -42,6 +49,7 @@ from google.adk.agents import LlmAgent
 from google.adk.code_executors import BuiltInCodeExecutor
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
+from google.adk.models.registry import LLMRegistry
 from google.adk.tools.function_tool import FunctionTool
 from google.genai import types as genai_types
 from google.genai.errors import ClientError
@@ -103,6 +111,55 @@ class _GaSpecialistStubLlm(BaseLlm):
             role="model", parts=[Part.from_text(text="GA specialist response")]
         )
         yield LlmResponse(content=content, turn_complete=True)
+
+
+# ---------------------------------------------------------------------------
+# AH-33: Fake LLM for review-loop iteration test
+#
+# Uses a distinct model-name pattern ("^fake-ga-iter-.*") to avoid any
+# coupling with the "^fake-behavioral-.*" pattern registered by
+# app.adk.agents.utils.test_review_pipeline._FakeLlm.  Both worker and
+# reviewer drain from the same FIFO queue — the response order encodes the
+# iteration sequence (worker-1, reviewer-1, worker-2, reviewer-2).
+# ---------------------------------------------------------------------------
+
+_GA_ITER_QUEUE: list[LlmResponse] = []
+
+
+class _GaIterFakeLlm(BaseLlm):
+    """Fake LLM that drains responses from _GA_ITER_QUEUE in FIFO order.
+
+    Handles both "fake-ga-iter-worker" (worker) and "fake-ga-iter-reviewer"
+    (reviewer) model strings.  Response assignment is purely positional, which
+    makes the queue the single source of truth for the iteration sequence.
+    """
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return [r"^fake-ga-iter-.*"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self,
+        llm_request: Any,
+        stream: bool = False,
+    ) -> AsyncIterator[LlmResponse]:
+        if _GA_ITER_QUEUE:
+            yield _GA_ITER_QUEUE.pop(0)
+        else:
+            raise AssertionError(
+                "_GA_ITER_QUEUE exhausted — the LoopAgent consumed more responses "
+                "than were queued. Ensure the test loads all 4 expected responses "
+                "(worker-1, reviewer-1, worker-2, reviewer-2) and that "
+                "max_iterations was not exceeded."
+            )
+
+
+# Register once per process; idempotent — ADK's registry has no deregister API.
+# Pattern "^fake-ga-iter-.*" is intentionally disjoint from the "^fake-behavioral-.*"
+# pattern in app.adk.agents.utils.test_review_pipeline to prevent registry collisions.
+# If you add a new fake-LLM subclass here, choose a distinct pattern that does not
+# overlap with any existing registration in this file or sibling test files.
+LLMRegistry.register(_GaIterFakeLlm)
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +364,7 @@ def _clear_caches() -> Any:
     attacher._reset_applied_state_for_tests()
     clear_config_cache()
     clear_system_settings_cache_for_tests()
+    _GA_ITER_QUEUE.clear()
     yield
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
@@ -314,6 +372,12 @@ def _clear_caches() -> Any:
     attacher._reset_applied_state_for_tests()
     clear_config_cache()
     clear_system_settings_cache_for_tests()
+    assert not _GA_ITER_QUEUE, (
+        f"_GA_ITER_QUEUE not empty after test teardown — "
+        f"{len(_GA_ITER_QUEUE)} response(s) were not consumed. "
+        "This usually means fewer LoopAgent iterations ran than expected."
+    )
+    _GA_ITER_QUEUE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -453,6 +517,157 @@ async def test_ga_numerical_query_uses_code_execution(
     assert has_exec_result, (
         f"[{query_name} trial {trial}] numerical_analyst: no OUTCOME_OK code_execution_result. "
         f"Parts collected: {[type(p).__name__ for p in all_parts]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AH-32: Code-execution error handling — OUTCOME_FAILED retry or clear error
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("trial", [1, 2, 3])
+@pytest.mark.llm
+@pytest.mark.skipif(
+    not _GEMINI_CREDS_AVAILABLE,
+    reason=(
+        "Live Gemini credentials not configured — set GOOGLE_API_KEY "
+        "or GOOGLE_CLOUD_PROJECT"
+    ),
+)
+@pytest.mark.asyncio
+async def test_numerical_analyst_handles_outcome_failed(trial: int) -> None:
+    """AC #7 (AH-PRD-03 §7, AH-32): when code execution returns OUTCOME_FAILED,
+    the numerical_analyst must either (a) retry with corrected code or (b) report
+    a clear, human-readable error — never surface a raw stack trace or the literal
+    token OUTCOME_FAILED, and never fabricate a successful numerical answer.
+
+    Uses a divide-by-zero prompt to deterministically trigger OUTCOME_FAILED
+    (ZeroDivisionError reliably maps to that outcome in the Gemini sandbox).
+    Drives numerical_analyst_agent directly via its own Runner (same AH-75
+    workaround as AH-27: AgentTool.run_async discards inner events from the
+    outer stream).
+
+    Three trials via @pytest.mark.parametrize for flake tolerance: each trial
+    validates independently; assertions (2)-(4) hold even if a trial does not
+    exercise code execution at all (text-only answer is also an acceptable path).
+    """
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from app.adk.tools.agent_tools.numerical_analyst import (
+        create_numerical_analyst_agent,
+    )
+
+    numerical_analyst_agent = create_numerical_analyst_agent()
+
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name=f"outcome_failed_test_trial_{trial}",
+        user_id=f"test_user_trial_{trial}",
+    )
+    runner = Runner(
+        agent=numerical_analyst_agent,
+        app_name=f"outcome_failed_test_trial_{trial}",
+        session_service=session_service,
+    )
+
+    all_parts: list[Part] = []
+    try:
+        async for event in runner.run_async(
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[
+                    genai_types.Part.from_text(
+                        text=(
+                            "Compute 1 / 0 using Python code execution. "
+                            "Return the result and the formula."
+                        )
+                    )
+                ],
+            ),
+        ):
+            if event.content and event.content.parts:
+                all_parts.extend(event.content.parts)
+    except ClientError as exc:
+        if exc.code == 403:
+            pytest.skip(
+                f"Gemini credentials lack required permission (HTTP 403). "
+                f"To run this test grant `roles/aiplatform.user` to the "
+                f"service account, or set GOOGLE_API_KEY for the Google AI "
+                f"API path. Original error: {exc!s:.160}"
+            )
+        if exc.code == 404:
+            pytest.skip(
+                f"Model 'gemini-2.5-flash' is not available in this Vertex "
+                f"project/region (HTTP 404). Run where gemini-2.5-flash is "
+                f"enabled or check project quotas. Original error: {exc!s:.160}"
+            )
+        raise
+
+    # Collect text parts and failure indicators.
+    text_parts = [p for p in all_parts if p.text]
+    final_text = " ".join(p.text for p in text_parts if p.text)
+    failed_parts = [
+        p
+        for p in all_parts
+        if p.code_execution_result
+        and p.code_execution_result.outcome == Outcome.OUTCOME_FAILED
+    ]
+    exec_code_parts = [p for p in all_parts if p.executable_code and p.executable_code.code]
+    # Define before assertion (1) so the gate condition is available.
+    has_correction_retry = len(exec_code_parts) >= 2  # second attempt = retry
+
+    # (1) If code ran exactly once (no retry), OUTCOME_FAILED must appear —
+    # confirms the failure path was exercised rather than suppressed.
+    # A two-attempt retry path is also valid: the first attempt fails and the
+    # second may succeed, so we do NOT require OUTCOME_FAILED when a retry ran.
+    if exec_code_parts and not has_correction_retry:
+        assert failed_parts, (
+            f"[trial {trial}] executable_code ran once but no "
+            f"OUTCOME_FAILED code_execution_result found. Parts: "
+            f"{[type(p).__name__ for p in all_parts]}"
+        )
+
+    # (2) The final text must not contain a raw Python stack trace marker.
+    assert "Traceback (most recent call last)" not in final_text, (
+        f"[trial {trial}] Specialist leaked a raw Python stack trace. "
+        f"Final text excerpt: {final_text[:400]!r}"
+    )
+
+    # (3) The literal token OUTCOME_FAILED must not appear in the reply.
+    assert "OUTCOME_FAILED" not in final_text, (
+        f"[trial {trial}] Specialist leaked the raw OUTCOME_FAILED enum token. "
+        f"Final text excerpt: {final_text[:400]!r}"
+    )
+
+    # (4) The response must not silently fabricate a numeric result for 1/0.
+    # A correct handler either (a) acknowledges the failure with a specific
+    # phrase, or (b) retried with corrected code.  "error" alone is excluded
+    # from the phrase list because it is too broad — any incidental mention of
+    # "error" would satisfy the check even if the agent fabricated a result.
+    failure_acknowledged = any(
+        phrase in final_text.lower()
+        for phrase in (
+            "division by zero",
+            "cannot compute",
+            "cannot be computed",
+            "undefined",
+            "zero division",
+            "zerodivisionerror",  # lowercase to match .lower() output
+        )
+    )
+    assert failure_acknowledged or has_correction_retry, (
+        f"[trial {trial}] Specialist neither acknowledged the division-by-zero "
+        f"failure nor produced a correction retry. This suggests silent in-context "
+        f"fallback. Final text excerpt: {final_text[:400]!r}"
+    )
+
+    # (5) The response must contain at least one text part (non-empty reply).
+    assert text_parts, (
+        f"[trial {trial}] Specialist produced no text parts at all. "
+        f"All parts: {[type(p).__name__ for p in all_parts]}"
     )
 
 
@@ -1281,10 +1496,14 @@ def test_resolve_agent_wraps_ga_specialist_in_review_loopagent() -> None:
     # can evaluate the draft against them.
     assert isinstance(reviewer_agent.instruction, str)
     reviewer_instruction: str = reviewer_agent.instruction
+    # AH-149: "code execution" was removed from GA_SPECIALIST_ACCEPTANCE_CRITERIA
+    # when the parent GA specialist stopped executing code directly (code
+    # execution now lives in the numerical_analyst leaf).  The reviewer
+    # instruction is built from the criteria string verbatim, so "code execution"
+    # is intentionally absent.  The remaining phrases ARE in the criteria.
     for phrase in (
         "property identifier",
         "absolute date range",
-        "code execution",
         "formula",
         "metric name",
         "decimal",
@@ -1565,5 +1784,771 @@ async def test_ga_review_loop_approves_well_formed_numerical_response() -> None:
         )
     assert any(marker in draft for marker in ("%", "percentage", "percent")), (
         f"Approved draft must include a percentage result. "
+        f"Draft excerpt: {draft[:400]!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AH-33: Review iteration — flawed-draft → reviewer rejects → corrected → approved
+#
+# Architecture note: the issue body references ``delegate_to_specialist``, which
+# was deleted in AH-66 and replaced by ADK-native ``transfer_to_agent`` (AH-75 /
+# AH-PRD-03 §1 architecture-refresh note).  This test drives the resolved
+# LoopAgent directly via ``Runner(agent=loop_agent, ...)`` — the same pattern
+# AH-31's behavioral test established.  Routing coverage (transfer_to_agent
+# path) is already provided by AH-30 / AH-29.
+#
+# Response sequence queued into _GA_ITER_QUEUE:
+#
+#   worker iter 1:    "Sessions grew 11.78% week-over-week."
+#                     (FLAWED — formula missing; violates the production
+#                     acceptance criterion "numerical aggregates are accompanied
+#                     by the formula used to compute them")
+#
+#   reviewer iter 1:  "Criterion not met: the formula used to compute the
+#                     percentage change is missing. Show the arithmetic."
+#                     (plain text rejection — no exit_loop call →
+#                     actions.escalate unset → LoopAgent continues)
+#
+#   worker iter 2:    "Sessions grew 11.78% week-over-week "
+#                     "((5391-4823)/4823*100 = 11.78)."
+#                     (CORRECTED — formula present; satisfies the criterion)
+#
+#   reviewer iter 2:  FunctionCall(exit_loop, {})
+#                     (actions.escalate = True → LoopAgent exits; the
+#                     _make_review_exit_loop wrapper clears the feedback key)
+# ---------------------------------------------------------------------------
+
+_FLAWED_DRAFT = "Sessions grew 11.78% week-over-week."
+_CORRECTED_DRAFT = (
+    "Sessions grew 11.78% week-over-week ((5391-4823)/4823*100 = 11.78)."
+)
+_REJECTION_FEEDBACK = (
+    "Criterion not met: the formula used to compute the percentage change is "
+    "missing. Show the arithmetic."
+)
+
+
+@pytest.mark.asyncio
+async def test_ga_review_loop_iterates_then_approves() -> None:
+    """AH-33 / PRD §7 AC #5: reviewer rejects a flawed draft; specialist
+    iterates with a corrected draft (formula present) that satisfies the
+    production acceptance criteria; reviewer approves on the subsequent pass.
+
+    Uses ``_GaIterFakeLlm`` (fake-ga-iter-worker / fake-ga-iter-reviewer) so
+    the test is fully deterministic with no live-model dependency.  Drives the
+    production-shape LoopAgent (built by resolve_agent with the seeded
+    GA_SPECIALIST_ACCEPTANCE_CRITERIA) through Runner + InMemorySessionService,
+    then validates all five ACs from the AH-33 implementation plan.
+    """
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    from google.adk.agents import LoopAgent
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from app.adk.agents.agent_factory import specialist_runtime as sr
+    from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+    from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+    from app.adk.agents.agent_factory.tests.test_specialist_runtime import (
+        _FakeFirestoreDb,
+    )
+    from app.adk.agents.scripts.migrate_ga_specialist_to_firestore import (
+        GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        GA_SPECIALIST_INSTRUCTION,
+    )
+    from app.adk.agents.utils.review_pipeline import (
+        extract_iterations,
+        extract_pipeline_result,
+    )
+
+    # --- Queue the reject-then-approve response sequence -------------------
+    _GA_ITER_QUEUE.extend(
+        [
+            # worker iter 1: flawed draft (formula missing)
+            LlmResponse(
+                content=genai_types.Content(
+                    role="model",
+                    parts=[genai_types.Part(text=_FLAWED_DRAFT)],
+                )
+            ),
+            # reviewer iter 1: text rejection (no exit_loop → loop continues)
+            LlmResponse(
+                content=genai_types.Content(
+                    role="model",
+                    parts=[genai_types.Part(text=_REJECTION_FEEDBACK)],
+                )
+            ),
+            # worker iter 2: corrected draft (formula present)
+            LlmResponse(
+                content=genai_types.Content(
+                    role="model",
+                    parts=[genai_types.Part(text=_CORRECTED_DRAFT)],
+                )
+            ),
+            # reviewer iter 2: exit_loop (approval)
+            LlmResponse(
+                content=genai_types.Content(
+                    role="model",
+                    parts=[
+                        genai_types.Part(
+                            function_call=genai_types.FunctionCall(
+                                name="exit_loop", args={}
+                            )
+                        )
+                    ],
+                )
+            ),
+        ]
+    )
+
+    # --- Build the production-shape config with fake-LLM model names ------
+    ga_config = MergedAgentConfig(
+        instruction=GA_SPECIALIST_INSTRUCTION,
+        model="fake-ga-iter-worker",
+        description="GA specialist (iteration test)",
+        mcp_servers=[],  # tools injected via build_agent side_effect below
+        code_execution_enabled=False,  # no real sandbox needed for this test
+        default_acceptance_criteria=GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        reviewer_model="fake-ga-iter-reviewer",
+        ken_e_sub_agent=True,
+    )
+
+    def _specialist_from_config(
+        _config: Any, *, name: str, **_kw: Any
+    ) -> LlmAgent:
+        """Build the specialist LlmAgent with the fake-LLM model name."""
+        return LlmAgent(
+            name=name,
+            model=_config.model,
+            instruction=_config.instruction,
+            disallow_transfer_to_parent=True,
+        )
+
+    # --- Build the LoopAgent through resolve_agent (mocked Firestore / MCP) -
+    with ExitStack() as stack:
+        stack.enter_context(
+            _patch.object(sr, "resolve_config", return_value=ga_config)
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                new=McpToolsetPool(),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                return_value=_FakeFirestoreDb({}),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=[],
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_specialist_from_config,
+            )
+        )
+        # Prevent _resolve_reviewer_model from hitting Firestore for system_settings.
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                return_value=None,
+            )
+        )
+        loop_agent = sr.resolve_agent("google_analytics_specialist", account_id=None)
+
+    assert isinstance(loop_agent, LoopAgent), (
+        f"resolve_agent must return a LoopAgent when default_acceptance_criteria "
+        f"is set; got {type(loop_agent).__name__}"
+    )
+
+    # Derive names directly from the LoopAgent's sub_agents so the test tracks
+    # any future rename of the child naming convention in build_review_pipeline.
+    output_prefix = "google_analytics_specialist_review"
+    worker_name = loop_agent.sub_agents[0].name   # = get_worker_name(specialist)
+    reviewer_name = loop_agent.sub_agents[1].name  # = get_reviewer_name(output_prefix)
+
+    # --- Run the LoopAgent and collect events ------------------------------
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="ga_iteration_test",
+        user_id="test_user_iteration",
+    )
+    runner = Runner(
+        agent=loop_agent,
+        app_name="ga_iteration_test",
+        session_service=session_service,
+    )
+
+    events: list[Any] = []
+    async for event in runner.run_async(
+        user_id=session.user_id,
+        session_id=session.id,
+        new_message=genai_types.Content(
+            role="user",
+            parts=[
+                Part.from_text(
+                    text=(
+                        "Property 123456789: sessions were 4823 last week and "
+                        "5391 this week. What is the percentage change "
+                        "week-over-week? Include the formula."
+                    )
+                )
+            ],
+        ),
+    ):
+        events.append(event)
+
+    # Retrieve final session state
+    final_session = await session_service.get_session(
+        app_name="ga_iteration_test",
+        user_id=session.user_id,
+        session_id=session.id,
+    )
+    state = dict(final_session.state) if final_session else {}
+
+    # --- AC1: real iteration occurred (two passes; first rejected) ---------
+    iterations = extract_iterations(events, worker_name, reviewer_name, output_prefix)
+
+    assert len(iterations) == 2, (
+        f"Expected exactly 2 review iterations; got {len(iterations)}. "
+        f"Events collected: {len(events)}. "
+        f"Iteration records: {iterations}"
+    )
+    assert iterations[0].escalate is False, (
+        f"Iteration 1 reviewer must NOT escalate (rejection); "
+        f"got escalate={iterations[0].escalate!r}"
+    )
+    assert iterations[1].escalate is True, (
+        f"Iteration 2 reviewer must escalate (approval via exit_loop); "
+        f"got escalate={iterations[1].escalate!r}"
+    )
+
+    # --- AC2: drafts differ materially between iterations ------------------
+    assert iterations[0].specialist_output != iterations[1].specialist_output, (
+        "Specialist output must differ between iteration 1 (flawed) and "
+        "iteration 2 (corrected)."
+    )
+    # Iter 1: formula absent (the flaw)
+    assert "((5391-4823)/4823*100" not in iterations[0].specialist_output, (
+        f"Iteration 1 draft must NOT contain the formula (the flaw to be "
+        f"corrected). Draft: {iterations[0].specialist_output!r}"
+    )
+    # Iter 2: formula present (the correction)
+    assert "((5391-4823)/4823*100" in iterations[1].specialist_output, (
+        f"Iteration 2 draft must contain the formula (the correction). "
+        f"Draft: {iterations[1].specialist_output!r}"
+    )
+
+    # --- AC3: rubber-stamping detector (reviewer wrote real feedback) ------
+    assert iterations[0].reviewer_output, (
+        "Iteration 1 reviewer output must be non-empty (rejection feedback). "
+        "An empty reviewer output means the reviewer ran but produced no text, "
+        "which may indicate rubber-stamping."
+    )
+    # On approval the exit_loop tool clears the feedback key to "".
+    assert iterations[1].reviewer_output == "", (
+        f"Iteration 2 reviewer output must be empty after exit_loop approval. "
+        f"Got: {iterations[1].reviewer_output!r}"
+    )
+
+    # --- AC4: state deltas prove {prefix}_draft and {prefix}_feedback ------
+    #     were written between iterations.
+    draft_key = f"{output_prefix}_draft"
+    feedback_key = f"{output_prefix}_feedback"
+
+    # At least one event from the worker must carry a state_delta for the
+    # draft key.
+    worker_draft_writes = [
+        e
+        for e in events
+        if (
+            getattr(e, "author", None) == worker_name
+            and getattr(getattr(e, "actions", None), "state_delta", None)
+            and draft_key
+            in (getattr(getattr(e, "actions", None), "state_delta", None) or {})
+        )
+    ]
+    assert worker_draft_writes, (
+        f"No worker event wrote to '{draft_key}' in state_delta. "
+        f"Draft key must be updated by the worker on each iteration."
+    )
+
+    # At least one reviewer event between the iter-1 worker and iter-2 worker
+    # must carry a state_delta for the feedback key (proving the rejection was
+    # persisted so the worker could read it).
+    reviewer_feedback_writes = [
+        e
+        for e in events
+        if (
+            getattr(e, "author", None) == reviewer_name
+            and getattr(getattr(e, "actions", None), "state_delta", None)
+            and feedback_key
+            in (getattr(getattr(e, "actions", None), "state_delta", None) or {})
+        )
+    ]
+    assert reviewer_feedback_writes, (
+        f"No reviewer event wrote to '{feedback_key}' in state_delta. "
+        f"Feedback key must be updated by the reviewer between iterations."
+    )
+
+    # --- AC5: exit_loop called only on iteration 2 -------------------------
+    pipeline_result = extract_pipeline_result(state, output_prefix)
+
+    assert pipeline_result["approved"], (
+        "Pipeline must be approved after iteration 2. "
+        f"Last feedback: {pipeline_result.get('warning', '')!r}"
+    )
+    assert pipeline_result["result"] == _CORRECTED_DRAFT, (
+        f"Approved result must be the iteration-2 corrected draft. "
+        f"Got: {pipeline_result['result']!r}"
+    )
+    # Exactly one escalate=True across all events (the iter-2 reviewer).
+    escalating_events = [
+        e
+        for e in events
+        if bool(getattr(getattr(e, "actions", None), "escalate", False))
+    ]
+    assert len(escalating_events) == 1, (
+        f"Exactly 1 event must have actions.escalate=True (the iter-2 reviewer). "
+        f"Got {len(escalating_events)}: {escalating_events}"
+    )
+    assert getattr(escalating_events[0], "author", None) == reviewer_name, (
+        f"The escalating event must be authored by the reviewer "
+        f"('{reviewer_name}'). "
+        f"Got: {getattr(escalating_events[0], 'author', None)!r}"
+    )
+
+    # Sanity: the queue must be fully drained (all 4 responses consumed).
+    assert not _GA_ITER_QUEUE, (
+        f"Response queue must be empty after the test; "
+        f"{len(_GA_ITER_QUEUE)} response(s) were not consumed. "
+        f"This likely means fewer iterations ran than expected."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AH-34 — E2E happy path: "Show me traffic trends for the past week"
+# ---------------------------------------------------------------------------
+#
+# This test proves the full Release-1 runtime chain:
+#   (1) attach_specialists_before_agent_callback attaches GA specialist to root
+#   (2) Live root Gemini emits transfer_to_agent(agent_name="google_analytics_specialist")
+#   (3) specialist_runtime.resolve_agent returns a LoopAgent (review pipeline)
+#   (4) GA McpToolset is stubbed via FunctionTool wrappers (no live MCP server)
+#   (5) Stub MCP tools provide GA4 row data (sessions this week vs. prior week)
+#   (6) numerical_analyst AgentTool computes the trend (code execution)
+#   (7) Reviewer approves the draft via exit_loop
+#   (8) extract_pipeline_result returns approved=True with a non-empty draft
+#
+# Distinction from AH-31: AH-31 drives the LoopAgent directly (no root agent,
+# no transfer_to_agent dispatch). AH-34 drives the full root→transfer→loop chain
+# exactly once per trial, proving the wiring end-to-end (AC #8).
+#
+# MCP layer: stubbed via FunctionTool wrappers around the module-level
+# get_account_summaries_mt / run_report_mt (realistic GA4 row shapes).
+# LLM layer: live Gemini for root (transfer selection), specialist (draft),
+# reviewer (approval), and transitively numerical_analyst (code execution).
+#
+# Parametrized over 5 trials — makes flakiness visible as clean trial-level
+# failures in CI rather than sporadic single-test failures (AH-PRD-03 §8).
+
+
+@pytest.mark.parametrize("trial", [1, 2, 3, 4, 5])
+@pytest.mark.llm
+@pytest.mark.skipif(
+    not _GEMINI_CREDS_AVAILABLE,
+    reason=(
+        "Live Gemini credentials not configured — set GOOGLE_API_KEY "
+        "or GOOGLE_CLOUD_PROJECT"
+    ),
+)
+@pytest.mark.asyncio
+async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
+    """AC #8 (AH-PRD-03 §7, AH-34): the full chain
+    attach_specialists_before_agent_callback → root transfer_to_agent →
+    resolve_agent (LoopAgent) → McpToolsetPool checkout → stub MCP data →
+    numerical_analyst code execution → reviewer approval → approved draft
+    produces a non-empty text result describing the weekly trend.
+
+    Trial parametrisation (5x): surfaces per-trial flakiness in CI rather
+    than a sporadic single-test failure. Tune GA_SPECIALIST_INSTRUCTION or
+    GA_SPECIALIST_ACCEPTANCE_CRITERIA (via AH-25 seed) if the reviewer
+    regularly rejects on the first pass for repeatable reasons.
+
+    MCP layer is stubbed; every LLM call is real.
+    """
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    from google.adk.agents import Agent, LoopAgent
+    from google.adk.code_executors import BuiltInCodeExecutor
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.adk.tools.agent_tool import AgentTool
+    from google.genai.errors import ClientError
+
+    from app.adk.agents.agent_factory import specialist_runtime as sr
+    from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+    from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+    from app.adk.agents.agent_factory.tests.test_specialist_runtime import (
+        _FakeFirestoreDb,
+    )
+    from app.adk.agents.scripts.migrate_ga_specialist_to_firestore import (
+        GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        GA_SPECIALIST_INSTRUCTION,
+    )
+    from app.adk.agents.utils.review_pipeline import extract_pipeline_result
+
+    # -----------------------------------------------------------------------
+    # Build the split-shape GA specialist (AH-149): parent GA LlmAgent +
+    # numerical_analyst AgentTool leaf with BuiltInCodeExecutor.
+    # -----------------------------------------------------------------------
+
+    numerical_analyst_agent = Agent(
+        name="numerical_analyst",
+        model="gemini-2.5-flash",
+        code_executor=BuiltInCodeExecutor(),
+        instruction=_NUMERICAL_ANALYST_TEST_INSTRUCTION,
+    )
+
+    # AH-34 fix: a week-over-week stub (date range + current/previous period) so
+    # a "traffic trends" query yields a real trend, plus a parent instruction
+    # that mirrors GA_SPECIALIST_ACCEPTANCE_CRITERIA (property id, absolute date
+    # range, per-metric values, a verbatim formula per aggregate). The shared
+    # _GA_TEST_INSTRUCTION / run_report_mt under-specified the reply relative to
+    # the reviewer rubric, so approval within max_iterations was luck-dependent
+    # (the live reviewer rejected drafts missing the property id / date range /
+    # formula, exhausting the loop). Defined locally so the AH-27 / AH-31 tests
+    # that reuse the shared stubs are untouched.
+    def run_report_mt(
+        property_id: str,
+        date_ranges: list,
+        metrics: list | None = None,
+        dimensions: list | None = None,
+    ) -> str:
+        """Run a GA4 report: week-over-week sessions for the queried property."""
+        return (
+            '{"propertyId": "123456789", '
+            '"dateRange": {"startDate": "2024-05-27", "endDate": "2024-06-02"}, '
+            '"comparisonDateRange": '
+            '{"startDate": "2024-05-20", "endDate": "2024-05-26"}, '
+            '"rows": [{"metricName": "sessions", '
+            '"currentPeriodValue": "5391", "previousPeriodValue": "4823"}]}'
+        )
+
+    rubric_aligned_instruction = (
+        "You are a Google Analytics 4 specialist.\n"
+        "When the user asks about website traffic or trends, ALWAYS fetch the "
+        "data with the GA tools — never ask the user for the property ID or the "
+        "date range; read both from the tool output.\n"
+        "1. Call get_account_summaries_mt to find the property, then "
+        "run_report_mt to fetch the metrics.\n"
+        "2. Delegate ALL arithmetic to the numerical_analyst tool: pass only the "
+        "specific numbers and a description of the calculation, then include the "
+        "figure AND the formula it returns verbatim.\n"
+        "3. For a traffic-trends query, compute the week-over-week percentage "
+        "change between the current and previous period via numerical_analyst.\n"
+        "Your final reply MUST always include:\n"
+        "- the GA property identifier from the tool output;\n"
+        "- the absolute date range (start and end dates) from the tool output;\n"
+        "- every metric reported by name, rounded to at most 2 decimal places;\n"
+        "- the verbatim formula for each aggregate (including the week-over-week "
+        "percentage change) as returned by numerical_analyst.\n"
+    )
+
+    def _specialist_with_stub_tools_and_analyst(
+        _config: MergedAgentConfig, *, name: str, **_kw: Any
+    ) -> LlmAgent:
+        """Real LlmAgent with stub GA MCP tools + numerical_analyst AgentTool.
+
+        No code_executor on the parent — validates the AH-149 split shape
+        avoids the Gemini 2.5+ HTTP 400 (code_executor + function tools on
+        one agent).
+        """
+        return LlmAgent(
+            name=name,
+            model="gemini-2.5-flash",
+            instruction=rubric_aligned_instruction,
+            tools=[
+                AgentTool(agent=numerical_analyst_agent),
+                FunctionTool(get_account_summaries_mt),
+                FunctionTool(run_report_mt),
+            ],
+            disallow_transfer_to_parent=True,
+        )
+
+    # -----------------------------------------------------------------------
+    # Config mirroring the production GA seed (AH-25).
+    # mcp_servers=[] — tools are injected via build_agent side_effect.
+    # -----------------------------------------------------------------------
+
+    ga_config = MergedAgentConfig(
+        instruction=GA_SPECIALIST_INSTRUCTION,
+        model="gemini-2.5-flash",
+        description=(
+            "Google Analytics 4 specialist. Use for any query about website or app"
+            " traffic: sessions, users, pageviews, bounce rate, engagement, traffic"
+            " sources, conversion events, real-time data, or custom GA4 reports."
+            " Performs accurate numerical analysis (percentages, trends, averages)"
+            " using Gemini code execution."
+        ),
+        mcp_servers=[],  # tools injected via build_agent side_effect below
+        code_execution_enabled=True,
+        default_acceptance_criteria=GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        reviewer_model=None,
+        ken_e_sub_agent=True,
+    )
+
+    # -----------------------------------------------------------------------
+    # Patch layer: resolve_config → ga_config, build_agent → split specialist,
+    # mcp.build_toolset_for_doc → no-op MagicMock (defensive: the GA config has
+    # mcp_servers=[], so the real pool checkout is never reached — MCP tools are
+    # injected as FunctionTool wrappers on the specialist instead), and
+    # system_settings → None.
+    # -----------------------------------------------------------------------
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            _patch.object(sr, "resolve_config", return_value=ga_config)
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                new=McpToolsetPool(),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                return_value=_FakeFirestoreDb({}),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+                return_value=MagicMock(name="toolset_unused"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=[],
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_specialist_with_stub_tools_and_analyst,
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                return_value=None,
+            )
+        )
+
+        # Resolve the GA specialist into a review LoopAgent.
+        loop_agent = sr.resolve_agent(
+            "google_analytics_specialist",
+            account_id="acct_e2e_happy_path",
+        )
+
+    assert isinstance(loop_agent, LoopAgent), (
+        f"[trial {trial}] resolve_agent must return a LoopAgent when "
+        f"default_acceptance_criteria is set; got {type(loop_agent).__name__}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Build root agent and wire the before_agent_callback.
+    # Patch attacher to return the already-resolved loop_agent.
+    # -----------------------------------------------------------------------
+
+    root = LlmAgent(
+        name="root_agent",
+        model="gemini-2.5-flash",
+        instruction=(
+            "You are a marketing analytics assistant. "
+            "When the user asks about Google Analytics or website traffic, "
+            "delegate to the google_analytics_specialist."
+        ),
+        tools=[],
+        before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+    )
+
+    account_id = "acct_e2e_happy_path"
+    ga_credentials: dict[str, Any] = {"access_token": "tok_e2e", "tenant_id": "tenant_e2e"}
+    mcp_creds: dict[str, Any] = {"refresh_signature": "sig_e2e"}
+
+    app_name = f"e2e_happy_path_trial_{trial}"
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name=app_name,
+        user_id=f"user_e2e_{trial}",
+        state={
+            "account_id": account_id,
+            "ga_credentials": ga_credentials,
+            "mcp_creds_google_analytics_mcp": mcp_creds,
+        },
+    )
+    runner = Runner(
+        agent=root,
+        app_name=app_name,
+        session_service=session_service,
+    )
+
+    output_prefix = "google_analytics_specialist_review"
+    all_events: list[Any] = []
+
+    with (
+        patch.object(
+            attacher,
+            "list_account_agent_configs_cached",
+            return_value=["google_analytics_specialist"],
+        ),
+        patch.object(attacher, "resolve_config", return_value=ga_config),
+        patch.object(attacher, "resolve_agent", return_value=loop_agent),
+    ):
+        try:
+            async for event in runner.run_async(
+                user_id=session.user_id,
+                session_id=session.id,
+                new_message=genai_types.Content(
+                    role="user",
+                    parts=[Part.from_text(text="Show me traffic trends for the past week.")],
+                ),
+            ):
+                all_events.append(event)
+        except ClientError as exc:
+            if exc.code == 403:
+                pytest.skip(
+                    f"[trial {trial}] Gemini credentials lack required permission "
+                    f"(HTTP 403). Grant roles/aiplatform.user or set GOOGLE_API_KEY. "
+                    f"Original error: {exc!s:.160}"
+                )
+            if exc.code == 404:
+                pytest.skip(
+                    f"[trial {trial}] Model not available in this project/region "
+                    f"(HTTP 404). Original error: {exc!s:.160}"
+                )
+            raise
+
+    # -----------------------------------------------------------------------
+    # Assertion 1: root must emit transfer_to_agent(google_analytics_specialist)
+    # -----------------------------------------------------------------------
+
+    transfer_events = [
+        e
+        for e in all_events
+        if e.content
+        and e.content.parts
+        and any(
+            p.function_call
+            and p.function_call.name == "transfer_to_agent"
+            and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+            for p in e.content.parts
+        )
+    ]
+    assert transfer_events, (
+        f"[trial {trial}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+        f"event found in root stream. "
+        f"Total events: {len(all_events)}. "
+        f"Event authors: {[getattr(e, 'author', None) for e in all_events]}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 2: no error_code on any event
+    # -----------------------------------------------------------------------
+
+    error_events = [e for e in all_events if getattr(e, "error_code", None)]
+    assert not error_events, (
+        f"[trial {trial}] Unexpected error events: "
+        f"{[repr(e) for e in error_events]}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 3: at least one model-role terminal event
+    # -----------------------------------------------------------------------
+
+    model_role_events = [
+        e
+        for e in all_events
+        if e.content and e.content.role == "model" and e.content.parts
+        and not getattr(e, "partial", False)
+    ]
+    assert model_role_events, (
+        f"[trial {trial}] No model-role terminal events found. "
+        f"Total events: {len(all_events)}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 4: attachment — root.sub_agents contains google_analytics_specialist
+    # -----------------------------------------------------------------------
+
+    sub_agent_names = [a.name for a in (root.sub_agents or [])]
+    assert "google_analytics_specialist" in sub_agent_names, (
+        f"[trial {trial}] root.sub_agents does not contain 'google_analytics_specialist' "
+        f"after the run. Found: {sub_agent_names!r}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 5: review-loop approval via extract_pipeline_result
+    # -----------------------------------------------------------------------
+
+    final_session = await session_service.get_session(
+        app_name=app_name,
+        user_id=session.user_id,
+        session_id=session.id,
+    )
+    state = dict(final_session.state) if final_session else {}
+
+    draft_key = f"{output_prefix}_draft"
+    assert draft_key in state, (
+        f"[trial {trial}] Session state missing key {draft_key!r} — "
+        f"the review loop never produced a draft. "
+        f"State keys: {list(state.keys())}"
+    )
+
+    pipeline_result = extract_pipeline_result(state, output_prefix)
+    assert pipeline_result["approved"], (
+        f"[trial {trial}] Review loop must approve the response within max_iterations. "
+        f"Last reviewer feedback: {pipeline_result.get('warning', '')!r}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 6: content quality — non-empty draft with formula/trend token
+    # -----------------------------------------------------------------------
+
+    draft = pipeline_result["result"]
+    assert isinstance(draft, str) and len(draft) >= 60, (
+        f"[trial {trial}] Approved draft must be a non-empty string of at least "
+        f"60 characters; got {len(draft)} chars. Draft: {draft!r}"
+    )
+
+    assert any(
+        marker in draft
+        for marker in ("%", "percent", "average", "trend", "Trend", "Percent")
+    ), (
+        f"[trial {trial}] Approved draft must include a trend/percentage descriptor. "
         f"Draft excerpt: {draft[:400]!r}"
     )
