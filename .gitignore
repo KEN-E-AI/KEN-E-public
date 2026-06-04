@@ -234,3 +234,7 @@ app/adk/agents/logs/*.txt
 # driver scripts + package files checked in.
 tests/integration/stability/runs/*.json
 tests/integration/stability/runs/*.log
+
+# AH-104 / AH-99 spike workspace artefacts — runtime outputs, not source
+docs/spike-adk2/.spike_engine_id
+docs/spike-adk2/results/

@@ -87,7 +87,7 @@ ADK 2.0 went GA 2026-05-19. [AH-96](https://linear.app/ken-e/issue/AH-96) (stati
 | Modify | `app/adk/agents/utils/supervisor_utils.py` | Remove the `events.append` (line ~148) → framework-managed yield |
 | Audit/Modify | chat-tree tool bodies with broad `except` | Narrow to specific exceptions; never `except BaseException` around node calls |
 | Validate | 23 callback files | Confirm 2.0 signatures/semantics; expect few edits |
-| Validate/Modify | `app/adk/agents/agent_factory/sub_agent_attacher.py`, AH-100 root-tools reconcile callback | Per-turn mutation must hold on 2.0 (§5.3) |
+| Validate/Modify | `app/adk/agents/agent_factory/sub_agent_attacher.py`, AH-100 root-tools reconcile callback | Per-turn mutation must hold on 2.0 (§5.3). **AH-104 found the concrete fix:** apply the `AlwaysTrueSubAgentList` shim + in-place `_reconcile` + populated-guard, and re-add the parity-test Mode B hooks — exact diff in `docs/spike-ah104-deploy-sandbox-weave.md` §3.2.1. Verify under a 2.0 venv (parity test `total_billable=1430` for Mode B). |
 | Modify | `app/adk/deploy_with_sys_version.py` (+ packaging) | Pin/guard strategy tree at 1.34.1; isolate from chat-tree 2.0 deps |
 
 ### 5.2 Deploy-tree decoupling
@@ -148,6 +148,7 @@ No HTTP API change. `ChatResponse` and all chat endpoints are unchanged.
 ## 10. Reference
 
 - `docs/spike-adk2-supervisor-orchestration.md` (AH-96) + `docs/spike-adk2-supervisor-orchestration-live.md` (AH-99)
+- `docs/spike-ah104-deploy-sandbox-weave.md` (AH-104 Phase 0 de-risking spike — deploy + sandbox + Weave go/no-go; gates AH-105)
 - `docs/design/adk2-supervisor-orchestration-analysis.md` (decision memo §4.4 migration cost, §6 phased plan)
 - [DESIGN-REVIEW-LOG Review 44](../../../DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20) + Review 45
 - [AH-PRD-05](./AH-PRD-05-multi-step-workflows.md) (supervisor — the consumer of this foundation), [AH-PRD-09 §4.6](./AH-PRD-09-per-turn-dispatch.md) (dispatch + AH-75 event-loss evidence)

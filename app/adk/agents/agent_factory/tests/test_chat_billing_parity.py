@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import patch
 
@@ -84,7 +85,7 @@ class _CanonicalStubLlm(BaseLlm):
         self,
         llm_request: Any,
         stream: bool = False,
-    ):
+    ) -> AsyncIterator[LlmResponse]:
         usage = genai_types.GenerateContentResponseUsageMetadata(
             prompt_token_count=_CANONICAL_PROMPT_TOKEN_COUNT,
             candidates_token_count=_CANONICAL_CANDIDATES_TOKEN_COUNT,
@@ -110,7 +111,7 @@ class _RouterStubLlm(BaseLlm):
         self,
         llm_request: Any,
         stream: bool = False,
-    ):
+    ) -> AsyncIterator[LlmResponse]:
         func_call = FunctionCall(
             name="transfer_to_agent", args={"agent_name": "canonical_stub_agent"}
         )
@@ -136,7 +137,7 @@ class _TransferToSpecialistStubLlm(BaseLlm):
         self,
         llm_request: Any,
         stream: bool = False,
-    ):
+    ) -> AsyncIterator[LlmResponse]:
         func_call = FunctionCall(
             name="transfer_to_agent", args={"agent_name": "test_specialist"}
         )

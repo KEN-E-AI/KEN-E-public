@@ -1,0 +1,49 @@
+# ADK 2.0 spike — deploy-harness requirements
+# Extension of requirements.txt for the AH-104 deploy spike.
+# requirements.txt covers the minimal runner deps (google-adk[gcp]==2.0.0,
+# google-cloud-aiplatform, google-cloud-firestore, weave).
+# This file adds the full set needed to exercise agent_factory.build_hierarchy()
+# + agent_engines.create() in spike_deploy.py.
+#
+# Install into the spike venv (from repo root):
+#   .venv-adk2/bin/pip install -r docs/spike-adk2/spike_requirements.txt
+#
+# Do NOT install into the main KEN-E uv env — ADK 2.0 breaks ADK 1.34.1 callers.
+
+# Core ADK pin — must match the rest of the spike workspace
+google-adk[gcp]==2.0.0
+
+# Agent Engine deploy + managed sessions (adk,agent_engines extras include the
+# reasoning-engines client and the AdkApp wrapper)
+google-cloud-aiplatform[adk,agent_engines]
+
+# Firestore — read by build_hierarchy() config_loader to fetch agent roster/tools
+google-cloud-firestore>=2.16.0
+
+# Secret Manager — used by shared.secrets.get_env_or_secret (imported by
+# deploy_ken_e.py and indirectly by several agent_factory helpers)
+google-cloud-secret-manager
+
+# GCS staging bucket — Agent Engine create() stages the deploy tree here
+google-cloud-storage
+
+# .env file loading — loaded at the top of ken_e_agent.py and deploy helpers
+python-dotenv
+
+# Weave tracing — imported by tracking/callbacks.py (loaded via build_hierarchy)
+weave>=0.51.0,<0.51.57
+# gql<4: gql 4.0 breaks weave 0.51.x (wandb/weave#5288); fixed in weave 0.52.1+
+# but weave 0.52.1+ pulls polyfile-weave which breaks Agent Engine compileall
+gql<4
+
+# Weave backend (wandb)
+wandb
+
+# Neo4j — agent context lookups inside some specialist sub-agents
+neo4j>=5.14.0
+
+# nest-asyncio — async compatibility shim required by several ADK runner paths
+nest-asyncio
+
+# pytest-asyncio — required to run async test functions with pytest
+pytest-asyncio
