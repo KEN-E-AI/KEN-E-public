@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -17,9 +18,60 @@ from app.adk.agents.chat_callbacks import (
     _build_turn_delta,
     _extract_session_id,
     _gather_turn_events,
+    attach_chat_side_table_callbacks,
     chat_after_agent_callback,
     chat_before_agent_callback,
 )
+
+# ---------------------------------------------------------------------------
+# attach_chat_side_table_callbacks — root-agent wiring (CH-PRD-01 §5.1)
+# ---------------------------------------------------------------------------
+
+
+class TestAttachChatSideTableCallbacks:
+    def test_appends_to_existing_callback_lists(self) -> None:
+        """Factory-built agents carry list callbacks (weave/skill) — append to them."""
+
+        def _weave_before(_ctx: Any) -> None: ...
+        def _weave_after(_ctx: Any) -> None: ...
+
+        agent = SimpleNamespace(
+            before_agent_callback=[_weave_before],
+            after_agent_callback=[_weave_after],
+        )
+
+        attach_chat_side_table_callbacks(agent)
+
+        assert agent.before_agent_callback == [
+            _weave_before,
+            chat_before_agent_callback,
+        ]
+        assert agent.after_agent_callback == [_weave_after, chat_after_agent_callback]
+
+    def test_promotes_single_callable_to_list(self) -> None:
+        def _single(_ctx: Any) -> None: ...
+
+        agent = SimpleNamespace(
+            before_agent_callback=_single,
+            after_agent_callback=_single,
+        )
+
+        attach_chat_side_table_callbacks(agent)
+
+        assert agent.before_agent_callback == [_single, chat_before_agent_callback]
+        assert agent.after_agent_callback == [_single, chat_after_agent_callback]
+
+    def test_creates_list_when_none(self) -> None:
+        agent = SimpleNamespace(
+            before_agent_callback=None,
+            after_agent_callback=None,
+        )
+
+        attach_chat_side_table_callbacks(agent)
+
+        assert agent.before_agent_callback == [chat_before_agent_callback]
+        assert agent.after_agent_callback == [chat_after_agent_callback]
+
 
 # ---------------------------------------------------------------------------
 # ADK Event stub helpers

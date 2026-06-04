@@ -336,6 +336,36 @@ def chat_after_agent_callback(
     return None
 
 
+def attach_chat_side_table_callbacks(agent: Any) -> None:
+    """Append the Chat side-table callbacks to a root agent (root-only).
+
+    The agent factory builds ``before_agent_callback`` / ``after_agent_callback``
+    as lists (weave + skill callbacks); this appends the two chat callbacks that
+    stamp ``last_agent_started_at`` / ``last_agent_message_at`` plus per-turn
+    token counters onto the side-table — the data that powers the sidebar status
+    dots and the "active / needs review" header counts. The callbacks are
+    internally root-only-guarded (they return early on specialist sub-agents), so
+    attaching them to the shared root object is safe.
+
+    Called once from ``deploy_ken_e.py`` after ``build_hierarchy()`` — the
+    last-mile registration that CH-PRD-01 §5.1 left as a soft dependency on the
+    Agent Factory. Tolerant of however ADK stores the attribute: an existing list
+    is appended to, a lone callable is promoted to a list, and a missing/None
+    value becomes a new list.
+    """
+    for attr, cb in (
+        ("before_agent_callback", chat_before_agent_callback),
+        ("after_agent_callback", chat_after_agent_callback),
+    ):
+        existing = getattr(agent, attr, None)
+        if isinstance(existing, list):
+            existing.append(cb)
+        elif callable(existing):
+            setattr(agent, attr, [existing, cb])
+        else:
+            setattr(agent, attr, [cb])
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------

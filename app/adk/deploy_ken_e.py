@@ -55,14 +55,22 @@ ENV_CONFIG = {
     "staging": {
         "project_id": "ken-e-staging",
         "project_number": "391472102753",
-        "chat_internal_api_url": "sm://391472102753/kene-api-url",
-        "chat_internal_api_audience": "sm://391472102753/kene-api-url",
+        # Use the deterministic Cloud Run URL (service-projectnumber.region.run.app),
+        # NOT the legacy hash URL held in the kene-api-url secret. The chat callback
+        # mints an OIDC token whose `aud` is this value; the API verifies it against
+        # CHAT_INTERNAL_OIDC_AUDIENCE, which the CD config sets to this same
+        # deterministic form (deployment/cd/staging.yaml). A mismatch 401s the
+        # engine->API side-table write, so status dots never populate.
+        "chat_internal_api_url": "https://kene-api-staging-391472102753.us-central1.run.app",
+        "chat_internal_api_audience": "https://kene-api-staging-391472102753.us-central1.run.app",
     },
     "prod": {
         "project_id": "ken-e-production",
         "project_number": "395770269870",
-        "chat_internal_api_url": "sm://395770269870/kene-api-url",
-        "chat_internal_api_audience": "sm://395770269870/kene-api-url",
+        # See the staging note above: must match CHAT_INTERNAL_OIDC_AUDIENCE in
+        # deployment/cd/deploy-to-prod.yaml, else the engine->API OIDC call 401s.
+        "chat_internal_api_url": "https://kene-api-prod-395770269870.us-central1.run.app",
+        "chat_internal_api_audience": "https://kene-api-prod-395770269870.us-central1.run.app",
     },
 }
 
@@ -320,6 +328,21 @@ def deploy_ken_e() -> str | None:
             from app.adk.agents.agent_factory.roster import RosterCapExceededError
 
             ken_e_agent = build_hierarchy()
+
+            # Register the Chat side-table callbacks on the root agent. Without
+            # this, last_agent_started_at / last_agent_message_at are never
+            # stamped, so every session derives to "idle" and the sidebar status
+            # dots + active/needs-review counts stay empty (CH-PRD-01 §5.1
+            # last-mile wiring; the callbacks are root-only-guarded internally).
+            from app.adk.agents.chat_callbacks import (
+                attach_chat_side_table_callbacks,
+            )
+
+            attach_chat_side_table_callbacks(ken_e_agent)
+            logger.info(
+                "✅ Wired chat side-table callbacks onto root agent "
+                "(before/after_agent_callback)"
+            )
         except (
             ImportError,
             ConfigNotFoundError,

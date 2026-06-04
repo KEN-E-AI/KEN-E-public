@@ -48,7 +48,11 @@ from ..chat.orphan_scan_endpoints import (
     run_adk_session_orphan_scan,
     run_gcs_orphan_scan,
 )
-from ..chat.side_table import derive_is_agent_running, get_chat_side_table_service
+from ..chat.side_table import (
+    derive_is_agent_running,
+    get_chat_side_table_service,
+    recompute_search_text,
+)
 from ..chat.side_table_handlers import apply_side_table_update
 from ..chat.todos import list_todo_lists
 from ..database import get_neo4j_service
@@ -2274,6 +2278,64 @@ async def _flush_stream_turn(
         logger.debug("Stream side-table flush skipped: %s", exc)
 
 
+async def _maybe_set_temp_title(
+    *,
+    session_id: str | None,
+    account_id: str | None,
+    messages: list[ChatMessage],
+) -> None:
+    """Set a temporary session title from the user's first prompt.
+
+    Until CH-PRD-04's auto-title generator ships, derive a human-readable title
+    from the first 30 characters of the user's first message so sidebar rows are
+    not all "Untitled session". Idempotent and best-effort:
+
+    - Only sets the title when the side-table row has none yet (so it never
+      overwrites a user-set title and is a no-op on later turns).
+    - Deliberately does NOT stamp ``auto_title_attempted_at`` — leaving it None
+      lets CH-PRD-04's LLM generator still upgrade these crude titles later.
+    - Bounded to the first couple of turns to avoid a per-turn Firestore read for
+      the life of the session.
+    - Never raises; a title failure must not surface to the chat client.
+    """
+    try:
+        if not session_id or str(session_id).startswith("pending_") or not account_id:
+            return
+        sid = session_id
+        acct = account_id
+        # Only the user's own messages, and only early in the conversation — the
+        # genuine first turn has exactly one user message; allow one retry turn.
+        user_msgs = [m.content for m in messages if m.role == "user" and m.content]
+        if not user_msgs or len(user_msgs) > 2:
+            return
+        temp_title = " ".join(user_msgs[0].split())[:30]
+        if not temp_title:
+            return
+
+        def _write() -> None:
+            svc = get_chat_side_table_service()
+            meta = svc.get(acct, sid)
+            # No-op when the row is missing or already titled (idempotent;
+            # respects manual edits).
+            if meta is None or meta.title is not None:
+                return
+            updated = meta.model_copy(update={"title": temp_title})
+            svc.update_from_delta(
+                acct,
+                sid,
+                {
+                    "title": temp_title,
+                    "search_text": recompute_search_text(updated, None),
+                    "updated_at": datetime.now(timezone.utc),
+                },
+            )
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _write)
+    except Exception as exc:
+        logger.debug("Temp title set skipped: %s", exc)
+
+
 async def _stream_completion_sse(
     *,
     messages: list[ChatMessage],
@@ -2332,6 +2394,12 @@ async def _stream_completion_sse(
             accumulator=accumulator,
             turn_failed=turn_failed,
             turn_uuid=turn_uuid,
+        )
+        # Temporary auto-title from the first prompt (until CH-PRD-04 ships).
+        await _maybe_set_temp_title(
+            session_id=resolved_session_id,
+            account_id=account_id,
+            messages=messages,
         )
 
 
@@ -2432,6 +2500,13 @@ async def chat_completion(
                         )
                 except Exception as _stamp_err:
                     logger.debug("Non-stream stop-stamp skipped: %s", _stamp_err)
+
+            # Temporary auto-title from the first prompt (until CH-PRD-04 ships).
+            await _maybe_set_temp_title(
+                session_id=actual_session_id,
+                account_id=request.account_id,
+                messages=request.messages,
+            )
 
             # Fire post-response writes in background (non-blocking)
             async def _post_response_writes(uid: str, sid: str, content: str) -> None:

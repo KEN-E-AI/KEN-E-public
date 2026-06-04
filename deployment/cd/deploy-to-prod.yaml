@@ -223,10 +223,13 @@ substitutions:
 
   # Chat internal OIDC auth (CH-PRD-05 / CH-51).
   # CHAT_INTERNAL_SA_ALLOWLIST: comma-separated service-account emails permitted to call
-  # internal chat endpoints. Includes the orphan-scan scheduler SA (enabled here) and
-  # the ADK-callback SA (add when chat_v2_enabled is turned on).
-  # Override in the Cloud Build trigger to add the ADK-callback SA when enabling chat_v2.
-  _CHAT_INTERNAL_SA_ALLOWLIST_PROD: 'chat-orphan-scan-scheduler@ken-e-production.iam.gserviceaccount.com'
+  # internal chat endpoints. Includes the orphan-scan scheduler SA and the ADK-callback
+  # SA. The ADK-callback SA is the Agent Engine runtime identity (the default AI Platform
+  # Reasoning Engine service agent, since the engine has no custom SA) — its OIDC token is
+  # what app/adk/agents/chat_callbacks.py posts to /internal/chat/side-table/update.
+  # NOTE: confirm this exact email against the 403 "OIDC caller ... not in allowlist" log
+  # after the first real callback turn; correct if the runtime SA differs.
+  _CHAT_INTERNAL_SA_ALLOWLIST_PROD: 'chat-orphan-scan-scheduler@ken-e-production.iam.gserviceaccount.com,service-395770269870@gcp-sa-aiplatform-re.iam.gserviceaccount.com'
 
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:

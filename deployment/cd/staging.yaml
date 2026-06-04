@@ -421,10 +421,13 @@ substitutions:
 
   # Chat internal OIDC auth (CH-PRD-05 / CH-51).
   # CHAT_INTERNAL_SA_ALLOWLIST: comma-separated service-account emails permitted to call
-  # internal chat endpoints. Includes the orphan-scan scheduler SA (enabled here) and
-  # the ADK-callback SA (add when chat_v2_enabled is turned on).
-  # Override in the Cloud Build trigger to add the ADK-callback SA when enabling chat_v2.
-  _CHAT_INTERNAL_SA_ALLOWLIST_STAGING: 'chat-orphan-scan-scheduler@ken-e-staging.iam.gserviceaccount.com'
+  # internal chat endpoints. Includes the orphan-scan scheduler SA and the ADK-callback
+  # SA. The ADK-callback SA is the Agent Engine runtime identity (the default AI Platform
+  # Reasoning Engine service agent, since the engine has no custom SA) — its OIDC token is
+  # what app/adk/agents/chat_callbacks.py posts to /internal/chat/side-table/update.
+  # NOTE: confirm this exact email against the 403 "OIDC caller ... not in allowlist" log
+  # after the first real callback turn; correct if the runtime SA differs.
+  _CHAT_INTERNAL_SA_ALLOWLIST_STAGING: 'chat-orphan-scan-scheduler@ken-e-staging.iam.gserviceaccount.com,service-391472102753@gcp-sa-aiplatform-re.iam.gserviceaccount.com'
   _STAGING_API_URL: https://kene-api-staging-391472102753.us-central1.run.app
   # Firebase Admin SDK SA that the load-test step impersonates to sign
   # custom tokens for the staging project.  cicd-runner@ken-e-cicd holds

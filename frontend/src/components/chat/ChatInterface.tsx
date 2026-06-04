@@ -4,7 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ArtifactBlock } from "./ArtifactBlock";
-import { getConversationHistory, streamChatCompletion } from "@/lib/chatApi";
+import {
+  getConversationHistory,
+  isPendingSessionId,
+  streamChatCompletion,
+} from "@/lib/chatApi";
 import type { ChatMessage, StreamEvent } from "@/lib/chatApi";
 import { parseConversationHistory } from "@/lib/parseConversationHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
@@ -44,6 +48,18 @@ type ChatInterfaceProps = {
 const INTRO_CONTENT =
   "Hi! I'm your KEN-E AI assistant. I can help you build marketing campaigns, analyze performance, create workflows, and manage your calendar. What would you like to work on?";
 
+// Factory (not a shared constant) so each reset gets a fresh `timestamp` and a
+// new object identity — reused by the initial state and by the session-switch
+// reset below.
+function makeIntroMessage(): Message {
+  return {
+    id: "intro",
+    role: "assistant",
+    content: INTRO_CONTENT,
+    timestamp: new Date(),
+  };
+}
+
 const TEXT_SIZE_CLASSES: Record<TextSize, string> = {
   small: "text-sm",
   medium: "text-base",
@@ -58,12 +74,7 @@ export function ChatInterface({
   compact = false,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(() => [
-    {
-      id: "intro",
-      role: "assistant",
-      content: INTRO_CONTENT,
-      timestamp: new Date(),
-    },
+    makeIntroMessage(),
   ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -83,6 +94,11 @@ export function ChatInterface({
   // Their history must NOT be reloaded — the live turn is already in `messages`,
   // and a backend fetch could clobber the in-flight stream.
   const locallyCreatedRef = useRef<Set<string>>(new Set());
+  // Monotonic turn counter, bumped at the start of every send. The history-load
+  // effect captures its value at start and bails if it changed before the fetch
+  // resolved — so a slow history fetch can never clobber a turn the user began
+  // while it was in flight (open-session-then-send race).
+  const turnSeqRef = useRef(0);
 
   // Cancel any in-flight stream when the component unmounts
   useEffect(() => {
@@ -91,21 +107,39 @@ export function ChatInterface({
     };
   }, []);
 
-  // Load prior messages when a session is opened or switched. Keeps the intro
-  // for an ephemeral (no sessionId) or brand-new (empty history) conversation.
+  // Load prior messages when a session is opened or switched. Always resets the
+  // view to the selected session so switching never leaves the previous
+  // conversation on screen (CH Q4/Q5):
+  //   - locally-created session with an in-flight stream → untouched (the live
+  //     turn is already in `messages`; a fetch would clobber it);
+  //   - no session, or a server-issued pending_ placeholder ("+ New Session")
+  //     with no history yet → fresh intro, no fetch;
+  //   - populated session → its history; empty session → fresh intro;
+  //   - fetch error → fresh intro (never another session's stale messages).
   useEffect(() => {
-    if (!sessionId) return;
-    if (locallyCreatedRef.current.has(sessionId)) return; // just created here
+    // Guard FIRST: the lazy-create / pending→real reconciliation paths add ids
+    // to locallyCreatedRef (including pending_ ids), and those must not be
+    // reloaded mid-stream.
+    if (sessionId && locallyCreatedRef.current.has(sessionId)) return;
+    if (!sessionId || isPendingSessionId(sessionId)) {
+      setMessages([makeIntroMessage()]);
+      return;
+    }
     let cancelled = false;
+    const seqAtStart = turnSeqRef.current;
+    // Don't clobber a turn the user started after this effect began fetching.
+    const superseded = () => cancelled || turnSeqRef.current !== seqAtStart;
     (async () => {
       try {
         const raw = await getConversationHistory(sessionId);
-        if (cancelled) return;
+        if (superseded()) return;
         const parsed = parseConversationHistory(raw);
-        if (parsed.length > 0) setMessages(parsed);
+        setMessages(parsed.length > 0 ? parsed : [makeIntroMessage()]);
       } catch (err) {
-        if (!cancelled)
+        if (!superseded()) {
           console.error("Failed to load conversation history:", err);
+          setMessages([makeIntroMessage()]);
+        }
       }
     })();
     return () => {
@@ -205,6 +239,9 @@ export function ChatInterface({
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming || isOrgInactive) return;
+
+    // Mark a turn as started so an in-flight history fetch won't clobber it.
+    turnSeqRef.current += 1;
 
     const userMsg: Message = {
       id: `user-${crypto.randomUUID()}`,

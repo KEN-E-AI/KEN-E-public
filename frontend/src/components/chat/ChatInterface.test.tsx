@@ -22,6 +22,7 @@ vi.mock("framer-motion", () => ({
 vi.mock("@/lib/chatApi", () => ({
   streamChatCompletion: vi.fn(),
   getConversationHistory: vi.fn(),
+  isPendingSessionId: (id: string) => id.startsWith("pending_"),
 }));
 
 vi.mock("@/hooks/useOrgStatus", () => ({
@@ -326,6 +327,67 @@ describe("ChatInterface", () => {
       screen.getByText(/I'm your KEN-E AI assistant/i),
     ).toBeInTheDocument();
     errSpy.mockRestore();
+  });
+
+  // ── TC-History-5: switching sessions replaces the displayed history ──
+
+  test("TC-History-5: switching to another populated session replaces the history", async () => {
+    mockGetConversationHistory.mockResolvedValue({
+      events: [
+        { content: { role: "user", parts: [{ text: "question A" }] } },
+        { content: { role: "model", parts: [{ text: "answer A" }] } },
+      ],
+    });
+
+    const { rerender } = render(<ChatInterface sessionId="sess_A" />);
+    expect(await screen.findByText("question A")).toBeInTheDocument();
+
+    mockGetConversationHistory.mockResolvedValue({
+      events: [
+        { content: { role: "user", parts: [{ text: "question B" }] } },
+        { content: { role: "model", parts: [{ text: "answer B" }] } },
+      ],
+    });
+    rerender(<ChatInterface sessionId="sess_B" />);
+
+    expect(await screen.findByText("question B")).toBeInTheDocument();
+    // The previous session's messages must be gone (Q5 regression guard).
+    expect(screen.queryByText("question A")).not.toBeInTheDocument();
+  });
+
+  // ── TC-History-6: switching to an empty session clears to the intro ──
+
+  test("TC-History-6: switching to an empty session clears prior messages to the intro", async () => {
+    mockGetConversationHistory.mockResolvedValue({
+      events: [
+        { content: { role: "user", parts: [{ text: "old question" }] } },
+      ],
+    });
+
+    const { rerender } = render(<ChatInterface sessionId="sess_full" />);
+    expect(await screen.findByText("old question")).toBeInTheDocument();
+
+    mockGetConversationHistory.mockResolvedValue({ events: [] });
+    rerender(<ChatInterface sessionId="sess_blank" />);
+
+    // Empty session → fresh intro, and the prior conversation is cleared.
+    await waitFor(() =>
+      expect(
+        screen.getByText(/I'm your KEN-E AI assistant/i),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("old question")).not.toBeInTheDocument();
+  });
+
+  // ── TC-History-7: a pending_ session shows the intro and skips the fetch ──
+
+  test("TC-History-7: pending_ session shows the intro without fetching history", () => {
+    render(<ChatInterface sessionId="pending_abc123" />);
+
+    expect(
+      screen.getByText(/I'm your KEN-E AI assistant/i),
+    ).toBeInTheDocument();
+    expect(mockGetConversationHistory).not.toHaveBeenCalled();
   });
 
   // ── TC-Defer-1: first message with no sessionId lazily creates a session ──
