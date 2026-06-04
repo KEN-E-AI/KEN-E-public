@@ -9,11 +9,19 @@ both modes route through ADK's native ``transfer_to_agent`` + ``sub_agents``,
 so the trace shape is one ``transfer_to_agent`` action followed by a
 sub-agent span named after the specialist's doc_id. When the specialist's
 config has ``default_acceptance_criteria`` set, its agent span IS a
-``LoopAgent`` (renamed back to the doc_id) with worker + reviewer
+``LoopAgent`` (renamed back to the doc_id) wrapping worker + reviewer
 iteration sub-spans.
 
+The fixture is the canonical **target** shape. Each span carries an
+``emission_status`` of ``"emitted"`` (written by the current KEN-E runtime) or
+``"deferred"`` (target shape the runtime does not yet emit — e.g. the
+``*_review_reviewer`` span and the ``*_worker`` iteration annotations, which live
+under ``deferred_summary``). ``TestEmissionStatus`` pins that labelling so the
+fixture cannot silently claim to emit something the runtime does not.
+
 MER-E extractor authors should run this test to confirm that the fixture is a
-valid target for validation tooling before updating extractor queries.
+valid target for validation tooling before updating extractor queries, and must
+treat ``deferred`` spans/fields as absent in live traces.
 """
 
 from __future__ import annotations
@@ -215,9 +223,11 @@ class TestSpecialistSubAgentSpan:
     def test_review_wrapped_specialist_has_worker_and_reviewer_children(
         self, specialist_span: dict
     ) -> None:
-        """A LoopAgent review wrap produces per-iteration worker + reviewer
-        sub-spans. They MUST be present when agent_kind=loop_pipeline so
-        MER-E can extract iteration-level metrics."""
+        """A LoopAgent review wrap carries per-iteration worker + reviewer
+        sub-spans in the target shape. Both names MUST be present when
+        agent_kind=loop_pipeline, but their emission_status records that only the
+        worker span is emitted today; the reviewer span is deferred (see
+        TestEmissionStatus and trace-structure-spec.md §14.2)."""
         summary = specialist_span.get("summary", {})
         if summary.get("agent_kind") != "loop_pipeline":
             pytest.skip("specialist is not review-wrapped (no iteration sub-spans)")
@@ -227,10 +237,23 @@ class TestSpecialistSubAgentSpan:
         reviewer = [c for c in children if c.get("name", "").endswith("_reviewer")]
         assert worker, f"LoopAgent specialist must have a {spec_name}_worker child"
         assert reviewer, "LoopAgent specialist must have a *_reviewer child"
+        # Honesty guard: the reviewer span is documented as not emitted today.
+        assert reviewer[0].get("emission_status") == "deferred", (
+            "The reviewer LlmAgent has no agent-span callbacks, so the "
+            "*_review_reviewer span is not emitted; the fixture must tag it "
+            "'deferred'. If the runtime now emits it, update this test, the "
+            "fixture, and trace-structure-spec.md §14.2 together."
+        )
 
 
 # ---------------------------------------------------------------------------
-# Worker / reviewer iteration sub-spans
+# Worker / reviewer iteration sub-spans (DEFERRED target shape)
+#
+# These validate the *target* iteration-level shape. Per trace-structure-spec.md
+# §14.2 the runtime does not emit it yet: the ``_worker`` span's iteration
+# annotations live under ``deferred_summary`` (its live ``summary`` is empty), and
+# the ``_review_reviewer`` span is not emitted at all. MER-E must not key required
+# logic on these until the deferral is lifted.
 # ---------------------------------------------------------------------------
 
 
@@ -268,22 +291,106 @@ class TestIterationSubSpans:
         assert matched, "Reviewer span not found"
         return matched[0]
 
-    def test_worker_summary_has_iteration_index(self, worker_span: dict) -> None:
-        summary = worker_span.get("summary", {})
-        assert "iteration" in summary
-        assert isinstance(summary["iteration"], int)
-        assert summary["iteration"] >= 1
+    def test_worker_iteration_annotations_are_deferred_not_in_live_summary(
+        self, worker_span: dict
+    ) -> None:
+        """The worker span is emitted but its live ``summary`` carries none of the
+        iteration annotations — they are the deferred target under
+        ``deferred_summary``."""
+        assert worker_span.get("emission_status") == "emitted"
+        assert "iteration" not in worker_span.get("summary", {}), (
+            "iteration must not appear in the worker's live summary — the runtime "
+            "writes only output={status, text}; iteration annotations are deferred"
+        )
 
-    def test_worker_summary_has_specialist_output(self, worker_span: dict) -> None:
-        summary = worker_span.get("summary", {})
-        assert "specialist_output" in summary
+    def test_worker_deferred_summary_has_iteration_index(
+        self, worker_span: dict
+    ) -> None:
+        deferred = worker_span.get("deferred_summary", {})
+        assert "iteration" in deferred
+        assert isinstance(deferred["iteration"], int)
+        assert deferred["iteration"] >= 1
 
-    def test_reviewer_summary_has_iteration_index(self, reviewer_span: dict) -> None:
+    def test_worker_deferred_summary_has_specialist_output(
+        self, worker_span: dict
+    ) -> None:
+        assert "specialist_output" in worker_span.get("deferred_summary", {})
+
+    def test_reviewer_span_is_deferred(self, reviewer_span: dict) -> None:
+        assert reviewer_span.get("emission_status") == "deferred"
+        assert reviewer_span.get("deferred_reason"), (
+            "deferred reviewer span must carry a deferred_reason"
+        )
+
+    def test_reviewer_target_summary_has_iteration_index(
+        self, reviewer_span: dict
+    ) -> None:
         summary = reviewer_span.get("summary", {})
         assert "iteration" in summary
         assert isinstance(summary["iteration"], int)
         assert summary["iteration"] >= 1
 
-    def test_reviewer_summary_has_reviewer_output(self, reviewer_span: dict) -> None:
-        summary = reviewer_span.get("summary", {})
-        assert "reviewer_output" in summary
+    def test_reviewer_target_summary_has_reviewer_output(
+        self, reviewer_span: dict
+    ) -> None:
+        assert "reviewer_output" in reviewer_span.get("summary", {})
+
+
+# ---------------------------------------------------------------------------
+# Emission-status honesty contract
+#
+# Pins which spans the current runtime actually emits, so the fixture cannot
+# drift into advertising a span/field MER-E would never find in a live trace.
+# ---------------------------------------------------------------------------
+
+
+class TestEmissionStatus:
+    def _walk(self, node: dict) -> list[dict]:
+        out = [node]
+        for child in node.get("children", []):
+            out.extend(self._walk(child))
+        return out
+
+    def test_every_span_declares_emission_status(self, fixture_data: dict) -> None:
+        for top in fixture_data["spans"]:
+            for span in self._walk(top):
+                assert span.get("emission_status") in ("emitted", "deferred"), (
+                    f"span {span.get('name')!r} must declare emission_status "
+                    "as 'emitted' or 'deferred'"
+                )
+
+    def test_deferred_spans_carry_a_reason(self, fixture_data: dict) -> None:
+        for top in fixture_data["spans"]:
+            for span in self._walk(top):
+                if span.get("emission_status") == "deferred":
+                    assert span.get("deferred_reason"), (
+                        f"deferred span {span.get('name')!r} must explain why via "
+                        "deferred_reason"
+                    )
+
+    def test_emitted_spans_are_exactly_the_runtime_set(
+        self, fixture_data: dict
+    ) -> None:
+        """Lock the emitted set to what the runtime writes today: root,
+        transfer_to_agent, the specialist span, and the {doc_id}_worker span.
+        The reviewer span is the only deferred span. Changing this set requires a
+        matching runtime + spec change (trace-structure-spec.md §14.2)."""
+        emitted = {
+            s["name"]
+            for top in fixture_data["spans"]
+            for s in self._walk(top)
+            if s.get("emission_status") == "emitted"
+        }
+        deferred = {
+            s["name"]
+            for top in fixture_data["spans"]
+            for s in self._walk(top)
+            if s.get("emission_status") == "deferred"
+        }
+        assert emitted == {
+            "ken_e",
+            "transfer_to_agent",
+            "business_researcher",
+            "business_researcher_worker",
+        }
+        assert deferred == {"business_researcher_review_reviewer"}

@@ -25,6 +25,7 @@ from .review_pipeline_tracing import (
     _truncate_output,
     emit_iteration_span,
     set_pipeline_attrs,
+    set_specialist_span_attrs,
 )
 
 # ── _truncate_output boundary tests ──────────────────────────────────────────
@@ -280,6 +281,168 @@ class TestSetPipelineAttrsExceptionIsolation:
             patch.object(_tracing, "_weave", mock_weave),
         ):
             set_pipeline_attrs("crit", {}, "p", 1)  # must not raise
+
+
+# ── set_specialist_span_attrs ─────────────────────────────────────────────────
+
+
+class TestSetSpecialistSpanAttrs:
+    """Tests for set_specialist_span_attrs — AH-35 specialist sub-agent span attributes."""
+
+    def _make_mock_weave(self, summary: dict) -> MagicMock:
+        """Return a mock _weave module whose get_current_call() returns a call with summary."""
+        mock_call = MagicMock()
+        mock_call.summary = summary
+        mock_weave = MagicMock()
+        mock_weave.get_current_call.return_value = mock_call
+        return mock_weave
+
+    def test_exit_reason_approved_when_feedback_empty(self):
+        """final_state[prefix_feedback] == '' → exit_reason == 'approved'."""
+        summary: dict = {}
+        mock_weave = self._make_mock_weave(summary)
+
+        with (
+            patch.object(_tracing, "WEAVE_AVAILABLE", True),
+            patch.object(_tracing, "_weave", mock_weave),
+        ):
+            set_specialist_span_attrs(
+                specialist_name="news_specialist",
+                criteria="criteria",
+                final_state={"p_feedback": ""},
+                prefix="p",
+                total_iterations=2,
+                cache_hit=False,
+            )
+
+        assert summary["exit_reason"] == "approved"
+
+    def test_exit_reason_max_iterations_when_feedback_nonempty(self):
+        """Non-empty feedback → exit_reason == 'max_iterations'."""
+        summary: dict = {}
+        mock_weave = self._make_mock_weave(summary)
+
+        with (
+            patch.object(_tracing, "WEAVE_AVAILABLE", True),
+            patch.object(_tracing, "_weave", mock_weave),
+        ):
+            set_specialist_span_attrs(
+                specialist_name="news_specialist",
+                criteria="criteria",
+                final_state={"p_feedback": "criteria not met"},
+                prefix="p",
+                total_iterations=3,
+                cache_hit=False,
+            )
+
+        assert summary["exit_reason"] == "max_iterations"
+
+    def test_all_six_keys_written_to_summary(self):
+        """All six AH-35 attributes are written to call.summary correctly."""
+        summary: dict = {}
+        mock_weave = self._make_mock_weave(summary)
+
+        with (
+            patch.object(_tracing, "WEAVE_AVAILABLE", True),
+            patch.object(_tracing, "_weave", mock_weave),
+        ):
+            set_specialist_span_attrs(
+                specialist_name="seo_specialist",
+                criteria="my criteria",
+                final_state={"seo_feedback": ""},
+                prefix="seo",
+                total_iterations=4,
+                cache_hit=True,
+                agent_kind="loop_pipeline",
+            )
+
+        assert summary == {
+            "specialist_name": "seo_specialist",
+            "agent_kind": "loop_pipeline",
+            "exit_reason": "approved",
+            "total_iterations": 4,
+            "output_key_prefix": "seo",
+            "cache_hit": True,
+        }
+
+    def test_agent_kind_defaults_to_loop_pipeline(self):
+        """agent_kind defaults to 'loop_pipeline' when not explicitly passed."""
+        summary: dict = {}
+        mock_weave = self._make_mock_weave(summary)
+
+        with (
+            patch.object(_tracing, "WEAVE_AVAILABLE", True),
+            patch.object(_tracing, "_weave", mock_weave),
+        ):
+            set_specialist_span_attrs(
+                specialist_name="news_specialist",
+                criteria="criteria",
+                final_state={"p_feedback": ""},
+                prefix="p",
+                total_iterations=1,
+                cache_hit=False,
+                # agent_kind intentionally omitted
+            )
+
+        assert summary["agent_kind"] == "loop_pipeline"
+
+    def test_single_pass_omits_review_loop_attrs(self):
+        """single_pass writes only specialist_name/agent_kind/cache_hit — the
+        review-loop attrs (exit_reason/total_iterations/output_key_prefix) are
+        omitted because a single-pass specialist has no reviewer."""
+        summary: dict = {}
+        mock_weave = self._make_mock_weave(summary)
+
+        with (
+            patch.object(_tracing, "WEAVE_AVAILABLE", True),
+            patch.object(_tracing, "_weave", mock_weave),
+        ):
+            set_specialist_span_attrs(
+                specialist_name="plain_specialist",
+                criteria="",
+                final_state={},
+                prefix="",
+                total_iterations=0,
+                cache_hit=False,
+                agent_kind="single_pass",
+            )
+
+        assert summary == {
+            "specialist_name": "plain_specialist",
+            "agent_kind": "single_pass",
+            "cache_hit": False,
+        }
+
+    def test_noop_when_weave_unavailable(self):
+        """set_specialist_span_attrs is a no-op when WEAVE_AVAILABLE=False."""
+        with patch.object(_tracing, "WEAVE_AVAILABLE", False):
+            result = set_specialist_span_attrs(
+                specialist_name="news_specialist",
+                criteria="criteria",
+                final_state={"p_feedback": ""},
+                prefix="p",
+                total_iterations=1,
+                cache_hit=False,
+            )
+        assert result is None
+
+    def test_exception_swallowed_when_get_current_call_raises(self):
+        """If get_current_call() raises, the exception is swallowed and does not propagate."""
+        mock_weave = MagicMock()
+        mock_weave.get_current_call.side_effect = RuntimeError("Weave connection lost")
+
+        with (
+            patch.object(_tracing, "WEAVE_AVAILABLE", True),
+            patch.object(_tracing, "_weave", mock_weave),
+        ):
+            set_specialist_span_attrs(
+                specialist_name="news_specialist",
+                criteria="criteria",
+                final_state={"p_feedback": ""},
+                prefix="p",
+                total_iterations=1,
+                cache_hit=False,
+            )  # must not raise
 
 
 # ── set_delegate_attrs tests deleted in AH-75 ────────────────────────────────

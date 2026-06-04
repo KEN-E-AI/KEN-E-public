@@ -240,7 +240,7 @@ class TestSpecialistsSpanComplianceRegression:
         """Return a valid trace annotated with a synthetic specialists.list child.
 
         Note: ``validate_trace_compliance`` operates on root-span metadata dicts
-        (the flat key-value attributes of the ``ken_e_agent`` span), NOT on a
+        (the flat key-value attributes of the ``ken_e`` root span), NOT on a
         nested call tree.  The ``specialists.list`` span is a sibling child span
         that ``validate_trace_compliance`` never sees — it is a W&B Weave call
         tree node, not a metadata field.  We verify compliance is unchanged by

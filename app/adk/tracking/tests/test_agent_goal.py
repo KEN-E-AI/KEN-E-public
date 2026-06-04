@@ -184,20 +184,22 @@ class TestAgentGoalContextPropagation:
         self, mock_get_client: MagicMock, mock_call_ctx: MagicMock
     ) -> None:
         from app.adk.tracking.callbacks import (
-            _current_agent_call,
-            _current_agent_goal_ctx,
+            _weave_agent_span_stack,
             weave_after_agent_callback,
         )
 
         mock_call = MagicMock(id="call-goal-test")
-        _current_agent_call.set(mock_call)
+        mock_goal_ctx = MagicMock()
+        # The attrs context manager is carried on the agent's stack frame and
+        # exited when the matching after callback pops it.
+        _weave_agent_span_stack.set([(mock_call, mock_goal_ctx)])
         mock_get_client.return_value = MagicMock()
 
-        mock_goal_ctx = MagicMock()
-        _current_agent_goal_ctx.set(mock_goal_ctx)
-
         ctx = MagicMock()
-        weave_after_agent_callback(ctx)
+        try:
+            weave_after_agent_callback(ctx)
 
-        mock_goal_ctx.__exit__.assert_called_once_with(None, None, None)
-        assert _current_agent_goal_ctx.get(None) is None
+            mock_goal_ctx.__exit__.assert_called_once_with(None, None, None)
+            assert (_weave_agent_span_stack.get() or []) == []
+        finally:
+            _weave_agent_span_stack.set(None)

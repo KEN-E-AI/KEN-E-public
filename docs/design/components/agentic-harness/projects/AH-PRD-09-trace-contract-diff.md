@@ -209,3 +209,89 @@ canonical post-cutover trace shape see AH-66 and
 - `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` — canonical fixture
 - AH-PRD-09 §7 AC #22 — cutover gate acceptance criterion
 - AH-62 — `mcp_pool_hit` attribute (not yet implemented; TODO placeholder in `set_delegate_attrs`)
+
+---
+
+## §10 Post-AH-75 Attribute Emission Update (AH-35)
+
+AH-35 (Weave trace structure verification) wired the attribute emission that was
+deferred when `delegate_to_specialist` was deleted in AH-75. The attributes that
+§3.1 declared on the now-deleted `delegate_to_specialist` span now live on the
+**specialist sub-agent span** (the direct child of the root agent, named after the
+specialist's doc_id).
+
+### Where attributes are emitted
+
+| Attribute | Where emitted | Source |
+|---|---|---|
+| `specialist_name` | specialist sub-agent span `summary` | `after_agent_callback` installed by `_build_specialist` |
+| `agent_kind` | specialist sub-agent span `summary` | `after_agent_callback` |
+| `exit_reason` | specialist sub-agent span `summary` | `after_agent_callback` (loop_pipeline only) |
+| `total_iterations` | specialist sub-agent span `summary` | `after_agent_callback` (loop_pipeline only) |
+| `output_key_prefix` | specialist sub-agent span `summary` | `after_agent_callback` (loop_pipeline only) |
+| `cache_hit` | specialist sub-agent span `summary` | `after_agent_callback` (constant `false` today — built only on cache miss) |
+| `mcp_pool_hit` | — | Deferred to AH-62 (placeholder `# TODO(AH-62)` in test) |
+
+The `after_agent_callback` writes **only** the six rows tagged `after_agent_callback`
+above. It does not write `acceptance_criteria` / `default_acceptance_criteria`, and
+`total_iterations` is currently a constant `0` (accurate counting deferred, AH-35).
+
+#### Worker / reviewer child spans are deferred
+
+The specialist sub-agent span is the wrapping `LoopAgent`. Its per-iteration children
+are **not fully emitted today**, and the canonical fixture tags them accordingly via
+`emission_status`:
+
+| Child span | Emission status | Reason |
+|---|---|---|
+| `{doc_id}_worker` | Emitted (span only) | Worker agent span is emitted, but `weave_after_agent_callback` writes only `output={status, text}`; the `iteration` / `specialist_output` summary annotations are deferred (fixture: `deferred_summary`). |
+| `{doc_id}_review_reviewer` | **Deferred** | The reviewer `LlmAgent` carries no agent-span callbacks, so no reviewer span is produced. Fixture carries it as target shape only. |
+
+### Extractor guidance
+
+MER-E extractors that previously searched for `set_delegate_attrs` attributes on
+a `delegate_to_specialist` span should now look for them on the specialist
+sub-agent span:
+
+```python
+# Before (pre-AH-75 — RETIRED):
+span["name"] == "delegate_to_specialist"  # and summary["specialist_name"]
+
+# After (post-AH-75, AH-35):
+span["name"] == specialist_doc_id  # e.g. "google_analytics_specialist"
+# and summary["specialist_name"] == span["name"]
+```
+
+The canonical fixture at
+`app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` now carries
+`specialist_name`, `agent_kind`, `exit_reason`, `total_iterations`,
+`output_key_prefix`, and `cache_hit` in the specialist span's `summary` block.
+Validate against `test_transfer_to_specialist_fixture.py`.
+
+### How the write targets the correct span (AH-35 follow-up)
+
+The `after_agent_callback` is **inserted immediately before**
+`weave_after_agent_callback` (which finishes and pops the agent's span), so
+`weave.get_current_call()` resolves to the specialist's own span rather than the
+parent/root span. See `_wire_specialist_span_callbacks` in
+`app/adk/agents/agent_factory/specialist_runtime.py`.
+
+- **Single-pass specialist** — the raw `LlmAgent` already carries
+  `weave_after_agent_callback` (from `build_agent`); the AH-35 callback is
+  inserted before it.
+- **Review pipeline** — the bare `LoopAgent` has no Weave span of its own, so it
+  is given a dedicated one (`weave_before`/`weave_after` wired onto it). That
+  span is named after the specialist `doc_id`. Structurally it wraps the
+  `{doc_id}_worker` / `{doc_id}_review_reviewer` sub-agents, but only the
+  `{doc_id}_worker` span is emitted as a Weave span today (see "Worker / reviewer
+  child spans are deferred" above and §14.2).
+
+Span naming: `weave_before_agent_callback` now names each agent-level span after
+its agent (`op = agent.name`) — root `ken_e`, specialists their `doc_id`. The
+legacy hardcoded `ken_e_agent` op name is retired. The same change replaced the
+single `_current_agent_call` ContextVar with a per-agent LIFO stack so nested
+sub-agents no longer leave the root span unfinished.
+
+Single-pass spans intentionally **omit** `exit_reason` / `total_iterations` /
+`output_key_prefix` — those are review-loop concepts and would be meaningless
+without a reviewer.

@@ -1,6 +1,7 @@
 """Weave tracing helpers for review-loop dispatch wrappers.
 
-Provides two helpers consumed by dispatch_handlers.py after each review-pipeline run:
+Provides three helpers consumed by dispatch_handlers.py and specialist
+after_agent_callbacks after each review-pipeline run:
 
 * ``emit_iteration_span`` — creates one Weave child span per review iteration,
   grouping the specialist and reviewer outputs together.
@@ -8,6 +9,10 @@ Provides two helpers consumed by dispatch_handlers.py after each review-pipeline
   attributes (acceptance_criteria, exit_reason, total_iterations,
   output_key_prefix) onto the surrounding dispatch span's summary dict via
   ``weave.get_current_call()``.
+* ``set_specialist_span_attrs`` — writes six AH-35 specialist sub-agent span
+  attributes (specialist_name, agent_kind, exit_reason, total_iterations,
+  output_key_prefix, cache_hit) onto the specialist sub-agent span's summary
+  dict via ``weave.get_current_call()``.  Called from an after_agent_callback.
 
 Both helpers degrade to no-ops when the Weave SDK is not installed or is
 uninitialized, mirroring the ``safe_weave_op`` pattern in weave_observability.py.
@@ -162,4 +167,76 @@ def set_pipeline_attrs(
     except Exception as exc:
         logger.warning(
             "set_pipeline_attrs: summary write failed — tracing data lost: %s", exc
+        )
+
+
+def set_specialist_span_attrs(
+    specialist_name: str,
+    criteria: str,
+    final_state: dict[str, Any],
+    prefix: str,
+    total_iterations: int,
+    cache_hit: bool,
+    agent_kind: str = "loop_pipeline",
+) -> None:
+    """Write AH-35 specialist sub-agent span attributes onto the current Weave
+    call's summary dict via ``weave.get_current_call()``.
+
+    Intended to be called from an ``after_agent_callback`` attached to the
+    specialist sub-agent so that ``weave.get_current_call()`` resolves to the
+    specialist's own span, not the surrounding dispatch span.
+
+    The review-loop attributes ``exit_reason``, ``total_iterations`` and
+    ``output_key_prefix`` are written ONLY for ``agent_kind == "loop_pipeline"``
+    — a single-pass specialist runs no reviewer, so an ``exit_reason`` would be
+    meaningless (it would always read ``"approved"`` off an empty ``prefix``).
+    ``specialist_name``, ``agent_kind`` and ``cache_hit`` are written for every
+    kind.
+
+    ``exit_reason`` is computed from the §5.2 idiom (same as
+    ``set_pipeline_attrs``):
+    ``final_state[f"{prefix}_feedback"] == ""`` → ``"approved"``; non-empty →
+    ``"max_iterations"``.
+
+    Valid ``agent_kind`` values:
+    - ``"loop_pipeline"`` — specialist runs inside a review loop (default).
+    - ``"single_pass"`` — specialist runs without a reviewer (single pass).
+
+    When ``WEAVE_AVAILABLE`` is False or Weave is not initialized, this is a
+    no-op.  All exceptions are caught and logged at WARNING level so a Weave
+    outage never propagates to the caller.
+
+    Args:
+        specialist_name: The name of the specialist agent (e.g.
+            ``"news_specialist"``).
+        criteria: The acceptance_criteria string passed to the dispatch handler.
+        final_state: The final session state dict returned by
+            ``invoke_pipeline()``.
+        prefix: The ``output_key_prefix`` used for the review pipeline.
+        total_iterations: Total number of complete review iterations.
+        cache_hit: Whether the specialist result was served from cache.
+        agent_kind: Kind of specialist agent — ``"loop_pipeline"`` (default) or
+            ``"single_pass"``.
+    """
+    if not WEAVE_AVAILABLE or _weave is None:
+        return
+    try:
+        call = _weave.get_current_call()
+        if call and hasattr(call, "summary"):
+            call.summary["specialist_name"] = specialist_name
+            call.summary["agent_kind"] = agent_kind
+            call.summary["cache_hit"] = cache_hit
+            # Review-loop-only attributes: a single-pass specialist has no
+            # reviewer, so exit_reason / total_iterations / output_key_prefix
+            # would be meaningless (see docstring).
+            if agent_kind == "loop_pipeline":
+                feedback = final_state.get(f"{prefix}_feedback", "")
+                exit_reason = "approved" if feedback == "" else "max_iterations"
+                call.summary["exit_reason"] = exit_reason
+                call.summary["total_iterations"] = total_iterations
+                call.summary["output_key_prefix"] = prefix
+    except Exception as exc:
+        logger.warning(
+            "set_specialist_span_attrs: summary write failed — tracing data lost: %s",
+            exc,
         )

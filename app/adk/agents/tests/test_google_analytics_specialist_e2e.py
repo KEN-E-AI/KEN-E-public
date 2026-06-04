@@ -2552,3 +2552,584 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
         f"[trial {trial}] Approved draft must include a trend/percentage descriptor. "
         f"Draft excerpt: {draft[:400]!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# AH-35 — Weave trace structure verification
+# ---------------------------------------------------------------------------
+#
+# Part A (no live creds):
+#   test_ga_specialist_weave_span_attrs_from_callback
+#   Verifies that the after_agent_callback installed by _build_specialist
+#   correctly populates Weave span summary attributes when fired.
+#   No ADK Runner run; no live Gemini call.
+#
+# Part B (@pytest.mark.llm):
+#   test_ga_specialist_e2e_weave_trace_structure
+#   Full AH-34 harness (trial 1-3). Intercepts set_specialist_span_attrs
+#   to capture the kwargs it is called with, then asserts the required
+#   AH-35 AC#11 keys and values are present.
+# ---------------------------------------------------------------------------
+
+
+def test_ga_specialist_weave_span_attrs_from_callback() -> None:
+    """AC #11 (AH-PRD-03 §7, AH-35): the after_agent_callback installed by
+    _build_specialist emits the required Weave span summary attributes.
+
+    Exercises the callback in isolation — no ADK Runner, no live Gemini
+    call — by:
+      1. Building the LoopAgent via resolve_agent with the production-shape
+         patch stack (same as AH-31).
+      2. Extracting the last callback from the pipeline's after_agent_callback
+         list (the AH-35 specialist callback).
+      3. Creating a mock callback_context whose state dict contains the
+         review-loop output keys that determine exit_reason.
+      4. Intercepting weave.get_current_call() via recording_weave_client()
+         so the callback writes into a _RecordedCall instead of a live Weave
+         span.
+      5. Asserting the recorded span summary has the six required attributes
+         with the correct values for the "approved" path (empty feedback).
+    """
+    from contextlib import ExitStack
+    from unittest.mock import MagicMock
+    from unittest.mock import patch as _patch
+
+    from google.adk.agents import LoopAgent
+
+    from app.adk.agents.agent_factory import specialist_runtime as sr
+    from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+    from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+    from app.adk.agents.agent_factory.tests.test_specialist_runtime import (
+        _FakeFirestoreDb,
+    )
+    from app.adk.agents.scripts.migrate_ga_specialist_to_firestore import (
+        GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        GA_SPECIALIST_INSTRUCTION,
+    )
+    from app.adk.tracking.tests._weave_recording import recording_weave_client
+
+    ga_config = MergedAgentConfig(
+        instruction=GA_SPECIALIST_INSTRUCTION,
+        model="gemini-2.0-flash",
+        description=(
+            "Google Analytics 4 specialist. Use for any query about website or app"
+            " traffic: sessions, users, pageviews, bounce rate, engagement, traffic"
+            " sources, conversion events, real-time data, or custom GA4 reports."
+            " Performs accurate numerical analysis (percentages, trends, averages)"
+            " using Gemini code execution."
+        ),
+        mcp_servers=[],
+        code_execution_enabled=True,
+        default_acceptance_criteria=GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        reviewer_model=None,
+        ken_e_sub_agent=True,
+    )
+
+    def _minimal_specialist_from_config(_config: Any, *, name: str, **_kw: Any) -> Any:
+        from google.adk.agents import LlmAgent
+
+        return LlmAgent(
+            name=name,
+            model=_config.model,
+            instruction=_config.instruction,
+        )
+
+    with ExitStack() as stack:
+        stack.enter_context(_patch.object(sr, "resolve_config", return_value=ga_config))
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                new=McpToolsetPool(),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                return_value=_FakeFirestoreDb({}),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+                return_value=MagicMock(name="toolset_unused"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=[],
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_minimal_specialist_from_config,
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                return_value=None,
+            )
+        )
+        pipeline = sr.resolve_agent("google_analytics_specialist", account_id=None)
+
+    assert isinstance(pipeline, LoopAgent), (
+        f"resolve_agent must return a LoopAgent; got {type(pipeline).__name__}"
+    )
+
+    # The AH-35 callback is inserted BEFORE weave_after_agent_callback (so the
+    # span is still current when it runs), so locate it by closure name rather
+    # than by position.
+    callbacks = list(pipeline.after_agent_callback or [])
+    assert callbacks, "pipeline.after_agent_callback must be non-empty (AH-35 installs one)"
+    specialist_callback = next(
+        cb
+        for cb in callbacks
+        if getattr(cb, "__name__", "") == "_specialist_after_agent_callback"
+    )
+
+    # Build a mock callback_context whose state simulates the "approved" path:
+    # empty feedback key → exit_reason="approved".
+    output_prefix = "google_analytics_specialist_review"
+    mock_state = {
+        f"{output_prefix}_draft": "Traffic increased 11.8% week-over-week.",
+        f"{output_prefix}_feedback": "",  # empty → approved
+    }
+    mock_callback_context = MagicMock()
+    mock_callback_context.state.to_dict.return_value = mock_state
+
+    with recording_weave_client() as client:
+        if client is not None:
+            # Push a root span and a specialist span so weave.get_current_call()
+            # resolves to the specialist span when the callback fires.
+            root_span = client.create_call("ken_e")
+            specialist_span = client.create_call("google_analytics_specialist")
+
+        specialist_callback(mock_callback_context)
+
+        if client is not None:
+            client.finish_call(specialist_span)
+            client.finish_call(root_span)
+
+    if client is None:
+        pytest.skip("weave package not installed — cannot verify span attribute emission")
+
+    tree = client.tree_root()
+    assert tree is not None, "recording_weave_client must have recorded at least one span"
+
+    # Navigate to the specialist child span.
+    specialist_node = tree["children"][0]
+    summary = specialist_node["summary"]
+
+    assert summary.get("specialist_name") == "google_analytics_specialist", (
+        f"specialist_name must be 'google_analytics_specialist'; got {summary.get('specialist_name')!r}"
+    )
+    assert summary.get("agent_kind") == "loop_pipeline", (
+        f"agent_kind must be 'loop_pipeline'; got {summary.get('agent_kind')!r}"
+    )
+    assert summary.get("exit_reason") == "approved", (
+        f"exit_reason must be 'approved' (empty feedback); got {summary.get('exit_reason')!r}"
+    )
+    assert summary.get("output_key_prefix") == output_prefix, (
+        f"output_key_prefix must be {output_prefix!r}; got {summary.get('output_key_prefix')!r}"
+    )
+    assert summary.get("cache_hit") is False, (
+        f"cache_hit must be False at build time; got {summary.get('cache_hit')!r}"
+    )
+    assert isinstance(summary.get("total_iterations"), int) and summary.get("total_iterations") >= 0, (
+        f"total_iterations must be a non-negative int; got {summary.get('total_iterations')!r}"
+    )
+
+
+@pytest.mark.parametrize("trial", [1, 2, 3])
+@pytest.mark.llm
+@pytest.mark.skipif(
+    not _GEMINI_CREDS_AVAILABLE,
+    reason=(
+        "Live Gemini credentials not configured — set GOOGLE_API_KEY "
+        "or GOOGLE_CLOUD_PROJECT"
+    ),
+)
+@pytest.mark.asyncio
+async def test_ga_specialist_e2e_weave_trace_structure(trial: int) -> None:
+    """AC #11 (AH-PRD-03 §7, AH-35): Weave trace structure verification.
+
+    Runs the full AH-34 harness (root agent → transfer_to_agent →
+    LoopAgent → stub MCP tools → numerical_analyst → reviewer approval)
+    and asserts that the specialist sub-agent span carries the six AH-35
+    required attributes emitted by the after_agent_callback installed by
+    _build_specialist:
+
+      - specialist_name == "google_analytics_specialist"
+      - agent_kind == "loop_pipeline"
+      - exit_reason in {"approved", "max_iterations"}
+      - output_key_prefix == "google_analytics_specialist_review"
+      - cache_hit is bool
+      - total_iterations >= 0 and isinstance(total_iterations, int)
+
+    Also asserts:
+      - transfer_to_agent(agent_name='google_analytics_specialist') event
+        was emitted by the root agent (AH-34 AC#8 routing assertion).
+      - The worker delegated arithmetic to the numerical_analyst AgentTool
+        (function_call + function_response in the outer stream). Code execution
+        runs inside the AgentTool's inner Runner (AH-149 split) whose events the
+        outer stream drops (AH-75), so executable_code / code_execution_result
+        parts never surface here; those parts are asserted against the leaf's
+        own Runner in test_ga_numerical_query_uses_code_execution (AC #6).
+
+    # TODO(AH-62): assert mcp_pool_hit attribute once MCP pool span support lands.
+
+    MCP layer is stubbed; every LLM call is real (requires live Gemini).
+    Trial parametrisation (3x): surfaces per-trial flakiness in CI.
+    """
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    from google.adk.agents import Agent, LoopAgent
+    from google.adk.code_executors import BuiltInCodeExecutor
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+    from google.adk.tools.agent_tool import AgentTool
+    from google.genai.errors import ClientError
+
+    from app.adk.agents.agent_factory import specialist_runtime as sr
+    from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+    from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+    from app.adk.agents.agent_factory.tests.test_specialist_runtime import (
+        _FakeFirestoreDb,
+    )
+    from app.adk.agents.scripts.migrate_ga_specialist_to_firestore import (
+        GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        GA_SPECIALIST_INSTRUCTION,
+    )
+    numerical_analyst_agent = Agent(
+        name="numerical_analyst",
+        model="gemini-2.5-flash",
+        code_executor=BuiltInCodeExecutor(),
+        instruction=_NUMERICAL_ANALYST_TEST_INSTRUCTION,
+    )
+
+    def run_report_mt_weave(
+        property_id: str,
+        date_ranges: list,
+        metrics: list | None = None,
+        dimensions: list | None = None,
+    ) -> str:
+        """Run a GA4 report: week-over-week sessions for the queried property."""
+        return (
+            '{"propertyId": "123456789", '
+            '"dateRange": {"startDate": "2024-05-27", "endDate": "2024-06-02"}, '
+            '"comparisonDateRange": '
+            '{"startDate": "2024-05-20", "endDate": "2024-05-26"}, '
+            '"rows": [{"metricName": "sessions", '
+            '"currentPeriodValue": "5391", "previousPeriodValue": "4823"}]}'
+        )
+
+    rubric_aligned_instruction_weave = (
+        "You are a Google Analytics 4 specialist.\n"
+        "When the user asks about website traffic or trends, ALWAYS fetch the "
+        "data with the GA tools — never ask the user for the property ID or the "
+        "date range; read both from the tool output.\n"
+        "1. Call get_account_summaries_mt to find the property, then "
+        "run_report_mt_weave to fetch the metrics.\n"
+        "2. Delegate ALL arithmetic to the numerical_analyst tool: pass only the "
+        "specific numbers and a description of the calculation, then include the "
+        "figure AND the formula it returns verbatim.\n"
+        "3. For a traffic-trends query, compute the week-over-week percentage "
+        "change between the current and previous period via numerical_analyst.\n"
+        "Your final reply MUST always include:\n"
+        "- the GA property identifier from the tool output;\n"
+        "- the absolute date range (start and end dates) from the tool output;\n"
+        "- every metric reported by name, rounded to at most 2 decimal places;\n"
+        "- the verbatim formula for each aggregate (including the week-over-week "
+        "percentage change) as returned by numerical_analyst.\n"
+    )
+
+    def _specialist_with_stub_tools_weave(
+        _config: MergedAgentConfig, *, name: str, **_kw: Any
+    ) -> Any:
+        from google.adk.agents import LlmAgent as _LlmAgent
+
+        return _LlmAgent(
+            name=name,
+            model="gemini-2.5-flash",
+            instruction=rubric_aligned_instruction_weave,
+            tools=[
+                AgentTool(agent=numerical_analyst_agent),
+                FunctionTool(get_account_summaries_mt),
+                FunctionTool(run_report_mt_weave),
+            ],
+            disallow_transfer_to_parent=True,
+        )
+
+    ga_config = MergedAgentConfig(
+        instruction=GA_SPECIALIST_INSTRUCTION,
+        model="gemini-2.5-flash",
+        description=(
+            "Google Analytics 4 specialist. Use for any query about website or app"
+            " traffic: sessions, users, pageviews, bounce rate, engagement, traffic"
+            " sources, conversion events, real-time data, or custom GA4 reports."
+            " Performs accurate numerical analysis (percentages, trends, averages)"
+            " using Gemini code execution."
+        ),
+        mcp_servers=[],
+        code_execution_enabled=True,
+        default_acceptance_criteria=GA_SPECIALIST_ACCEPTANCE_CRITERIA,
+        reviewer_model=None,
+        ken_e_sub_agent=True,
+    )
+
+    # Capture the kwargs that set_specialist_span_attrs is called with.
+    # The callback does a deferred import inside its body, so patching the
+    # module-level name intercepts the call even though the callback was
+    # already built (closure captures the name, not the object).
+    captured_attrs: dict[str, Any] = {}
+
+    def _spy_set_specialist_span_attrs(**kwargs: Any) -> None:
+        captured_attrs.update(kwargs)
+
+    with ExitStack() as stack:
+        stack.enter_context(_patch.object(sr, "resolve_config", return_value=ga_config))
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                new=McpToolsetPool(),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                return_value=_FakeFirestoreDb({}),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+                return_value=MagicMock(name="toolset_unused"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=[],
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_specialist_with_stub_tools_weave,
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                return_value=None,
+            )
+        )
+
+        loop_agent = sr.resolve_agent(
+            "google_analytics_specialist",
+            account_id=f"acct_weave_trace_{trial}",
+        )
+
+    assert isinstance(loop_agent, LoopAgent), (
+        f"[trial {trial}] resolve_agent must return a LoopAgent; "
+        f"got {type(loop_agent).__name__}"
+    )
+
+    from google.adk.agents import LlmAgent as _RootLlmAgent
+
+    root = _RootLlmAgent(
+        name="root_agent",
+        model="gemini-2.5-flash",
+        instruction=(
+            "You are a marketing analytics assistant. "
+            "When the user asks about Google Analytics or website traffic, "
+            "delegate to the google_analytics_specialist."
+        ),
+        tools=[],
+        before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+    )
+
+    account_id = f"acct_weave_trace_{trial}"
+    ga_credentials: dict[str, Any] = {"access_token": f"tok_weave_{trial}", "tenant_id": "tenant_weave"}
+    mcp_creds: dict[str, Any] = {"refresh_signature": f"sig_weave_{trial}"}
+
+    app_name = f"weave_trace_trial_{trial}"
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name=app_name,
+        user_id=f"user_weave_{trial}",
+        state={
+            "account_id": account_id,
+            "ga_credentials": ga_credentials,
+            "mcp_creds_google_analytics_mcp": mcp_creds,
+        },
+    )
+    runner = Runner(
+        agent=root,
+        app_name=app_name,
+        session_service=session_service,
+    )
+
+    all_events: list[Any] = []
+    output_prefix = "google_analytics_specialist_review"
+
+    with (
+        patch.object(
+            attacher,
+            "list_account_agent_configs_cached",
+            return_value=["google_analytics_specialist"],
+        ),
+        patch.object(attacher, "resolve_config", return_value=ga_config),
+        patch.object(attacher, "resolve_agent", return_value=loop_agent),
+        _patch(
+            "app.adk.agents.utils.review_pipeline_tracing.set_specialist_span_attrs",
+            side_effect=_spy_set_specialist_span_attrs,
+        ),
+    ):
+        try:
+            async for event in runner.run_async(
+                user_id=session.user_id,
+                session_id=session.id,
+                new_message=genai_types.Content(
+                    role="user",
+                    parts=[Part.from_text(text="Show me traffic trends for the past week.")],
+                ),
+            ):
+                all_events.append(event)
+        except ClientError as exc:
+            if exc.code == 403:
+                pytest.skip(
+                    f"[trial {trial}] Gemini credentials lack required permission "
+                    f"(HTTP 403). Grant roles/aiplatform.user or set GOOGLE_API_KEY. "
+                    f"Original error: {exc!s:.160}"
+                )
+            if exc.code == 404:
+                pytest.skip(
+                    f"[trial {trial}] Model not available in this project/region "
+                    f"(HTTP 404). Original error: {exc!s:.160}"
+                )
+            raise
+
+    # -----------------------------------------------------------------------
+    # Assertion 1: root must emit transfer_to_agent(google_analytics_specialist)
+    # -----------------------------------------------------------------------
+
+    transfer_events = [
+        e
+        for e in all_events
+        if e.content
+        and e.content.parts
+        and any(
+            p.function_call
+            and p.function_call.name == "transfer_to_agent"
+            and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+            for p in e.content.parts
+        )
+    ]
+    assert transfer_events, (
+        f"[trial {trial}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+        f"event found in root stream. "
+        f"Total events: {len(all_events)}. "
+        f"Event authors: {[getattr(e, 'author', None) for e in all_events]}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 2: the worker delegated arithmetic to the numerical_analyst
+    # AgentTool (the code-execution sub-agent).
+    #
+    # Code execution happens inside the numerical_analyst AgentTool's *inner*
+    # Runner (AH-149 split), and per AH-75 the AgentTool drops its inner events
+    # from the outer stream — so executable_code / code_execution_result parts
+    # never appear here.  The trace-level evidence that the code-execution path
+    # ran is the function_call/function_response pair for numerical_analyst; the
+    # executable_code / code_execution_result(OUTCOME_OK) parts themselves are
+    # asserted against the leaf's own Runner in
+    # test_ga_numerical_query_uses_code_execution (AC #6).
+    # -----------------------------------------------------------------------
+
+    all_parts = [
+        p
+        for e in all_events
+        if e.content and e.content.parts
+        for p in e.content.parts
+    ]
+    numerical_analyst_calls = [
+        p
+        for p in all_parts
+        if p.function_call and p.function_call.name == "numerical_analyst"
+    ]
+    numerical_analyst_responses = [
+        p
+        for p in all_parts
+        if p.function_response and p.function_response.name == "numerical_analyst"
+    ]
+    assert numerical_analyst_calls and numerical_analyst_responses, (
+        f"[trial {trial}] Worker did not delegate arithmetic to the "
+        f"numerical_analyst AgentTool (the code-execution sub-agent). "
+        f"function_calls={len(numerical_analyst_calls)}, "
+        f"function_responses={len(numerical_analyst_responses)}. "
+        f"Total parts: {len(all_parts)}"
+    )
+
+    # -----------------------------------------------------------------------
+    # Assertion 3: set_specialist_span_attrs was called with the required keys
+    # -----------------------------------------------------------------------
+
+    assert captured_attrs, (
+        f"[trial {trial}] set_specialist_span_attrs was never called — "
+        f"the after_agent_callback installed by _build_specialist did not fire."
+    )
+    assert captured_attrs.get("specialist_name") == "google_analytics_specialist", (
+        f"[trial {trial}] specialist_name must be 'google_analytics_specialist'; "
+        f"got {captured_attrs.get('specialist_name')!r}"
+    )
+    assert captured_attrs.get("agent_kind") == "loop_pipeline", (
+        f"[trial {trial}] agent_kind must be 'loop_pipeline'; "
+        f"got {captured_attrs.get('agent_kind')!r}"
+    )
+    # exit_reason is computed inside set_specialist_span_attrs (not a kwarg).
+    # Derive it here from the captured final_state and prefix so the assertion
+    # stays faithful to the §5.2 idiom rather than testing the wrong key.
+    _captured_prefix = captured_attrs.get("prefix", "")
+    _captured_state = captured_attrs.get("final_state", {})
+    _derived_exit_reason = (
+        "approved"
+        if _captured_state.get(f"{_captured_prefix}_feedback", "") == ""
+        else "max_iterations"
+    )
+    assert _derived_exit_reason in {"approved", "max_iterations"}, (
+        f"[trial {trial}] derived exit_reason must be 'approved' or 'max_iterations'; "
+        f"got {_derived_exit_reason!r} (prefix={_captured_prefix!r}, state keys={list(_captured_state.keys())!r})"
+    )
+    # The kwarg for output_key_prefix is named "prefix" at the call boundary.
+    assert captured_attrs.get("prefix") == output_prefix, (
+        f"[trial {trial}] prefix (output_key_prefix) must be {output_prefix!r}; "
+        f"got {captured_attrs.get('prefix')!r}"
+    )
+    assert isinstance(captured_attrs.get("cache_hit"), bool), (
+        f"[trial {trial}] cache_hit must be a bool; "
+        f"got {captured_attrs.get('cache_hit')!r}"
+    )
+    assert (
+        isinstance(captured_attrs.get("total_iterations"), int)
+        and captured_attrs.get("total_iterations") >= 0
+    ), (
+        f"[trial {trial}] total_iterations must be a non-negative int; "
+        f"got {captured_attrs.get('total_iterations')!r}"
+    )
+    # TODO(AH-62): assert mcp_pool_hit once MCP pool span support lands.

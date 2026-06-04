@@ -3983,3 +3983,503 @@ class TestUserBuiltGaAgent:
         # Returned agent is the raw build_agent mock (LlmAgent stand-in).
         mock_ba.assert_called_once()
         assert result._extract_mock_name() == f"llmagent_{custom_id}"
+
+
+# ---------------------------------------------------------------------------
+# TestBuildSpecialistAfterAgentCallback — AH-35: Weave trace span attributes
+# ---------------------------------------------------------------------------
+
+
+def _make_real_specialist_config(
+    *,
+    acceptance_criteria: str | None = None,
+) -> Any:
+    """Return a MergedAgentConfig wired for after_agent_callback tests.
+
+    Uses a real LlmAgent from build_agent so after_agent_callback is a real
+    list, not a MagicMock attribute.
+    """
+    from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+    return MergedAgentConfig(
+        instruction="Test specialist instruction.",
+        model="gemini-2.5-pro",
+        description="Test specialist.",
+        default_acceptance_criteria=acceptance_criteria,
+    )
+
+
+def _build_specialist_with_real_agent(
+    config: Any,
+    name: str,
+    *,
+    patch_pipeline: bool = False,
+) -> Any:
+    """Drive ``_build_specialist`` with a real LlmAgent from build_agent.
+
+    Stubs GCP / registry infrastructure and (optionally) ``build_review_pipeline``.
+    Returns the agent produced by ``_build_specialist``.
+    """
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    from google.adk.agents import LlmAgent
+
+    from app.adk.agents.agent_factory import specialist_runtime as sr
+    from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+    def _real_build_agent(cfg: Any, *, name: str, **kw: Any) -> LlmAgent:
+        return LlmAgent(
+            name=name,
+            model=cfg.model,
+            instruction=cfg.instruction,
+            description=cfg.description or "",
+        )
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                new=McpToolsetPool(),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                return_value=_FakeFirestoreDb({}),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=[],
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
+        )
+        stack.enter_context(
+            _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_real_build_agent,
+            )
+        )
+        if patch_pipeline:
+            fake_pipeline = MagicMock(name="fake_pipeline")
+            fake_pipeline.name = f"{name}_review_loop"
+            fake_pipeline.description = "Test specialist."
+            fake_pipeline.after_agent_callback = []
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=fake_pipeline,
+                )
+            )
+        return sr._build_specialist(config, name, None)
+
+
+def _find_ah35_callback(agent: Any) -> Any:
+    """Return the AH-35 specialist-span callback from an agent's after chain.
+
+    The callback is no longer the last entry (it is inserted BEFORE
+    ``weave_after_agent_callback`` so the span is still current when it runs),
+    so locate it by its closure name rather than by position.
+    """
+    cbs = agent.after_agent_callback
+    if callable(cbs):
+        cbs = [cbs]
+    for cb in cbs or []:
+        if getattr(cb, "__name__", "") == "_specialist_after_agent_callback":
+            return cb
+    raise AssertionError(
+        f"AH-35 callback (_specialist_after_agent_callback) not found in {cbs!r}"
+    )
+
+
+class TestBuildSpecialistAfterAgentCallback:
+    """AH-35: ``_build_specialist`` wires an ``after_agent_callback`` that writes
+    Weave trace span attributes onto the specialist sub-agent span.
+
+    The callback is INSERTED immediately before ``weave_after_agent_callback``
+    (which finishes/pops the span) so ``weave.get_current_call()`` resolves to
+    the specialist's own span. Tests locate it via ``_find_ah35_callback``.
+
+    Tests:
+    (a) Single-pass path: callback present in the LlmAgent's
+        ``after_agent_callback`` list, ``agent_kind=="single_pass"``.
+    (b) Loop-pipeline path: callback present in the LoopAgent's
+        ``after_agent_callback`` list with a dedicated weave span
+        (``weave_before`` wired onto ``before_agent_callback``),
+        ``agent_kind=="loop_pipeline"``.
+    (c) Callback invocation writes expected attributes via
+        ``set_specialist_span_attrs``.
+    (d) Pre-existing callbacks on the resolved specialist are preserved
+        (chain normalised to a list, not replaced).
+    (e) ``agent_kind`` is ``"loop_pipeline"`` when
+        ``default_acceptance_criteria`` is set, ``"single_pass"`` otherwise.
+    """
+
+    def test_single_pass_callback_appended_to_llm_agent(self) -> None:
+        """(a) single-pass: AH-35 callback present and ordered before weave_after."""
+        from app.adk.tracking.callbacks import weave_after_agent_callback
+
+        config = _make_real_specialist_config()
+        assert not (config.default_acceptance_criteria or "").strip()
+
+        agent = _build_specialist_with_real_agent(config, "plain_spe")
+
+        # The real LlmAgent has after_agent_callback as a list.
+        assert isinstance(agent.after_agent_callback, list), (
+            "after_agent_callback must be a list; got "
+            f"{type(agent.after_agent_callback).__name__}"
+        )
+        ah35 = _find_ah35_callback(agent)
+        # The AH-35 callback must run BEFORE weave_after (which pops the span).
+        chain = agent.after_agent_callback
+        if weave_after_agent_callback in chain:
+            assert chain.index(ah35) < chain.index(weave_after_agent_callback), (
+                "AH-35 callback must precede weave_after_agent_callback"
+            )
+
+    def test_loop_pipeline_callback_appended_to_loop_agent(self) -> None:
+        """(b) loop-pipeline path: AH-35 callback present on the LoopAgent with a
+        dedicated weave span (weave_before wired onto before_agent_callback)."""
+        from app.adk.tracking.callbacks import (
+            weave_after_agent_callback,
+            weave_before_agent_callback,
+        )
+
+        config = _make_real_specialist_config(acceptance_criteria="Cite 3 sources.")
+
+        agent = _build_specialist_with_real_agent(
+            config, "review_spe", patch_pipeline=True
+        )
+
+        # The returned agent is the (fake) pipeline mock.
+        assert isinstance(agent.after_agent_callback, list), (
+            "LoopAgent after_agent_callback must be a list after _build_specialist"
+        )
+        # AH-35 callback present and ordered before the weave span finisher.
+        ah35 = _find_ah35_callback(agent)
+        assert weave_after_agent_callback in agent.after_agent_callback, (
+            "LoopAgent must get its own weave_after span finisher"
+        )
+        assert agent.after_agent_callback.index(ah35) < agent.after_agent_callback.index(
+            weave_after_agent_callback
+        )
+        # The LoopAgent gets a dedicated weave span (weave_before on its before).
+        assert weave_before_agent_callback in (agent.before_agent_callback or []), (
+            "LoopAgent must get weave_before_agent_callback for a dedicated span"
+        )
+
+    def test_agent_kind_is_single_pass_when_no_criteria(self) -> None:
+        """(e) agent_kind captures as 'single_pass' for non-review specialists."""
+        from unittest.mock import MagicMock, patch
+
+        calls: list[dict[str, Any]] = []
+
+        config = _make_real_specialist_config()
+        agent = _build_specialist_with_real_agent(config, "plain_spe2")
+
+        # Invoke the AH-35 callback (inserted before weave_after).
+        our_cb = _find_ah35_callback(agent)
+
+        fake_ctx = MagicMock()
+        fake_ctx.state = {}
+
+        with patch(
+            "app.adk.agents.utils.review_pipeline_tracing.set_specialist_span_attrs",
+            side_effect=lambda **kw: calls.append(kw),
+        ):
+            our_cb(fake_ctx)
+
+        assert len(calls) == 1, f"set_specialist_span_attrs called {len(calls)} times"
+        assert calls[0]["agent_kind"] == "single_pass", (
+            f"Expected 'single_pass', got {calls[0]['agent_kind']!r}"
+        )
+        assert calls[0]["specialist_name"] == "plain_spe2"
+        assert isinstance(calls[0]["cache_hit"], bool)
+        assert calls[0]["total_iterations"] == 0
+
+    def test_agent_kind_is_loop_pipeline_when_criteria_set(self) -> None:
+        """(e) agent_kind captures as 'loop_pipeline' for review-pipeline specialists."""
+        from unittest.mock import MagicMock, patch
+
+        calls: list[dict[str, Any]] = []
+
+        config = _make_real_specialist_config(acceptance_criteria="Cite 3 sources.")
+        agent = _build_specialist_with_real_agent(
+            config, "review_spe2", patch_pipeline=True
+        )
+
+        # Invoke the AH-35 callback on the pipeline (inserted before weave_after).
+        our_cb = _find_ah35_callback(agent)
+
+        fake_ctx = MagicMock()
+        fake_ctx.state = {}
+
+        with patch(
+            "app.adk.agents.utils.review_pipeline_tracing.set_specialist_span_attrs",
+            side_effect=lambda **kw: calls.append(kw),
+        ):
+            our_cb(fake_ctx)
+
+        assert len(calls) == 1
+        assert calls[0]["agent_kind"] == "loop_pipeline", (
+            f"Expected 'loop_pipeline', got {calls[0]['agent_kind']!r}"
+        )
+        assert calls[0]["specialist_name"] == "review_spe2"
+        assert calls[0]["prefix"] == "review_spe2_review"
+        assert calls[0]["criteria"] == "Cite 3 sources."
+
+    def test_callback_writes_expected_attrs_via_set_specialist_span_attrs(
+        self,
+    ) -> None:
+        """(c) Invoking the callback writes all six AH-35 attributes."""
+        from unittest.mock import MagicMock, patch
+
+        calls: list[dict[str, Any]] = []
+
+        config = _make_real_specialist_config()
+        agent = _build_specialist_with_real_agent(config, "attr_spe")
+
+        our_cb = _find_ah35_callback(agent)
+
+        fake_ctx = MagicMock()
+        fake_ctx.state = {"some_key": "some_value"}
+
+        with patch(
+            "app.adk.agents.utils.review_pipeline_tracing.set_specialist_span_attrs",
+            side_effect=lambda **kw: calls.append(kw),
+        ):
+            our_cb(fake_ctx)
+
+        assert len(calls) == 1
+        kw = calls[0]
+        # All six AH-35 attributes must be present.
+        assert "specialist_name" in kw
+        assert "agent_kind" in kw
+        assert "criteria" in kw
+        assert "final_state" in kw
+        assert "prefix" in kw
+        assert "total_iterations" in kw
+        assert "cache_hit" in kw
+        # Type checks.
+        assert isinstance(kw["specialist_name"], str)
+        assert isinstance(kw["agent_kind"], str)
+        assert isinstance(kw["total_iterations"], int)
+        assert isinstance(kw["cache_hit"], bool)
+
+    def test_pre_existing_callbacks_are_preserved_single_pass(self) -> None:
+        """(d) Chain preserved: pre-installed callbacks survive the append.
+
+        We inject a sentinel callback into the LlmAgent that build_agent returns,
+        then assert it is still present alongside our appended callback after
+        ``_build_specialist`` runs.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_real_specialist_config()
+        sentinel_cb = MagicMock(name="pre_existing_cb")
+
+        def _real_build_agent_with_sentinel(cfg: Any, *, name: str, **kw: Any) -> LlmAgent:
+            agent = LlmAgent(
+                name=name,
+                model=cfg.model,
+                instruction=cfg.instruction,
+                description=cfg.description or "",
+            )
+            # Pre-install a sentinel callback to verify chain preservation.
+            agent.after_agent_callback = [sentinel_cb]
+            return agent
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_real_build_agent_with_sentinel,
+                )
+            )
+            agent = sr._build_specialist(config, "chain_spe", None)
+
+        # Sentinel callback is preserved; our callback is appended after it.
+        assert len(agent.after_agent_callback) == 2, (
+            f"Expected [sentinel_cb, our_cb]; got {agent.after_agent_callback!r}"
+        )
+        assert agent.after_agent_callback[0] is sentinel_cb, (
+            "Pre-existing callback must remain at index 0"
+        )
+        assert callable(agent.after_agent_callback[1]), (
+            "Our appended callback must be callable at index 1"
+        )
+
+    def test_pre_existing_callbacks_are_preserved_loop_pipeline(self) -> None:
+        """(d) Chain preserved on the LoopAgent: any callbacks already on the
+        pipeline are kept; the AH-35 callback is inserted before the (newly
+        wired) weave_after span finisher."""
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+        from app.adk.tracking.callbacks import (
+            weave_after_agent_callback,
+            weave_before_agent_callback,
+        )
+
+        config = _make_real_specialist_config(acceptance_criteria="Cite 3 sources.")
+
+        sentinel_cb = MagicMock(name="pre_existing_pipeline_cb")
+
+        def _real_build_agent(cfg: Any, *, name: str, **kw: Any) -> LlmAgent:
+            return LlmAgent(
+                name=name,
+                model=cfg.model,
+                instruction=cfg.instruction,
+                description=cfg.description or "",
+            )
+
+        fake_pipeline = MagicMock(name="fake_pipeline_with_existing_cb")
+        fake_pipeline.name = "chain_review_spe_review_loop"
+        fake_pipeline.description = "Test specialist."
+        fake_pipeline.after_agent_callback = [sentinel_cb]  # pre-existing callback
+        fake_pipeline.before_agent_callback = None
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_real_build_agent,
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=fake_pipeline,
+                )
+            )
+            result = sr._build_specialist(config, "chain_review_spe", None)
+
+        # Pre-existing callback is preserved at index 0; the AH-35 callback is
+        # inserted before the newly-wired weave_after span finisher.
+        after = result.after_agent_callback
+        assert after[0] is sentinel_cb, "Pre-existing callback must remain at index 0"
+        assert weave_after_agent_callback in after, (
+            "LoopAgent must get its own weave_after span finisher"
+        )
+        ah35 = _find_ah35_callback(result)
+        assert after.index(ah35) < after.index(weave_after_agent_callback), (
+            "AH-35 callback must precede weave_after_agent_callback"
+        )
+        # The LoopAgent also gets weave_before for a dedicated span.
+        assert weave_before_agent_callback in (result.before_agent_callback or []), (
+            "LoopAgent must get weave_before_agent_callback"
+        )
+
+    def test_callback_handles_state_to_dict(self) -> None:
+        """Callback reads state via to_dict() when available (ADK State compat)."""
+        from unittest.mock import MagicMock, patch
+
+        calls: list[dict[str, Any]] = []
+
+        config = _make_real_specialist_config()
+        agent = _build_specialist_with_real_agent(config, "state_spe")
+        our_cb = _find_ah35_callback(agent)
+
+        fake_state = MagicMock()
+        fake_state.to_dict.return_value = {"review_spe_feedback": ""}
+
+        fake_ctx = MagicMock()
+        fake_ctx.state = fake_state
+
+        with patch(
+            "app.adk.agents.utils.review_pipeline_tracing.set_specialist_span_attrs",
+            side_effect=lambda **kw: calls.append(kw),
+        ):
+            our_cb(fake_ctx)
+
+        assert len(calls) == 1
+        # final_state must have been read via to_dict().
+        assert isinstance(calls[0]["final_state"], dict)
+
+    def test_callback_graceful_on_missing_state(self) -> None:
+        """Callback does not raise when callback_context has no state attribute."""
+        from unittest.mock import patch
+
+        calls: list[dict[str, Any]] = []
+
+        config = _make_real_specialist_config()
+        agent = _build_specialist_with_real_agent(config, "nostate_spe")
+        our_cb = _find_ah35_callback(agent)
+
+        # Minimal object with no 'state' attribute.
+        class _NoState:
+            pass
+
+        with patch(
+            "app.adk.agents.utils.review_pipeline_tracing.set_specialist_span_attrs",
+            side_effect=lambda **kw: calls.append(kw),
+        ):
+            our_cb(_NoState())  # must not raise
+
+        assert len(calls) == 1
+        assert calls[0]["final_state"] == {}

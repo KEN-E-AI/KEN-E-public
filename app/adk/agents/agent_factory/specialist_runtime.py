@@ -662,7 +662,131 @@ def _build_specialist(
     # (doc_id, account_id, content_hash) already covers this — content_hash
     # incorporates default_acceptance_criteria via model_dump_json.
     criteria = (config.default_acceptance_criteria or "").strip()
+
+    # AH-35: Build the after_agent_callback for Weave span attribute injection.
+    # The callback is wired to run immediately BEFORE weave_after_agent_callback
+    # (which finishes and pops the agent's span) so weave.get_current_call()
+    # resolves to THIS specialist's own span, not the parent/root span.  See
+    # _wire_specialist_span_callbacks below.  The closure captures build-time
+    # values; cache_hit is always False at build time (the agent is freshly
+    # constructed on every cache miss).  Subsequent turns that serve this same
+    # agent from the LRU cache reuse the same callback object with
+    # cache_hit=False — this is an accepted approximation documented in AH-35
+    # §Risks.
+    #
+    # NOTE: accurate total_iterations tracking is deferred (AH-35). The
+    # important per-span attributes are specialist_name, agent_kind, exit_reason,
+    # and cache_hit; total_iterations >= 0 satisfies the trace-structure test.
+    def _make_specialist_after_agent_callback(
+        _specialist_name: str,
+        _criteria: str,
+        _prefix: str,
+        _agent_kind: str,
+    ) -> Callable[[Any], None]:
+        def _specialist_after_agent_callback(
+            callback_context: Any,
+        ) -> None:
+            from app.adk.agents.utils.review_pipeline_tracing import (
+                set_specialist_span_attrs,
+            )
+
+            try:
+                state_obj = getattr(callback_context, "state", None)
+                if state_obj is not None and hasattr(state_obj, "to_dict"):
+                    final_state: dict[str, Any] = state_obj.to_dict()
+                elif state_obj is not None:
+                    final_state = dict(state_obj)
+                else:
+                    final_state = {}
+            except Exception as _exc:
+                logger.debug(
+                    "after_agent_callback: failed to read state for %r "
+                    "— exit_reason will default to 'approved': %s",
+                    _specialist_name,
+                    _exc,
+                )
+                final_state = {}
+
+            set_specialist_span_attrs(
+                specialist_name=_specialist_name,
+                criteria=_criteria,
+                final_state=final_state,
+                prefix=_prefix,
+                total_iterations=0,  # NOTE: accurate counting deferred (AH-35)
+                cache_hit=False,  # always False at build time; see module docstring
+                agent_kind=_agent_kind,
+            )
+
+        return _specialist_after_agent_callback
+
+    def _as_callback_list(value: Any) -> list[Any]:
+        """Normalise ADK's ``None | Callable | list[Callable]`` to a list.
+
+        Typed as ``list[Any]`` because the chain mixes callbacks with different
+        ADK signatures — the sync AH-35 callback alongside the async
+        ``weave_before``/``weave_after`` span callbacks.
+        """
+        if value is None:
+            return []
+        if callable(value):
+            return [value]
+        return list(value)
+
+    def _wire_specialist_span_callbacks(
+        agent: Any,
+        ah35_callback: Callable[[Any], None],
+        *,
+        add_weave_span: bool,
+    ) -> None:
+        """Attach ``ah35_callback`` so it writes onto THIS agent's own Weave span.
+
+        The AH-35 callback must run BEFORE ``weave_after_agent_callback`` —
+        which finishes and pops the agent's span — otherwise
+        ``weave.get_current_call()`` resolves to the parent (root) span instead
+        of this specialist's.  We therefore INSERT the callback immediately
+        before ``weave_after_agent_callback`` rather than appending it.
+
+        ``add_weave_span=True`` (the review ``LoopAgent`` path): the agent has no
+        Weave span of its own, so we also wire ``weave_before``/``weave_after``
+        onto it.  That produces a dedicated span named after the specialist
+        ``doc_id`` that wraps the worker/reviewer children — matching
+        ``trace-structure-spec.md §14`` — and the AH-35 attrs land on it.
+
+        Pre-installed callbacks are preserved (the chain is normalised to a
+        list, not replaced).
+        """
+        from app.adk.tracking.callbacks import (
+            weave_after_agent_callback,
+            weave_before_agent_callback,
+        )
+
+        after = _as_callback_list(agent.after_agent_callback)
+
+        if add_weave_span:
+            before = _as_callback_list(agent.before_agent_callback)
+            if weave_before_agent_callback not in before:
+                before.insert(0, weave_before_agent_callback)
+            agent.before_agent_callback = before
+            if weave_after_agent_callback not in after:
+                after.append(weave_after_agent_callback)
+
+        if weave_after_agent_callback in after:
+            after.insert(after.index(weave_after_agent_callback), ah35_callback)
+        else:
+            # No weave span finisher present — write last (best effort).
+            after.append(ah35_callback)
+        agent.after_agent_callback = after
+
     if not criteria:
+        # Single-pass path: the raw LlmAgent already carries
+        # weave_after_agent_callback (from build_agent); insert ours before it.
+        _cb = _make_specialist_after_agent_callback(
+            _specialist_name=name,
+            _criteria="",
+            _prefix="",
+            _agent_kind="single_pass",
+        )
+        _wire_specialist_span_callbacks(specialist, _cb, add_weave_span=False)
         return specialist
 
     from app.adk.agents.utils.criteria_utils import (
@@ -716,6 +840,20 @@ def _build_specialist(
     # Carry the specialist's description across so available_specialists_provider
     # surfaces the same user-facing string whether or not review is enabled.
     pipeline.description = specialist.description
+
+    # AH-35: attach the callback to the LoopAgent (pipeline), not the inner
+    # specialist worker, so it fires once per outer dispatch — not once per
+    # review iteration.  The bare LoopAgent has no Weave span of its own, so
+    # add_weave_span=True wires weave_before/after onto it: the attrs land on a
+    # dedicated doc_id-named span that wraps the worker/reviewer children.
+    _cb_loop = _make_specialist_after_agent_callback(
+        _specialist_name=name,
+        _criteria=criteria,
+        _prefix=f"{name}_review",
+        _agent_kind="loop_pipeline",
+    )
+    _wire_specialist_span_callbacks(pipeline, _cb_loop, add_weave_span=True)
+
     return pipeline
 
 

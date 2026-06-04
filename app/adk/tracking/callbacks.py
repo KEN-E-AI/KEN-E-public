@@ -53,12 +53,35 @@ logger = get_structured_logger(__name__)
 # Weave agent-level span callbacks
 # ---------------------------------------------------------------------------
 
-_current_agent_call: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "_current_agent_call", default=None
+# Per-agent Weave span frames, kept as a LIFO stack so that nested agent runs
+# (root → specialist → review worker/reviewer) each finish their OWN span.
+# A single ContextVar holding one call (the old design) was clobbered by a
+# nested sub-agent's ``before`` callback, so the parent (root) span was never
+# finished. ADK runs sub-agents in the SAME contextvars context (it does not
+# ``copy_context``), so a plain list mutated in place behaves as a shared stack
+# across the whole turn: ``weave_before_agent_callback`` pushes one frame,
+# ``weave_after_agent_callback`` pops the top and finishes that frame.
+#
+# Each frame carries the created call plus the entered ``weave.attributes()``
+# context manager so the after callback can exit the exact CM it opened.
+_WeaveAgentFrame = tuple[Any, Any]  # (call, attrs_ctx)
+
+_weave_agent_span_stack: contextvars.ContextVar[list[_WeaveAgentFrame] | None] = (
+    contextvars.ContextVar("_weave_agent_span_stack", default=None)
 )
-_current_agent_goal_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "_current_agent_goal_ctx", default=None
-)
+
+
+def _agent_span_stack() -> list[_WeaveAgentFrame]:
+    """Return the current turn's agent-span stack, creating it lazily.
+
+    The ContextVar defaults to ``None`` (never a shared mutable default); the
+    first push in a turn installs a fresh list.
+    """
+    stack = _weave_agent_span_stack.get()
+    if stack is None:
+        stack = []
+        _weave_agent_span_stack.set(stack)
+    return stack
 
 
 _MAX_GOAL_LENGTH = 500
@@ -230,18 +253,31 @@ async def weave_before_agent_callback(
 
         agent_goal = _extract_user_goal(callback_context)
 
-        # Resolve the instruction text for the root span inputs.
+        # Resolve the running agent so the span is named after it: the root
+        # agent's ADK name is "ken_e", specialists are their Firestore doc_id,
+        # and review children are "{doc_id}_worker" / "{doc_id}_review_reviewer".
+        # This matches the canonical fixture (transfer_to_specialist_trace.json)
+        # and trace-structure-spec.md §14, which the prior hardcoded
+        # op="ken_e_agent" did not.
+        agent_name = "ken_e"
+        agent = None
+        invocation_ctx = getattr(callback_context, "_invocation_context", None)
+        if invocation_ctx is not None:
+            agent = getattr(invocation_ctx, "agent", None)
+            if agent is not None and getattr(agent, "name", None):
+                agent_name = agent.name
+
+        # Resolve the instruction text for the span inputs.
         # ``canonical_instruction`` handles both plain-string and
-        # InstructionProvider callable variants. Wrapped in try/except so any
-        # ADK-internal API change doesn't break the agent turn.
+        # InstructionProvider callable variants, and is absent on non-LlmAgent
+        # types (e.g. the review LoopAgent) — hence the ``hasattr`` guard.
+        # Wrapped in try/except so any ADK-internal API change doesn't break the
+        # agent turn.
         instruction_text: str | None = None
         try:
-            invocation_ctx = getattr(callback_context, "_invocation_context", None)
-            if invocation_ctx is not None:
-                agent = getattr(invocation_ctx, "agent", None)
-                if agent is not None and hasattr(agent, "canonical_instruction"):
-                    instr, _ = await agent.canonical_instruction(callback_context)
-                    instruction_text = instr
+            if agent is not None and hasattr(agent, "canonical_instruction"):
+                instr, _ = await agent.canonical_instruction(callback_context)
+                instruction_text = instr
         except Exception:
             pass
 
@@ -255,7 +291,6 @@ async def weave_before_agent_callback(
 
         attrs_ctx = weave.attributes(root_attrs)
         attrs_ctx.__enter__()
-        _current_agent_goal_ctx.set(attrs_ctx)
 
         # ``weave.attributes(...)`` propagates to ``@weave.op()`` child spans
         # via contextvar, but ``client.create_call(...)`` does not snapshot
@@ -264,19 +299,22 @@ async def weave_before_agent_callback(
         # ``account_id``, ``session_id``, ``agent_id``, ``agent_version``
         # set, which fails ``validate_trace_compliance``.
         inputs: dict[str, Any] = {
-            "agent": "ken_e",
+            "agent": agent_name,
             "context_agent_goal": agent_goal,
         }
         if instruction_text is not None:
             inputs["instruction"] = truncate_large_output(instruction_text)
 
         call = client.create_call(
-            op="ken_e_agent",
+            op=agent_name,
             inputs=inputs,
             attributes=root_attrs,
             use_stack=True,
         )
-        _current_agent_call.set(call)
+        # Push this agent's frame so its matching after callback finishes the
+        # correct span even when sub-agents run (and push their own frames)
+        # in between. See _agent_span_stack for the LIFO rationale.
+        _agent_span_stack().append((call, attrs_ctx))
     except Exception:
         logger.warning("Failed to create Weave parent span", exc_info=True)
     return None
@@ -285,10 +323,13 @@ async def weave_before_agent_callback(
 def weave_after_agent_callback(
     callback_context: CallbackContext,
 ) -> types.Content | None:
-    """Finish the parent Weave span created by weave_before_agent_callback.
+    """Finish the Weave span created by this agent's weave_before_agent_callback.
 
-    Finalises the call, pops it from the Weave call stack, and clears
-    the ContextVar.
+    Pops the top frame off the per-agent span stack — i.e. THIS agent's own
+    span, even if sub-agents ran (and pushed/popped their own frames) in
+    between — finalises the call, pops it from the Weave call stack, and exits
+    the ``weave.attributes()`` context manager that the matching before
+    callback opened.
 
     Reads ``state["temp:_last_model_output"]`` — stashed by
     ``capture_last_model_output_after_model_callback`` on the final model call —
@@ -299,8 +340,18 @@ def weave_after_agent_callback(
 
     Returns None so the agent proceeds normally.
     """
-    call = _current_agent_call.get(None)
+    stack = _weave_agent_span_stack.get()
+    if not stack:
+        return None
+    call, attrs_ctx = stack.pop()
     if not call:
+        # Frame opened its attrs_ctx but create_call returned no call — still
+        # close the attrs context so we don't leak the contextvar token.
+        if attrs_ctx is not None:
+            try:
+                attrs_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
         return None
     try:
         # Read last model output text stashed by the after_model callback.
@@ -328,15 +379,12 @@ def weave_after_agent_callback(
         except Exception:
             pass
     finally:
-        _current_agent_call.set(None)
-        # Exit the weave.attributes() context entered in before_agent_callback
-        goal_ctx = _current_agent_goal_ctx.get(None)
-        if goal_ctx:
+        # Exit the weave.attributes() context entered in before_agent_callback.
+        if attrs_ctx is not None:
             try:
-                goal_ctx.__exit__(None, None, None)
+                attrs_ctx.__exit__(None, None, None)
             except Exception:
                 pass
-            _current_agent_goal_ctx.set(None)
     return None
 
 

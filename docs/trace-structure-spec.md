@@ -759,88 +759,148 @@ Below is a simplified example of a compliant trace for a business strategy agent
 
 ## 14. AH-PRD-09 Per-Turn Dispatch
 
-AH-PRD-09 (Per-Turn Dispatch Agent) introduces a single unified `delegate_to_specialist`
-entry-point tool.  This section documents the trace shape change it produces and the
-attributes MER-E extractors should consume.
+AH-PRD-09 (Per-Turn Dispatch Agent) introduced a unified per-turn specialist resolution
+path.  AH-75 subsequently replaced the `delegate_to_specialist` wrapper function with
+ADK's native `transfer_to_agent` mechanism.  This section documents the **post-AH-75**
+trace shape that MER-E extractors must consume.
 
 ### 14.1 Span Hierarchy
 
 ```
-KEN-E root agent invocation
-└── LLM call(s)
-└── delegate_to_specialist                ← single entry point (one per specialist call in turn)
-    └── specialist_run                    ← per-call child
-        ├── load_config_from_firestore    ← present on cache miss; absent on cache hit
-        └── review_loop_iteration (0..N)  ← present when acceptance_criteria is non-empty
+root agent (ken_e span)                                            [EMITTED]
+└── transfer_to_agent child span  [summary.agent_name = doc_id]    [EMITTED]
+└── specialist sub-agent span     [name = specialist doc_id]       [EMITTED]
+    summary:
+      specialist_name: str         # specialist doc_id
+      agent_kind: "loop_pipeline" | "single_pass"
+      exit_reason: "approved" | "max_iterations"   # when loop_pipeline
+      total_iterations: int                         # when loop_pipeline
+      output_key_prefix: str                        # when loop_pipeline
+      cache_hit: bool
+    children:  (when agent_kind == "loop_pipeline")
+      └── {specialist_name}_worker span             [span EMITTED; summary annotations DEFERRED]
+      └── {specialist_name}_review_reviewer span    [DEFERRED — not emitted today]
 ```
 
-Compare to the pre-AH-PRD-09 shape, where each specialist produced its own
-`dispatch_to_<specialist_name>` span at the same level.
+> **Emission status (read before building extractors).** Only the spans tagged
+> `[EMITTED]` above — plus the six attributes on the specialist sub-agent span
+> `summary` — are written by the current KEN-E runtime (AH-35). The
+> iteration-level annotations on the `_worker` span and the entire
+> `_review_reviewer` span are the **deferred** target shape; see §14.2 "Worker
+> and reviewer child spans" and the per-span `emission_status` /
+> `deferred_reason` markers in the canonical fixture. Treat deferred spans and
+> fields as absent in live traces until their follow-up ships.
+
+Compare to the pre-AH-75 shape, where a `delegate_to_specialist` wrapper span
+preceded a `specialist_run` child.  Both of those span names are now retired;
+attributes previously on `delegate_to_specialist` and `specialist_run` have merged
+onto the specialist sub-agent span's `summary` block (emitted by
+`after_agent_callback` installed by `_build_specialist`).
 
 ### 14.2 Per-Span Attributes
 
-#### `delegate_to_specialist`
+#### `transfer_to_agent` child span
 
-| Attribute | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `specialist_name` | `str` | Yes | Firestore `doc_id` of the resolved specialist |
-| `cache_hit` | `bool` | Yes | `true` when the `LlmAgent` was served from the LRU cache; `false` on a fresh build |
-| `mcp_pool_hit` | `bool` | No (future) | MCP connection-pool hit — populated by AH-62; absent in this release |
+| Attribute | Type | Source | Notes |
+|---|---|---|---|
+| `agent_name` | `str` | ADK native | Specialist doc_id; matches the sibling specialist sub-agent span `name` |
 
-Written by `set_delegate_attrs()` in `app/adk/agents/utils/review_pipeline_tracing.py`.
+This span is emitted natively by ADK's `transfer_to_agent` mechanism.  No custom
+attributes are written to it by KEN-E.
 
-#### `specialist_run`
+#### Specialist sub-agent span
 
-| Attribute | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `acceptance_criteria` | `str` | Yes | Review-loop criteria forwarded from caller; empty string for single-pass mode |
-| `exit_reason` | `str` | Yes | `"approved"` or `"max_iterations"` |
-| `total_iterations` | `int` | Yes | Number of complete review iterations; `0` for single-pass |
-| `output_key_prefix` | `str` | Yes | Pipeline key prefix (e.g. `"{doc_id}_review"`) |
+The span `name` equals the specialist's Firestore `doc_id` (e.g.
+`"business_researcher"`).  Attributes are written to the span `summary` block by the
+`after_agent_callback` installed in `_build_specialist` (AH-35).
 
-These attributes existed under `dispatch_to_<specialist>` pre-AH-PRD-09; they now
-appear one level deeper, under `specialist_run`.
+| Attribute | Type | Source | Notes |
+|---|---|---|---|
+| `specialist_name` | `str` | `after_agent_callback` (AH-35) | Matches specialist doc_id |
+| `agent_kind` | `str` | `after_agent_callback` (AH-35) | `"loop_pipeline"` or `"single_pass"` |
+| `exit_reason` | `str` | `after_agent_callback` (AH-35) | `"approved"` or `"max_iterations"`; only when `agent_kind=loop_pipeline` |
+| `total_iterations` | `int` | `after_agent_callback` (AH-35) | Number of complete iterations; only when `agent_kind=loop_pipeline` |
+| `output_key_prefix` | `str` | `after_agent_callback` (AH-35) | e.g. `"google_analytics_specialist_review"`; only when `agent_kind=loop_pipeline` |
+| `cache_hit` | `bool` | `after_agent_callback` (AH-35) | True when agent was served from LRU cache. **Currently a constant `false`** — `_build_specialist` runs only on a cache miss, so the build-time callback always captures `false` (accepted approximation; see AH-35 §Risks). |
+| `mcp_pool_hit` | `bool` | deferred (AH-62) | Not yet emitted |
 
-#### `review_loop_iteration`
+> The callback does **not** write `acceptance_criteria` / `default_acceptance_criteria`
+> to the specialist span `summary` — only the six attributes above. `total_iterations`
+> is currently emitted as a constant `0` (accurate per-iteration counting is deferred,
+> AH-35); the fixture shows a realistic `1` as the target value. Do not build
+> iteration-count metrics on `total_iterations` until that lands.
 
-Unchanged from pre-AH-PRD-09.  See §7 for the existing extractor guidance.
+#### Worker and reviewer child spans
+
+> **Deferred — the per-iteration sub-span detail below is the target shape, not
+> what the runtime emits today.** Mirrors the `mcp_pool_hit` (AH-62) deferral.
+
+When `agent_kind == "loop_pipeline"`, the specialist sub-agent span is the wrapping
+`LoopAgent`. Per iteration it currently emits:
+
+| Span name | Emission status | Detail |
+|---|---|---|
+| `{specialist_name}_worker` | **Emitted** (span only) | The worker sub-agent run for this iteration. The agent span IS emitted (weave callbacks propagate from `build_agent`), but `weave_after_agent_callback` writes only `output={status, text}` — its `summary` is empty. The iteration-level annotations (`iteration`, `specialist_output`) are **deferred** and live under `deferred_summary` in the fixture. |
+| `{specialist_name}_review_reviewer` | **Deferred** (not emitted) | The reviewer `LlmAgent` (`app/adk/agents/utils/review_pipeline.py`) is built with no `before_agent_callback` / `after_agent_callback`, so `weave_before_agent_callback` never runs for it and **no reviewer span is produced**. The fixture carries this span as the target shape only. |
+
+Until the deferred iteration sub-span emission ships, MER-E extractors must derive
+per-iteration signal from the specialist span's `total_iterations` / `exit_reason`
+(once `total_iterations` is wired) rather than from `_worker` / `_review_reviewer`
+child spans.
 
 ### 14.3 Relation to §2 Span Hierarchy
 
-The `delegate_to_specialist` span is emitted at the **L2** position (sub-agent
-delegation level) in the hierarchy described in §2.  `specialist_run` is its L3
-child; `review_loop_iteration` is L4.
+The specialist sub-agent span is emitted at the **L2** position (sub-agent delegation
+level) in the hierarchy described in §2.  The worker and reviewer child spans are its
+L3 children; any LLM or tool calls within those sub-agents are L4.
+
+The `transfer_to_agent` span is also an L2 sibling (emitted before the specialist
+sub-agent span in the same turn) — it is a bookkeeping span, not a wrapper.
 
 ### 14.4 MER-E Extractor Guidance
 
 For the canonical post-AH-75 trace shape:
 
-1. **Stop matching `dispatch_to_*` span names** — update any extractor query of the form
-   `span["name"].startswith("dispatch_to_")` to `span["name"] == "delegate_to_specialist"`.
+1. **Stop matching `dispatch_to_*` and `delegate_to_specialist` span names** — both
+   are retired.  The specialist is now identified by its span `name` equalling the
+   specialist doc_id.
 
-2. **Read `specialist_name` from the outer span** (`delegate_to_specialist.summary`),
-   not from the span name itself.
+2. **Read `specialist_name` from the specialist sub-agent span `summary`** — it equals
+   the span name, but reading from `summary` is more explicit.
 
-3. **Read review-loop attributes from `specialist_run`** (one level deeper than before):
-   `acceptance_criteria`, `exit_reason`, `total_iterations`, `output_key_prefix`.
+3. **Read review-loop attributes from the specialist sub-agent span `summary`**:
+   `exit_reason`, `total_iterations`, `output_key_prefix` (all gated on
+   `agent_kind == "loop_pipeline"`).
 
-4. **`cache_hit` is a new attribute** — include it in any cache-efficiency metrics or
-   latency attribution analysis.
+4. **`cache_hit` is on the specialist sub-agent span `summary`** — include it in any
+   cache-efficiency metrics or latency attribution analysis.
 
-5. **Validate against the canonical fixture** at
-   `app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json` and run
-   `app/adk/tracking/tests/test_delegate_to_specialist_fixture.py` before the cutover.
+5. **`mcp_pool_hit` is not yet emitted** — placeholder `# TODO(AH-62)` exists in the
+   callback; treat its absence as expected until AH-62 ships.
+
+6. **Honour each span's `emission_status`** — the `{specialist_name}_review_reviewer`
+   span and the `{specialist_name}_worker` iteration annotations (`iteration`,
+   `specialist_output`) are tagged `deferred` in the fixture and are **not present in
+   live traces**. Do not key required extractor logic on them.
+
+7. **Validate against the canonical fixture** at
+   `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` and run
+   `app/adk/tracking/tests/test_transfer_to_specialist_fixture.py`.
 
 ### 14.5 Fixture Pointer
 
 ```
-app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json
+app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json
 ```
 
-The fixture includes all required attributes for `delegate_to_specialist`,
-`specialist_run`, and `review_loop_iteration`.  The conformance test suite at
-`app/adk/tracking/tests/test_delegate_to_specialist_fixture.py` asserts schema
-compliance and is wired into the standard pytest run.
+The fixture includes all six emitted attributes on the specialist sub-agent span
+`summary` (`specialist_name`, `agent_kind`, `exit_reason`, `total_iterations`,
+`output_key_prefix`, `cache_hit`), plus the worker and reviewer child spans carried as
+the **deferred** target shape (each tagged with `emission_status` and a
+`deferred_reason`).  The conformance test suite at
+`app/adk/tracking/tests/test_transfer_to_specialist_fixture.py` asserts schema
+compliance — including that the emitted-vs-deferred labelling matches this spec — and
+is wired into the standard pytest run.
 
 **Supervisor-orchestration dispatch shape (AH-PRD-05, target post-ADK-2.0 unpin):** Multi-task supervisor-orchestrated turns produce a different span hierarchy. See [AH-PRD-05-trace-contract-diff.md](design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md) for the MER-E contract diff. Key differences: the root agent span contains coordinator task-ledger spans; each task produces a `task_delegation` sub-span with `usage_metadata` on the outer stream natively; fan-out branches are `fanout` spans containing parallel `task_delegation` children.
 
@@ -1057,9 +1117,15 @@ giving MER-E ground-truth availability data for routing-quality evaluation.
 ### 16.1 Span Hierarchy
 
 ```
-ken_e_agent (L1 — root)
+ken_e (L1 — root)
 └── specialists.list  (L2 — emitted from before_agent_callback, before any tool call)
 ```
+
+> Span naming (AH-35): each agent-level span's `op_name` is the agent's ADK
+> name — the root agent is `ken_e`, specialists are their Firestore `doc_id`,
+> and review children are `{doc_id}_worker` / `{doc_id}_review_reviewer`. The
+> legacy hardcoded `ken_e_agent` op name was retired when
+> `weave_before_agent_callback` switched to naming spans after the agent.
 
 The span is emitted in `before_agent_callback` (not `before_tool_callback`), so
 its `op_name` does **not** carry the `adk.tool.` prefix.
@@ -1088,7 +1154,7 @@ Emitted by `specialists_span_before_agent_callback` in
 
 ### 16.3 Position in Hierarchy
 
-`specialists.list` is a direct child of the L1 `ken_e_agent` root span, at the
+`specialists.list` is a direct child of the L1 `ken_e` root span, at the
 same level as the L2 sub-agent spans described in §14.  It is emitted from a
 `before_agent_callback` so it always precedes any tool-call or sub-agent spans
 within the same turn.
@@ -1119,14 +1185,14 @@ Two distinct signals:
 | `state["_available_specialists"] == []` | **Yes** (`specialist_count: 0`) | Legitimate — no specialists configured for this account yet. |
 | `"_available_specialists"` key absent from state | **No** | **Degradation signal** — capture failed or callback wiring was bypassed. |
 
-MER-E alert recommendation: a `ken_e_agent` root span with **no** `specialists.list`
+MER-E alert recommendation: a `ken_e` root span with **no** `specialists.list`
 child indicates a degraded capture path.  The absence should be treated as a
 missing-data issue, not as "zero specialists were available."
 
 ### 16.6 MER-E Extractor Guidance
 
 1. Match by exact `op_name`: `specialists.list`.  No `adk.tool.` prefix.
-2. The span is a **direct child** of the `ken_e_agent` root span.
+2. The span is a **direct child** of the `ken_e` root span.
 3. `specialists` array entries each carry `{name, description, agent_id}`.
    Join on `agent_id` for `agent_config` lookups; join on `name` for routing
    span correlation.

@@ -3,7 +3,7 @@
 ``specialists_span_before_agent_callback`` fires after
 ``attach_specialists_before_agent_callback`` populates
 ``session.state["_available_specialists"]`` and emits a one-shot
-``specialists.list`` child span nested under the ``ken_e_agent`` root span.
+``specialists.list`` child span nested under the ``ken_e`` root span.
 
 Design:
   - **Empty roster vs missing state key are distinct signals** (per MER-E
@@ -55,7 +55,7 @@ def specialists_span_before_agent_callback(
 
     Reads ``_available_specialists`` from session state (written by
     ``attach_specialists_before_agent_callback``).  The span is nested under
-    the open ``ken_e_agent`` root span via ``use_stack=True``.
+    the open ``ken_e`` root span via ``use_stack=True``.
 
     Empty-vs-missing policy (per docs/trace-structure-spec.md §16):
       - Key PRESENT (even if ``[]``) → emit span; ``specialist_count`` may be 0.

@@ -9,12 +9,17 @@ import pytest
 from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 from app.adk.tracking.callbacks import (
-    _current_agent_call,
     _get_chatbot_config_metadata,
+    _weave_agent_span_stack,
     capture_last_model_output_after_model_callback,
     weave_after_agent_callback,
     weave_before_agent_callback,
 )
+
+
+def _stack_calls() -> list:
+    """Return the calls currently on the per-agent span stack (bottom→top)."""
+    return [call for (call, _attrs) in (_weave_agent_span_stack.get() or [])]
 
 _INIT_WEAVE_PATH = "app.adk.tracking.callbacks.init_weave_if_needed"
 _GET_CLIENT_PATH = "app.adk.tracking.callbacks._weave_get_client"
@@ -47,11 +52,14 @@ _MOCK_CONFIG_METADATA = {
 }
 
 
-def _make_invocation_ctx(instruction: str | None = None) -> MagicMock:
+def _make_invocation_ctx(
+    instruction: str | None = None, agent_name: str = "ken_e"
+) -> MagicMock:
     """Build a minimal _invocation_context mock with an optional agent."""
     ic = MagicMock()
     if instruction is not None:
         agent = MagicMock()
+        agent.name = agent_name
         agent.canonical_instruction = AsyncMock(return_value=(instruction, False))
         ic.agent = agent
     else:
@@ -69,11 +77,11 @@ class MockCallbackContext:
 
 
 @pytest.fixture(autouse=True)
-def _reset_context_var():
-    """Ensure the ContextVar is clean before and after each test."""
-    _current_agent_call.set(None)
+def _reset_span_stack():
+    """Ensure the per-agent span stack is clean before and after each test."""
+    _weave_agent_span_stack.set(None)
     yield
-    _current_agent_call.set(None)
+    _weave_agent_span_stack.set(None)
 
 
 class TestWeaveBeforeAgentCallback:
@@ -81,7 +89,7 @@ class TestWeaveBeforeAgentCallback:
 
     @pytest.mark.asyncio
     @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
-    async def test_creates_call_and_sets_context_var(self, mock_cfg: MagicMock):
+    async def test_creates_call_and_pushes_frame(self, mock_cfg: MagicMock):
         mock_call = MagicMock(id="call-123")
         mock_client = MagicMock()
         mock_client.create_call.return_value = mock_call
@@ -92,13 +100,38 @@ class TestWeaveBeforeAgentCallback:
             )
 
         assert result is None
+        # With no _invocation_context the agent name falls back to "ken_e" (the
+        # root agent's ADK name) — the span op is now named after the agent, not
+        # the legacy hardcoded "ken_e_agent".
         mock_client.create_call.assert_called_once_with(
-            op="ken_e_agent",
+            op="ken_e",
             inputs={"agent": "ken_e", "context_agent_goal": None},
             attributes=ANY,
             use_stack=True,
         )
-        assert _current_agent_call.get(None) is mock_call
+        assert _stack_calls() == [mock_call]
+
+    @pytest.mark.asyncio
+    @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
+    async def test_span_named_after_specialist_agent(self, mock_cfg: MagicMock):
+        """The span op is the running agent's name (e.g. a specialist doc_id)."""
+        mock_call = MagicMock(id="call-spec")
+        mock_client = MagicMock()
+        mock_client.create_call.return_value = mock_call
+
+        ic = MagicMock()
+        ic.agent = MagicMock()
+        ic.agent.name = "google_analytics_specialist"
+        # Skip the instruction branch cleanly (LoopAgent-like: no instruction).
+        del ic.agent.canonical_instruction
+        ctx = MockCallbackContext(_invocation_context=ic)
+
+        with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=mock_client):
+            await weave_before_agent_callback(callback_context=ctx)
+
+        kwargs = mock_client.create_call.call_args.kwargs
+        assert kwargs["op"] == "google_analytics_specialist"
+        assert kwargs["inputs"]["agent"] == "google_analytics_specialist"
 
     @pytest.mark.asyncio
     @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
@@ -173,7 +206,7 @@ class TestWeaveBeforeAgentCallback:
             )
 
         assert result is None
-        assert _current_agent_call.get(None) is None
+        assert _stack_calls() == []
 
     @pytest.mark.asyncio
     @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
@@ -187,7 +220,7 @@ class TestWeaveBeforeAgentCallback:
             )
 
         assert result is None
-        assert _current_agent_call.get(None) is None
+        assert _stack_calls() == []
 
     @pytest.mark.asyncio
     @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
@@ -216,11 +249,12 @@ class TestWeaveBeforeAgentCallback:
 
 
 class TestWeaveAfterAgentCallback:
-    """Tests for weave_after_agent_callback."""
+    """Tests for weave_after_agent_callback (pops THIS agent's frame off the
+    per-agent span stack)."""
 
     def test_finishes_call_with_status_only_when_no_last_output(self):
         mock_call = MagicMock(id="call-456")
-        _current_agent_call.set(mock_call)
+        _weave_agent_span_stack.set([(mock_call, None)])
 
         mock_client = MagicMock()
         ctx = MockCallbackContext()  # no temp:_last_model_output in state
@@ -236,11 +270,11 @@ class TestWeaveAfterAgentCallback:
             mock_call, output={"status": "completed"}
         )
         mock_ctx.pop_call.assert_called_once_with("call-456")
-        assert _current_agent_call.get(None) is None
+        assert _stack_calls() == []
 
     def test_finishes_call_with_text_when_last_output_set(self):
         mock_call = MagicMock(id="call-text")
-        _current_agent_call.set(mock_call)
+        _weave_agent_span_stack.set([(mock_call, None)])
 
         mock_client = MagicMock()
         ctx = MockCallbackContext(
@@ -259,15 +293,70 @@ class TestWeaveAfterAgentCallback:
         )
         mock_ctx.pop_call.assert_called_once_with("call-text")
 
-    def test_noop_when_no_call_in_context_var(self):
+    def test_exits_attrs_ctx_for_the_popped_frame(self):
+        """The weave.attributes() CM opened in before is closed in after."""
+        mock_call = MagicMock(id="call-attrs")
+        attrs_ctx = MagicMock()
+        _weave_agent_span_stack.set([(mock_call, attrs_ctx)])
+
+        with (
+            patch(_GET_CLIENT_PATH, return_value=MagicMock()),
+            patch(_CALL_CTX_PATH),
+        ):
+            weave_after_agent_callback(callback_context=MockCallbackContext())
+
+        attrs_ctx.__exit__.assert_called_once_with(None, None, None)
+        assert _stack_calls() == []
+
+    def test_noop_when_stack_empty(self):
         result = weave_after_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
-        assert _current_agent_call.get(None) is None
+        assert _stack_calls() == []
+
+    @pytest.mark.asyncio
+    async def test_nested_agents_finish_their_own_spans_lifo(self):
+        """Root → specialist nesting: each after finishes its OWN span (LIFO),
+        so the root span is NOT orphaned when a sub-agent runs in between.
+
+        This is the regression guard for the single-ContextVar bug where a
+        nested sub-agent clobbered the parent's reference and the root span was
+        never finished. Runs as one async test so the before (awaited) and after
+        (sync) callbacks all share a single contextvars context — using
+        asyncio.run per call would mutate a copied context that never propagates
+        back.
+        """
+        root_call = MagicMock(id="root")
+        spec_call = MagicMock(id="spec")
+        mock_client = MagicMock()
+        mock_client.create_call.side_effect = [root_call, spec_call]
+
+        with (
+            patch(_INIT_WEAVE_PATH),
+            patch(_GET_CLIENT_PATH, return_value=mock_client),
+            patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA),
+            patch(_CALL_CTX_PATH) as mock_ctx,
+        ):
+            await weave_before_agent_callback(callback_context=MockCallbackContext())
+            await weave_before_agent_callback(callback_context=MockCallbackContext())
+            assert [c.id for c in _stack_calls()] == ["root", "spec"]
+
+            weave_after_agent_callback(callback_context=MockCallbackContext())
+            assert [c.id for c in _stack_calls()] == ["root"]
+
+            weave_after_agent_callback(callback_context=MockCallbackContext())
+            assert _stack_calls() == []
+
+        finished = [c.args[0].id for c in mock_client.finish_call.call_args_list]
+        assert finished == ["spec", "root"], (
+            "Both spans must finish in LIFO order — the root must not be orphaned"
+        )
+        popped = [c.args[0] for c in mock_ctx.pop_call.call_args_list]
+        assert popped == ["spec", "root"]
 
     def test_handles_finish_exception_and_still_cleans_up(self):
         mock_call = MagicMock(id="call-789")
-        _current_agent_call.set(mock_call)
+        _weave_agent_span_stack.set([(mock_call, None)])
 
         mock_client = MagicMock()
         mock_client.finish_call.side_effect = RuntimeError("Weave error")
@@ -280,11 +369,11 @@ class TestWeaveAfterAgentCallback:
 
         assert result is None
         mock_ctx.pop_call.assert_called_with("call-789")
-        assert _current_agent_call.get(None) is None
+        assert _stack_calls() == []
 
     def test_handles_pop_call_exception_gracefully(self):
         mock_call = MagicMock(id="call-000")
-        _current_agent_call.set(mock_call)
+        _weave_agent_span_stack.set([(mock_call, None)])
 
         mock_client = MagicMock()
         mock_client.finish_call.side_effect = RuntimeError("finish fail")
@@ -297,7 +386,7 @@ class TestWeaveAfterAgentCallback:
             result = weave_after_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
-        assert _current_agent_call.get(None) is None
+        assert _stack_calls() == []
 
 
 class TestCaptureLastModelOutputCallback:
