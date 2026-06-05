@@ -164,7 +164,7 @@ export function AgentToolPicker({
         >
           No tools available. Connect an integration on{" "}
           <a
-            href="/settings/integrations"
+            href="/settings/account"
             className="underline text-[var(--color-violet-500)]"
           >
             Account Settings

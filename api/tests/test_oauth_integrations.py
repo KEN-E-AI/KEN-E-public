@@ -245,6 +245,8 @@ class TestOAuthCallback:
 
             assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
             assert "oauth_success=google_analytics" in response.headers["location"]
+            # Returns the user to the account tab they started from, not the org tab.
+            assert "/settings/account/test_account" in response.headers["location"]
         finally:
             pass  # No cleanup needed with mocked service
 
@@ -368,6 +370,8 @@ class TestOAuthCallback:
 
         assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
         assert "oauth_error=state_expired" in response.headers["location"]
+        # Early errors (no account_id yet) fall back to the no-id account route.
+        assert "/settings/account?" in response.headers["location"]
 
 
 class TestTokenRefresh:

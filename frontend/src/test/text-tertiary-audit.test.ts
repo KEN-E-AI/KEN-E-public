@@ -59,6 +59,11 @@ const ALLOWED_FILES = new Set<string>([
   // admin — feature-flags audit list: empty-state copy, row timestamps, diff summary
   "components/admin/featureFlags/FlagAuditList.tsx",
 
+  // integrations — Configure panel (1:1 port of docs/figma-export
+  // ConfigureIntegrationPanel): secondary connected-account email subtext and
+  // the "coming soon" permissions placeholder note.
+  "components/integrations/ConfigureIntegrationPanel.tsx",
+
   // chat — timestamps and captions per accessibility-baseline.md §Exemptions.
   // ArtifactBlock and ThinkingBlock are 1:1 ports of docs/figma-export and use
   // text-tertiary for secondary captions (filename helper, reasoning summary,

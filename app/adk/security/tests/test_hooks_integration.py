@@ -194,3 +194,25 @@ class TestAdkBeforeToolCallback:
             "error": "permission_denied",
             "message": "Insufficient role",
         }
+
+
+class TestGaTokenFingerprint:
+    """The GA token fingerprint must be non-reversible, stable, and identical to
+    the API-side implementation so injection logs correlate across the two
+    deploy trees (see api/src/kene_api/routers/chat.py)."""
+
+    def test_absent_for_empty_token(self):
+        from app.adk.security.hooks import _ga_token_fingerprint
+
+        assert _ga_token_fingerprint(None) == "absent"
+        assert _ga_token_fingerprint("") == "absent"
+
+    def test_matches_canonical_sha256_prefix(self):
+        import hashlib
+
+        from app.adk.security.hooks import _ga_token_fingerprint
+
+        token = "ya29.some-access-token"
+        expected = hashlib.sha256(token.encode()).hexdigest()[:8]
+        assert _ga_token_fingerprint(token) == expected
+        assert len(_ga_token_fingerprint(token)) == 8

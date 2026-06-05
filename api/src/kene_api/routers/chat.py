@@ -3,6 +3,7 @@ Chat API endpoints for Vertex AI Agent Engine integration.
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import time
@@ -34,6 +35,7 @@ from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
 from ..cache import (
     ga_credentials_key,
+    ga_session_creds_marker_key,
     org_context_key,
     session_metadata_key,
     user_session_ids_key,
@@ -552,6 +554,241 @@ class AgentEngineClient:
                 ) from e
         return self._session_service
 
+    @staticmethod
+    def _ga_token_is_fresh(creds: dict[str, Any]) -> bool:
+        """True when a cached GA token is present and outside the 5-min expiry buffer."""
+        expires_at = creds.get("expires_at") or 0
+        if not creds.get("access_token") or not expires_at:
+            return False
+        try:
+            return time.time() < (float(expires_at) - 300)
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _ga_creds_signature(creds: dict[str, Any]) -> str:
+        """Stable signature of the GA fields the agent consumes from session state.
+
+        Captures the access token *and* the selected property IDs — the two
+        inputs the dispatch layer reads out of ``ga_credentials`` (see
+        ``dispatch_handlers.py`` / ``supervisor_utils.py``). Comparing this
+        signature (rather than the access token alone) is what lets a
+        Manage-Properties change propagate into an already-existing session even
+        when the token itself is unchanged.
+        """
+        return "|".join(
+            [
+                str(creds.get("access_token") or ""),
+                ",".join(str(p) for p in (creds.get("selected_property_ids") or [])),
+            ]
+        )
+
+    @staticmethod
+    def _ga_token_fingerprint(token: str | None) -> str:
+        """Short, non-reversible fingerprint of a GA access token for log correlation.
+
+        sha256[:8] — never logs the token itself. The engine-side tool hook
+        (``app/adk/security/hooks.py``) computes this identically, so a single
+        test-env turn confirms the token injected here reached the engine's
+        session state (matching fingerprints) versus a stale/absent token.
+        """
+        if not token:
+            return "absent"
+        return hashlib.sha256(token.encode()).hexdigest()[:8]
+
+    async def _load_ga_credentials(self, account_id: str) -> dict[str, Any] | None:
+        """Load + format GA credentials for an account (Redis-cached, refreshed when stale).
+
+        Returns the ``ga_credentials`` session-state dict (including ``access_token``),
+        or ``None`` when GA is not connected for the account. A cached entry is only
+        used while its token is still fresh — a stale cached token falls through to a
+        Firestore load + refresh so we never hand the agent an expired token. A
+        "not connected" result is also cached (as a sentinel) so the per-turn refresh
+        doesn't hit Firestore every message for accounts without GA; the OAuth connect
+        flow invalidates this key so a fresh connection is picked up immediately.
+        """
+        try:
+            redis_service = get_redis_service()
+            cache_key = ga_credentials_key(account_id)
+            if redis_service.is_available():
+                cached = redis_service.get_json(cache_key)
+                if cached is not None:
+                    if cached.get("_ga_not_connected"):
+                        return None  # Recently confirmed not connected.
+                    if self._ga_token_is_fresh(cached):
+                        logger.info(
+                            f"Cache HIT (fresh): GA credentials for {account_id}"
+                        )
+                        return cached
+
+            firestore_service = get_firestore_service()
+            db = firestore_service.get_client()
+            ga_helper = GACredentialHelper(db)
+
+            ga_creds = await ga_helper.get_and_format_credentials(account_id)
+            if not ga_creds:
+                # Cache the negative result so non-GA accounts don't pay a Firestore
+                # read on every turn; cleared by _invalidate_ga_credentials_cache.
+                if redis_service.is_available():
+                    redis_service.set_json(
+                        cache_key,
+                        {"_ga_not_connected": True},
+                        ttl=GA_CREDENTIALS_TTL_SECONDS,
+                    )
+                return None
+
+            raw_creds = await ga_helper.get_oauth_credentials(account_id)
+            if raw_creds:
+                raw_creds = await ga_helper.refresh_if_expired(account_id, raw_creds)
+
+            credentials_dict = {
+                "access_token": raw_creds.get("access_token") if raw_creds else None,
+                "refresh_token": raw_creds.get("refresh_token") if raw_creds else None,
+                # Resolve sm:// refs for both. This client_id is stored into the
+                # session ga_credentials and reused by the engine-side in-session
+                # refresh hook; os.getenv would leave an unresolved "sm://..."
+                # string that Google rejects with invalid_client on refresh.
+                "client_id": (
+                    get_env_or_secret("GOOGLE_OAUTH_CLIENT_ID") or ""
+                ).strip(),
+                "client_secret": (
+                    get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET") or ""
+                ).strip(),
+                "tenant_id": ga_creds["tenant_id"],
+                "selected_property_ids": ga_creds.get("selected_property_ids", []),
+                "selected_properties": ga_creds.get("selected_properties", []),
+                "expires_at": raw_creds.get("expires_at") if raw_creds else None,
+            }
+
+            if redis_service.is_available():
+                redis_service.set_json(
+                    cache_key, credentials_dict, ttl=GA_CREDENTIALS_TTL_SECONDS
+                )
+
+            return credentials_dict
+        except Exception as e:
+            logger.error(f"Failed to load GA credentials for {account_id}: {e}")
+            return None
+
+    async def _ensure_session_ga_credentials(
+        self,
+        user_id: str,
+        session_id: str,
+        account_id: str | None,
+        user_context: UserContext | None,
+    ) -> None:
+        """Inject fresh GA credentials into an existing session's state.
+
+        ``ga_credentials`` is seeded into session state only at conversation
+        creation. A user who connects Google Analytics *after* a conversation
+        exists (or re-connects with a new token) would otherwise keep stale or
+        absent credentials in that session — the GA MCP header provider would
+        send no/expired ``Authorization`` and the tool would 401. This refreshes
+        the existing session's state per turn so a freshly-connected token is
+        picked up without starting a new conversation.
+
+        Best-effort: any failure is logged and swallowed so chat never breaks.
+        Worst case it is a no-op and the pre-existing behaviour is unchanged.
+        """
+        try:
+            redis_service = get_redis_service()
+            marker_key = ga_session_creds_marker_key(session_id)
+
+            # Resolve the account this conversation belongs to. Prefer the
+            # explicit (access-validated) request param; otherwise read the
+            # account the session was created with from its own state — never
+            # fall back to accessible_accounts[0], which can be a *different*
+            # account than this conversation's and would inject the wrong creds.
+            session = None
+            resolved_account = account_id
+            if not resolved_account:
+                session = await self.session_service.get_session(
+                    app_name=APP_NAME, user_id=user_id, session_id=session_id
+                )
+                if session is None:
+                    return
+                resolved_account = (getattr(session, "state", None) or {}).get(
+                    "account_id"
+                )
+            if not resolved_account:
+                return
+
+            creds = await self._load_ga_credentials(resolved_account)
+            if not creds or not creds.get("access_token"):
+                return  # GA not connected — nothing to inject.
+
+            signature = self._ga_creds_signature(creds)
+
+            # Fast path: if we've already injected this exact signature into this
+            # session, skip the Vertex get_session round-trip entirely. (Only when
+            # the session wasn't already fetched above for account resolution.)
+            if session is None and redis_service.is_available():
+                marker = redis_service.get_json(marker_key)
+                if marker and marker.get("sig") == signature:
+                    return
+
+            if session is None:
+                session = await self.session_service.get_session(
+                    app_name=APP_NAME, user_id=user_id, session_id=session_id
+                )
+                if session is None:
+                    return
+
+            existing = (getattr(session, "state", None) or {}).get(
+                "ga_credentials"
+            ) or {}
+            if self._ga_creds_signature(existing) == signature:
+                # Already current in-session — record the marker so subsequent
+                # turns short-circuit, then skip the redundant state write.
+                if redis_service.is_available():
+                    redis_service.set_json(
+                        marker_key,
+                        {"sig": signature},
+                        ttl=GA_CREDENTIALS_TTL_SECONDS,
+                    )
+                return
+
+            from google.adk.events import Event, EventActions
+
+            # The Vertex Sessions API rejects an event with an empty
+            # invocation_id (400 INVALID_ARGUMENT) — and ADK's Event defaults it
+            # to "". Without this the append_event below 400s, the except swallows
+            # it, and the ga_credentials state-delta silently never lands (the
+            # whole per-turn refresh becomes a no-op). Verified against the dev
+            # Agent Engine session store.
+            event = Event(
+                author="system",
+                invocation_id=f"ga-refresh-{uuid4()}",
+                actions=EventActions(state_delta={"ga_credentials": creds}),
+            )
+            await self.session_service.append_event(session, event)
+            # Record the marker only after a successful write so it never claims
+            # an injection that didn't land.
+            if redis_service.is_available():
+                redis_service.set_json(
+                    marker_key, {"sig": signature}, ttl=GA_CREDENTIALS_TTL_SECONDS
+                )
+            logger.info(
+                "Refreshed ga_credentials in existing session",
+                extra=log_context(
+                    component="chat",
+                    action="ensure_ga_credentials",
+                    session_id=session_id,
+                    extra={
+                        "account_id": resolved_account,
+                        # Correlates with the engine-side tool hook's
+                        # ga_access_token_fp to confirm this token propagated.
+                        "token_fp": self._ga_token_fingerprint(
+                            creds.get("access_token")
+                        ),
+                    },
+                ),
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to ensure GA credentials in session {session_id}: {e}"
+            )
+
     async def create_conversation(
         self,
         user_id: str,
@@ -645,89 +882,8 @@ class AgentEngineClient:
                         return None
 
                 async def load_ga_credentials() -> dict | None:
-                    """Load and format GA credentials from Firestore with caching."""
-                    try:
-                        # Try cache first (Phase 3 optimization)
-                        redis_service = get_redis_service()
-                        if redis_service.is_available():
-                            cache_key = ga_credentials_key(selected_account_id)
-                            cached_creds = redis_service.get_json(cache_key)
-
-                            if cached_creds:
-                                logger.info(
-                                    f"Cache HIT: GA credentials for {selected_account_id}"
-                                )
-                                return cached_creds
-
-                        # Cache miss or Redis unavailable - load from Firestore
-                        firestore_service = get_firestore_service()
-                        db = firestore_service.get_client()
-                        ga_helper = GACredentialHelper(db)
-
-                        logger.info(
-                            f"Loading GA credentials for account: {selected_account_id}"
-                        )
-                        ga_creds = await ga_helper.get_and_format_credentials(
-                            selected_account_id
-                        )
-
-                        if ga_creds:
-                            # Get raw credentials for storage in state
-                            raw_creds = await ga_helper.get_oauth_credentials(
-                                selected_account_id
-                            )
-                            if raw_creds:
-                                raw_creds = await ga_helper.refresh_if_expired(
-                                    selected_account_id, raw_creds
-                                )
-
-                            property_ids_to_store = ga_creds.get(
-                                "selected_property_ids", []
-                            )
-                            logger.info(
-                                f"Loaded GA credentials with {len(property_ids_to_store)} properties for account: {selected_account_id}"
-                            )
-
-                            credentials_dict = {
-                                "access_token": raw_creds.get("access_token")
-                                if raw_creds
-                                else None,
-                                "refresh_token": raw_creds.get("refresh_token")
-                                if raw_creds
-                                else None,
-                                "client_id": os.getenv("GOOGLE_OAUTH_CLIENT_ID", ""),
-                                "client_secret": get_env_or_secret(
-                                    "GOOGLE_OAUTH_CLIENT_SECRET"
-                                )
-                                or "",
-                                "tenant_id": ga_creds["tenant_id"],
-                                "selected_property_ids": property_ids_to_store,
-                                "selected_properties": ga_creds.get(
-                                    "selected_properties", []
-                                ),
-                                "expires_at": raw_creds.get("expires_at")
-                                if raw_creds
-                                else None,
-                            }
-
-                            # Cache for future requests (non-blocking)
-                            if redis_service.is_available():
-                                cache_key = ga_credentials_key(selected_account_id)
-                                redis_service.set_json(
-                                    cache_key,
-                                    credentials_dict,
-                                    ttl=GA_CREDENTIALS_TTL_SECONDS,
-                                )
-
-                            return credentials_dict
-                        else:
-                            logger.warning(
-                                f"No GA credentials found for account: {selected_account_id}"
-                            )
-                            return None
-                    except Exception as e:
-                        logger.error(f"Failed to load GA credentials: {e}")
-                        return None
+                    """Load and format GA credentials (shared loader, Redis-cached)."""
+                    return await self._load_ga_credentials(selected_account_id)
 
                 # Execute both operations in parallel
                 t_parallel = time.time()
@@ -838,6 +994,18 @@ class AgentEngineClient:
                         cached_ids.append(session_id)
                         redis_service.set_json(
                             ids_key, cached_ids, ttl=SESSION_METADATA_TTL_SECONDS
+                        )
+
+                    # Seed the per-session GA marker with the signature just
+                    # written into initial_state so the first reused turn hits
+                    # the fast path in _ensure_session_ga_credentials instead of
+                    # a guaranteed get_session.
+                    seeded_ga = initial_state.get("ga_credentials")
+                    if seeded_ga:
+                        redis_service.set_json(
+                            ga_session_creds_marker_key(session_id),
+                            {"sig": self._ga_creds_signature(seeded_ga)},
+                            ttl=GA_CREDENTIALS_TTL_SECONDS,
                         )
             except Exception as e:
                 logger.warning(f"Failed to cache new session to Redis: {e}")
@@ -1528,6 +1696,14 @@ class AgentEngineClient:
                                         {"text": part.text}
                                     )
 
+                    # Skip content-less system events (e.g. the per-turn
+                    # ga_credentials state refresh) so they don't surface as blank
+                    # messages in the rendered history.
+                    if getattr(event, "author", None) == "system" and not (
+                        formatted_event["content"].get("parts")
+                    ):
+                        continue
+
                     formatted_history["events"].append(formatted_event)
 
                 logger.info(
@@ -1576,9 +1752,18 @@ class AgentEngineClient:
             )
 
             # Get or create session for this user (credentials now passed via session state)
+            incoming_session_id = session_id
             actual_session_id = await self.get_or_create_session(
                 user_id, user_context, session_id, conversation_name, account_id
             )
+
+            # Reused an existing session → refresh its GA credentials in state so a
+            # connection made after the session was created is picked up (otherwise
+            # the GA MCP tool 401s on a stale/absent token).
+            if incoming_session_id and incoming_session_id == actual_session_id:
+                await self._ensure_session_ga_credentials(
+                    user_id, actual_session_id, account_id, user_context
+                )
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"
@@ -1905,6 +2090,13 @@ class AgentEngineClient:
             # any text or reasoning frames arrive (CH-62).
             if incoming_session_id != actual_session_id:
                 yield ("session", actual_session_id)
+            elif incoming_session_id:
+                # Reused an existing session — refresh its GA credentials so a
+                # connection made after the session was created is picked up
+                # (otherwise the GA MCP tool 401s on a stale/absent token).
+                await self._ensure_session_ga_credentials(
+                    user_id, actual_session_id, account_id, user_context
+                )
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"

@@ -194,6 +194,55 @@ class TestPermissionService:
         assert "write" in result.missing_scopes
 
     @pytest.mark.asyncio
+    async def test_present_token_without_scopes_allows_for_analytics(self, service):
+        """A present, non-expired token that does not enumerate scopes is allowed
+        for the analytics category — ga_credentials carry no abstract-scope list
+        and the downstream API enforces real scopes. Regression guard for the GA
+        pre-flight check, which previously surfaced as a spurious "missing scopes"
+        reauth prompt."""
+        token = TokenInfo(
+            access_token="ga_token",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            scopes=[],
+        )
+
+        result = await service.verify_tool_permission(
+            tool_name="get_account_summaries_mt",
+            required_scopes=["analytics:read"],
+            user_id="user1",
+            account_id="acct1",
+            token_info=token,
+            category="analytics",
+        )
+
+        assert result.allowed is True
+
+    @pytest.mark.asyncio
+    async def test_scopeless_token_denied_for_non_analytics_category(self, service):
+        """The empty-scopes relaxation is analytics-only. A scope-less token for a
+        non-analytics (or unknown) category is enforced strictly — treated as
+        missing every required scope — restoring pre-relaxation behaviour for
+        providers that do enumerate real OAuth scopes."""
+        token = TokenInfo(
+            access_token="ads_token",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            scopes=[],
+        )
+
+        result = await service.verify_tool_permission(
+            tool_name="some_ads_tool",
+            required_scopes=["ads:read"],
+            user_id="user1",
+            account_id="acct1",
+            token_info=token,
+            category="ads",
+        )
+
+        assert result.allowed is False
+        assert result.requires_reauth is True
+        assert "ads:read" in result.missing_scopes
+
+    @pytest.mark.asyncio
     async def test_token_without_expiry_is_valid(self, service):
         """Test that token without expiry (if scopes match) is allowed."""
         token = TokenInfo(
@@ -222,9 +271,10 @@ class TestGetTokenInfoFromState:
 
     @pytest.mark.asyncio
     async def test_extract_google_credentials(self, service):
-        """Test extracting Google credentials from state."""
+        """GA OAuth credentials live under 'ga_credentials' (not the orphan
+        'google_credentials' key) — the google provider must resolve that key."""
         state = {
-            "google_credentials": {
+            "ga_credentials": {
                 "access_token": "google_token",
                 "refresh_token": "google_refresh",
                 "scopes": ["analytics.readonly"],
@@ -241,6 +291,16 @@ class TestGetTokenInfoFromState:
         assert token.refresh_token == "google_refresh"
         assert token.scopes == ["analytics.readonly"]
         assert token.expires_at is not None
+
+    @pytest.mark.asyncio
+    async def test_legacy_google_credentials_key_not_read(self, service):
+        """The orphan 'google_credentials' key is never written in production and
+        must not be read for the google provider — only 'ga_credentials' is."""
+        state = {"google_credentials": {"access_token": "x"}}
+
+        token = await service.get_token_info_from_state(state, "google")
+
+        assert token is None
 
     @pytest.mark.asyncio
     async def test_missing_credentials_returns_none(self, service):

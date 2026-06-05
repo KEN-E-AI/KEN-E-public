@@ -26,6 +26,21 @@ logger = get_structured_logger(__name__)
 # Dedicated audit logger for security events
 _audit_logger = get_structured_logger("permission_audit")
 
+# OAuth credentials are written to ADK session state under integration-specific
+# keys by the MCP header-provider layer (see
+# ``agent_factory.header_provider.CREDENTIAL_KEYS``). The permission service keys
+# by OAuth *provider*, so it needs the same mapping. Google Analytics — the only
+# live Google integration — stores its token under ``ga_credentials``, NOT
+# ``google_credentials`` (which is never written anywhere). Reading the wrong key
+# made every GA tool call fail the pre-flight check with ``no_token``.
+#
+# NOTE: ``analytics`` and ``ads`` both map to provider ``"google"`` in
+# CATEGORY_TO_PROVIDER. When Google Ads ships (its own ``google_ads_credentials``
+# key) this lookup must become category-aware rather than provider-keyed.
+_PROVIDER_CREDENTIAL_KEY: dict[str, str] = {
+    "google": "ga_credentials",
+}
+
 
 @dataclass
 class PermissionCheckResult:
@@ -102,6 +117,7 @@ class PermissionService:
         account_id: str,
         token_info: TokenInfo | None,
         organization_id: str | None = None,
+        category: str | None = None,
     ) -> PermissionCheckResult:
         """Verify user has permission to execute a tool.
 
@@ -118,6 +134,10 @@ class PermissionService:
             account_id: Account context for the operation
             token_info: OAuth token info, if available
             organization_id: Optional organization context
+            category: Tool category (e.g. "analytics"). When the category is one
+                whose tokens carry no abstract scopes (``_SCOPELESS_CATEGORIES``),
+                a token with an empty scope set is trusted; otherwise scopes are
+                enforced strictly.
 
         Returns:
             PermissionCheckResult indicating if execution is allowed
@@ -189,26 +209,34 @@ class PermissionService:
                     requires_reauth=True,
                 )
 
-        # Check scopes
+        # Check scopes. For scopeless categories (e.g. Google Analytics) the
+        # OAuth token carries no abstract-scope list — the tool's "analytics:read"
+        # capability label is not an OAuth scope, and real scope enforcement
+        # happens at the provider's API. There, an empty scope set means "scopes
+        # unknown — trust the downstream API", NOT "missing every scope", so a
+        # present, non-expired token is allowed. Every other category enforces
+        # strictly: an empty scope set is treated as missing all required scopes.
         user_scopes = set(token_info.scopes)
-        required_set = set(required_scopes)
-        missing = list(required_set - user_scopes)
+        scope_enforcement_relaxed = category in _SCOPELESS_CATEGORIES
+        if user_scopes or not scope_enforcement_relaxed:
+            required_set = set(required_scopes)
+            missing = list(required_set - user_scopes)
 
-        if missing:
-            self._log_result(
-                tool_name,
-                user_id,
-                account_id,
-                allowed=False,
-                reason="missing_scopes",
-                missing_scopes=missing,
-            )
-            return PermissionCheckResult(
-                allowed=False,
-                reason=f"Missing required scopes: {', '.join(missing)}",
-                requires_reauth=True,
-                missing_scopes=missing,
-            )
+            if missing:
+                self._log_result(
+                    tool_name,
+                    user_id,
+                    account_id,
+                    allowed=False,
+                    reason="missing_scopes",
+                    missing_scopes=missing,
+                )
+                return PermissionCheckResult(
+                    allowed=False,
+                    reason=f"Missing required scopes: {', '.join(missing)}",
+                    requires_reauth=True,
+                    missing_scopes=missing,
+                )
 
         # All checks passed
         self._log_result(
@@ -271,8 +299,12 @@ class PermissionService:
             TokenInfo if credentials found, None otherwise
         """
         try:
-            # ADK stores credentials with provider prefix
-            credentials_key = f"{provider}_credentials"
+            # Resolve the session-state key the credentials are actually written
+            # under (see _PROVIDER_CREDENTIAL_KEY). Falls back to the historical
+            # "{provider}_credentials" convention for providers without an override.
+            credentials_key = _PROVIDER_CREDENTIAL_KEY.get(
+                provider, f"{provider}_credentials"
+            )
             credentials = state.get(credentials_key)
             if credentials is None:
                 return None
@@ -312,6 +344,14 @@ CATEGORY_TO_PROVIDER: dict[str, str] = {
     "social": "meta",
     "advertising": "meta",
 }
+
+# Categories whose OAuth tokens do NOT enumerate abstract scopes. The tool's
+# "<x>:read" label is a capability marker, not a real OAuth scope, and the
+# provider's API performs the actual scope enforcement. For these categories an
+# empty scope set means "scopes unknown — trust the downstream API"; for every
+# other category an empty scope set is enforced strictly (treated as missing all
+# required scopes). Keep this analytics-only until a relaxed integration ships.
+_SCOPELESS_CATEGORIES: frozenset[str] = frozenset({"analytics"})
 
 
 def get_provider_for_category(category: str) -> str:

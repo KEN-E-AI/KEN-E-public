@@ -78,3 +78,27 @@ class TestHistoryExcludesThoughtParts:
         client = _client_with_events([_part(None), _part(_ANSWER)])
         result = await client.get_conversation_history("u1", "s1")
         assert _history_parts(result) == [{"text": _ANSWER}]
+
+    @pytest.mark.asyncio
+    async def test_contentless_system_state_event_is_excluded(self) -> None:
+        """The per-turn ga_credentials state event (author=system, no content)
+        must not surface as a blank message in history."""
+        client = AgentEngineClient()
+        client._session_service = AsyncMock()
+        system_state_event = SimpleNamespace(
+            content=None, author="system", timestamp=1780054954.0
+        )
+        session = SimpleNamespace(
+            events=[system_state_event, _assistant_event([_part(_ANSWER)])]
+        )
+        client._session_service.get_session = AsyncMock(return_value=session)
+
+        result = await client.get_conversation_history("u1", "s1")
+
+        assert result["events"] == [
+            {
+                "content": {"parts": [{"text": _ANSWER}]},
+                "role": "model",
+                "timestamp": 1780054954.0,
+            }
+        ]

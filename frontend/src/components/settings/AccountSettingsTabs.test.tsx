@@ -19,6 +19,14 @@ vi.mock("@/hooks/useWorkspaceOptions", () => ({
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
+// The Integrations tab fetches Google Analytics OAuth status on mount.
+vi.mock("@/lib/api", () => ({
+  default: {
+    get: vi.fn().mockResolvedValue({ data: { status: "not_configured" } }),
+    post: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
 
 const mockGetAccountById = getAccountById as ReturnType<typeof vi.fn>;
 const mockUpdateAccount = updateAccount as ReturnType<typeof vi.fn>;
@@ -180,7 +188,7 @@ describe("AccountSettingsTabs", () => {
     renderTabs();
 
     expect(
-      await screen.findByText(/couldn't load this account/i),
+      await screen.findByText(/unable to load this account/i),
     ).toBeInTheDocument();
   });
 
@@ -200,5 +208,46 @@ describe("AccountSettingsTabs", () => {
       expect(grid).toHaveClass("lg:grid-cols-3");
       expect(grid).toHaveClass("gap-4");
     });
+  });
+
+  it("opens the Configure panel for Google Analytics", async () => {
+    mockGetAccountById.mockResolvedValue(mockAccount);
+    const user = userEvent.setup();
+
+    renderTabs();
+
+    await screen.findByLabelText("Account Name");
+    await user.click(screen.getByRole("tab", { name: /integrations/i }));
+
+    const configureButtons = await screen.findAllByRole("button", {
+      name: /configure/i,
+    });
+    const enabled = configureButtons.find((b) => !b.hasAttribute("disabled"));
+    await user.click(enabled!);
+
+    // The Sheet panel renders the live GA connection action.
+    expect(
+      await screen.findByRole("button", {
+        name: /connect google analytics/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Configure for integrations without a backend", async () => {
+    mockGetAccountById.mockResolvedValue(mockAccount);
+    const user = userEvent.setup();
+
+    renderTabs();
+
+    await screen.findByLabelText("Account Name");
+    await user.click(screen.getByRole("tab", { name: /integrations/i }));
+
+    const configureButtons = await screen.findAllByRole("button", {
+      name: /configure/i,
+    });
+    // Google Ads + Meta Ads have no backend OAuth → their buttons are disabled.
+    expect(
+      configureButtons.filter((b) => b.hasAttribute("disabled")),
+    ).toHaveLength(2);
   });
 });

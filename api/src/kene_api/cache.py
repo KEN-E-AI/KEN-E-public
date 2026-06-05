@@ -228,6 +228,18 @@ def ga_credentials_key(account_id: str) -> str:
     return f"chat:ga_creds:{account_id}"
 
 
+def ga_session_creds_marker_key(session_id: str) -> str:
+    """Generate cache key for a session's last-injected GA credential signature.
+
+    The per-turn GA refresh (`_ensure_session_ga_credentials`) records the
+    signature of the credentials it last wrote into a session's state under this
+    key. A steady-state turn whose freshly-loaded credentials match the marker
+    can skip the Vertex `get_session` round-trip entirely. Keyed per session
+    because injection is per session; expires with the GA credentials TTL.
+    """
+    return f"chat:ga_sess_creds:{session_id}"
+
+
 def user_session_ids_key(user_id: str) -> str:
     """Generate cache key for a user's session ID list.
 

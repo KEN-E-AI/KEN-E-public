@@ -1,14 +1,16 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import AccountSettings from "./AccountSettings";
 import { useAuth } from "@/contexts/AuthContext";
+
+const { toastSpy } = vi.hoisted(() => ({ toastSpy: vi.fn() }));
 
 // Mock the hooks and API calls
 vi.mock("@/contexts/AuthContext");
 vi.mock("@/data/organizationApi");
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: toastSpy }),
 }));
 
 // Mock the components
@@ -221,6 +223,46 @@ describe("AccountSettings", () => {
     expect(
       screen.queryByText("Organization Form - Evals 20260306"),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a destructive toast when redirected back with an oauth_error", async () => {
+    const mockUser = {
+      id: "test-user-123",
+      email: "test@example.com",
+      permissions: { organizations: {} },
+    };
+
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      isAuthenticated: true,
+      currentOrganizationId: null,
+      selectedOrgAccount: undefined,
+      orgMetadata: {},
+      setOrgMetadata: vi.fn(),
+      setCurrentOrganization: vi.fn(),
+      setSelectedOrgAccount: vi.fn(),
+      completeWorkspaceSelection: vi.fn(),
+      updateUser: vi.fn(),
+      setAccountMetadata: vi.fn(),
+      isSuperAdmin: false,
+    });
+
+    render(
+      <MemoryRouter
+        initialEntries={["/settings/account?oauth_error=token_exchange_failed"]}
+      >
+        <AccountSettings />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: "destructive",
+          title: expect.stringMatching(/connection failed/i),
+        }),
+      ),
+    );
   });
 
   it("should show org settings tabs when user has no organization permissions", () => {

@@ -42,6 +42,7 @@ import { INDUSTRY_OPTIONS, TIMEZONE_OPTIONS } from "@/data/organizationTypes";
 import { MARKETING_CHANNELS } from "@/data/marketingChannels";
 import type { Account } from "@/data/organizationTypes";
 import type { AccountId } from "@/lib/branded-types";
+import { IntegrationsTabContent } from "@/components/integrations/IntegrationsTabContent";
 
 type AccountSettingsTabsProps = {
   accountId: AccountId;
@@ -68,11 +69,6 @@ const DATA_REGION_OPTIONS = [
   { value: "US", label: "United States" },
   { value: "EU", label: "Europe" },
 ];
-
-// Figma names the integration cards explicitly; connection state is reflected
-// from the account's product_integrations list. OAuth itself lives on the
-// dedicated /settings/integrations page.
-const KNOWN_INTEGRATIONS = ["Google Analytics", "Google Ads", "Meta Ads"];
 
 type EditableAccount = {
   account_name: string;
@@ -517,65 +513,10 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
         </TabsContent>
 
         <TabsContent value="integrations">
-          <div className="space-y-6">
-            <div>
-              <h2 className="mb-1">Active Integrations</h2>
-              <p className="text-sm text-muted-foreground mb-4">
-                Connect your marketing tools to enable AI-powered automation
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {KNOWN_INTEGRATIONS.map((name) => {
-                  const connected = (account.product_integrations ?? []).some(
-                    (p) => p.toLowerCase() === name.toLowerCase(),
-                  );
-                  return (
-                    <Card key={name} className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{name}</p>
-                          <div
-                            className={
-                              connected
-                                ? "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full mt-1 bg-[var(--color-success-bg)]"
-                                : "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full mt-1 bg-[var(--color-error-bg)]"
-                            }
-                          >
-                            <span
-                              className={
-                                connected
-                                  ? "size-1.5 rounded-full bg-[var(--color-success)]"
-                                  : "size-1.5 rounded-full bg-[var(--color-error)]"
-                              }
-                            />
-                            <span
-                              className={
-                                connected
-                                  ? "text-xs font-semibold text-[var(--color-success-text)]"
-                                  : "text-xs font-semibold text-[var(--color-error-text)]"
-                              }
-                            >
-                              {connected ? "Connected" : "Not Connected"}
-                            </span>
-                          </div>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate("/settings/integrations")}
-                        >
-                          Configure
-                        </Button>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-4">
-                Connection status reflects this account&apos;s integrations.
-                Connect or disconnect tools from the Integrations page.
-              </p>
-            </div>
-          </div>
+          <IntegrationsTabContent
+            accountId={accountId}
+            productIntegrations={account.product_integrations ?? []}
+          />
         </TabsContent>
 
         <TabsContent value="channels">

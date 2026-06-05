@@ -17,6 +17,7 @@ from shared.secrets import get_env_or_secret
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
+from ..cache import ga_credentials_key
 from ..firestore import get_firestore_service
 from ..metrics.oauth_metrics import (
     OAuthMetricsCollector,
@@ -39,17 +40,39 @@ from ..models.oauth_models import (
     OAuthErrorCode,
     UpdateSelectedPropertiesRequest,
 )
+from ..redis_client import get_redis_service
 from ..services.encryption_service import IntegrationCredentialsService
 from ..services.oauth_state_service import OAuthStateService
 
 logger = logging.getLogger(__name__)
 
+
+def _invalidate_ga_credentials_cache(account_id: str) -> None:
+    """Best-effort drop of the cached GA credentials.
+
+    Ensures the next chat turn reloads a fresh token from Firestore after a
+    connect / disconnect / property-selection change, rather than serving a
+    stale ``ga_credentials`` entry (TTL up to GA_CREDENTIALS_TTL_SECONDS).
+    """
+    try:
+        redis_service = get_redis_service()
+        if redis_service.is_available():
+            redis_service.delete(ga_credentials_key(account_id))
+            logger.info(f"[GA] Invalidated GA credentials cache for {account_id}")
+    except Exception as e:
+        logger.warning(f"[GA] Failed to invalidate GA credentials cache: {e}")
+
 router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
 # Google OAuth 2.0 configuration
 
-GOOGLE_CLIENT_ID = get_env_or_secret("GOOGLE_OAUTH_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET", "")
+# Strip whitespace: a trailing newline in the stored secret (or a literal env
+# value, which get_env_or_secret returns unstripped) makes Google reject token
+# requests with invalid_client.
+GOOGLE_CLIENT_ID = (get_env_or_secret("GOOGLE_OAUTH_CLIENT_ID", "") or "").strip()
+GOOGLE_CLIENT_SECRET = (
+    get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET", "") or ""
+).strip()
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
@@ -201,8 +224,10 @@ async def google_oauth_callback(
                 if error == "access_denied"
                 else OAuthErrorCode.UNKNOWN_ERROR
             )
+            # account_id is not yet known here (state not parsed), so fall back
+            # to the no-id account-settings route, which renders the error toast.
             return RedirectResponse(
-                url=f"{frontend_url}/account-settings?oauth_error={error_code.value}"
+                url=f"{frontend_url}/settings/account?oauth_error={error_code.value}"
             )
 
         if not code or not state:
@@ -210,7 +235,7 @@ async def google_oauth_callback(
             collector.track_error("missing_params")
             track_state_transition("google_analytics", "initiated", "invalid")
             return RedirectResponse(
-                url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.STATE_INVALID.value}"
+                url=f"{frontend_url}/settings/account?oauth_error={OAuthErrorCode.STATE_INVALID.value}"
             )
 
         # Get OAuth state service
@@ -227,7 +252,7 @@ async def google_oauth_callback(
             collector.track_error("state_expired")
             track_state_transition("google_analytics", "initiated", "expired")
             return RedirectResponse(
-                url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.STATE_EXPIRED.value}"
+                url=f"{frontend_url}/settings/account?oauth_error={OAuthErrorCode.STATE_EXPIRED.value}"
             )
 
         user_id = oauth_state.user_id
@@ -327,6 +352,10 @@ async def google_oauth_callback(
                 user_id=user_id,
             )
 
+            # Drop any stale cached credentials so the next chat turn picks up the
+            # freshly-connected token rather than a pre-connection cache entry.
+            _invalidate_ga_credentials_cache(account_id)
+
             # Clean up state from database
             await oauth_state_service.delete_state(state)
 
@@ -338,9 +367,10 @@ async def google_oauth_callback(
             track_oauth_success("google_analytics")
             track_state_transition("google_analytics", "verified", "completed")
 
-            # Redirect to frontend with success - go to property selection
-            # Use /settings/organization which is the actual route (not /account-settings which redirects)
-            redirect_url = f"{frontend_url}/settings/organization?oauth_success=google_analytics&account={account_id}&select_properties=true"
+            # Redirect to frontend with success - go to property selection.
+            # Return to the account tab the user started from (/settings/account/{id})
+            # so the property selector opens in place; AccountSettings reads these params.
+            redirect_url = f"{frontend_url}/settings/account/{account_id}?oauth_success=google_analytics&account={account_id}&select_properties=true"
             logger.info(
                 f"[OAUTH_CALLBACK] Redirecting to frontend with property selection: {redirect_url}"
             )
@@ -352,7 +382,7 @@ async def google_oauth_callback(
             collector.track_error("configuration_error")
             track_state_transition("google_analytics", "verified", "failed")
             return RedirectResponse(
-                url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.CONFIGURATION_ERROR.value}"
+                url=f"{frontend_url}/settings/account/{account_id}?oauth_error={OAuthErrorCode.CONFIGURATION_ERROR.value}"
             )
         except Exception as e:
             logger.error(f"[OAUTH_CALLBACK] OAuth callback error: {e}")
@@ -360,7 +390,7 @@ async def google_oauth_callback(
             track_state_transition("google_analytics", "verified", "failed")
             # Use error code instead of raw error message
             return RedirectResponse(
-                url=f"{frontend_url}/account-settings?oauth_error={OAuthErrorCode.TOKEN_EXCHANGE_FAILED.value}"
+                url=f"{frontend_url}/settings/account/{account_id}?oauth_error={OAuthErrorCode.TOKEN_EXCHANGE_FAILED.value}"
             )
 
 
@@ -489,6 +519,10 @@ async def disconnect_google_analytics(
             account_id=account_id,
             integration_type="google_analytics",
         )
+
+        # Drop the cached credentials so a disconnected account stops serving a
+        # token on the next chat turn.
+        _invalidate_ga_credentials_cache(account_id)
 
         return {"message": "Google Analytics disconnected successfully"}
 
@@ -815,6 +849,10 @@ async def update_selected_properties(
             credentials=credentials,
             user_id=current_user.user_id,
         )
+
+        # Selected properties changed → drop the cache so the next chat turn
+        # reloads the updated selection.
+        _invalidate_ga_credentials_cache(account_id)
 
         logger.info(
             f"Updated selected GA properties for account {account_id}: {request.property_ids}"

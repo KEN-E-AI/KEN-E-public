@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import time
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
@@ -36,6 +37,21 @@ if TYPE_CHECKING:
     from google.adk.tools import BaseTool, ToolContext
 
 logger = get_structured_logger(__name__)
+
+
+def _ga_token_fingerprint(token: str | None) -> str:
+    """Short, non-reversible fingerprint of a GA access token for log correlation.
+
+    sha256[:8] — never logs the token itself. The API-side injection log
+    (``api/src/kene_api/routers/chat.py``) computes this identically, so a
+    single test-env turn confirms whether the token the API injected into
+    session state is the one the engine actually sees here: matching
+    fingerprints prove ``append_event`` propagation; a mismatch/``absent``
+    means the engine read stale/absent credentials.
+    """
+    if not token:
+        return "absent"
+    return hashlib.sha256(token.encode()).hexdigest()[:8]
 
 
 async def _refresh_ga_token_if_needed(tool_context: ToolContext) -> None:
@@ -160,9 +176,20 @@ async def before_tool_execution_hook(
         user_id=user_id,
         account_id=account_id,
         token_info=token_info,
+        category=tool_def.category,
     )
 
     if not result.allowed:
+        # Diagnostic: a `no_token` denial means the resolved credential key was
+        # absent from session state. Log which credential-bearing keys ARE present
+        # (names + booleans only, never token values) so we can tell "token never
+        # reached the session" apart from "wrong key / stale code".
+        state_keys = (
+            sorted(str(k) for k in state.keys() if not str(k).startswith("_"))
+            if hasattr(state, "keys")
+            else []
+        )
+        ga_creds = state.get("ga_credentials") or {}
         logger.warning(
             f"Tool execution blocked: {result.reason}",
             extra=log_context(
@@ -173,6 +200,17 @@ async def before_tool_execution_hook(
                     "reason": result.reason,
                     "requires_reauth": result.requires_reauth,
                     "missing_scopes": result.missing_scopes,
+                    "provider": provider,
+                    "account_id": account_id,
+                    "session_state_keys": state_keys,
+                    "ga_credentials_present": bool(ga_creds),
+                    "ga_access_token_present": bool(ga_creds.get("access_token")),
+                    # Correlates with the API-side ensure_ga_credentials token_fp.
+                    # Same fingerprint → the injected token reached the engine;
+                    # mismatch/"absent" → stale or unpropagated session state.
+                    "ga_access_token_fp": _ga_token_fingerprint(
+                        ga_creds.get("access_token")
+                    ),
                 },
             ),
         )
@@ -348,6 +386,7 @@ async def verify_tool_for_user(
         user_id=user_id,
         account_id=account_id,
         token_info=token_info,
+        category=tool_def.category,
     )
 
 

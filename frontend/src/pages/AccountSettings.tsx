@@ -60,6 +60,25 @@ interface ValidationResult {
   };
 }
 
+// Friendly copy for the OAuthErrorCode values the backend appends to its
+// callback redirect (api/src/kene_api/models/oauth_models.py).
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  authorization_denied:
+    "You declined access to Google Analytics. No changes were made.",
+  token_exchange_failed:
+    "We couldn't complete the connection to Google Analytics. Please try again.",
+  state_invalid: "The connection request was invalid. Please try again.",
+  state_expired: "The connection request expired. Please try connecting again.",
+  configuration_error:
+    "Google Analytics integration is misconfigured. Please contact support.",
+  refresh_failed:
+    "We couldn't refresh your Google Analytics access. Please reconnect.",
+};
+
+const oauthErrorMessage = (code: string): string =>
+  OAUTH_ERROR_MESSAGES[code] ??
+  "Something went wrong connecting Google Analytics. Please try again.";
+
 const AccountSettings = () => {
   // Hooks
   const navigate = useNavigate();
@@ -83,6 +102,7 @@ const AccountSettings = () => {
     oauthSuccess,
     oauthAccount,
     shouldSelectProperties,
+    oauthError,
   } = useMemo(() => {
     const params = new URLSearchParams(location.search);
     return {
@@ -91,6 +111,7 @@ const AccountSettings = () => {
       oauthSuccess: params.get("oauth_success"),
       oauthAccount: params.get("account"),
       shouldSelectProperties: params.get("select_properties") === "true",
+      oauthError: params.get("oauth_error"),
     };
   }, [location.search]);
 
@@ -279,6 +300,27 @@ const AccountSettings = () => {
     location,
     toast,
   ]);
+
+  // Surface OAuth failures redirected back from the backend callback as a toast,
+  // then strip the param so it doesn't re-fire on re-render/refresh.
+  useEffect(() => {
+    if (!oauthError) return;
+    toast({
+      title: "Google Analytics Connection Failed",
+      description: oauthErrorMessage(oauthError),
+      variant: "destructive",
+    });
+    const newSearchParams = new URLSearchParams(location.search);
+    newSearchParams.delete("oauth_error");
+    const newSearch = newSearchParams.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: newSearch ? `?${newSearch}` : "",
+      },
+      { replace: true },
+    );
+  }, [oauthError, navigate, location.pathname, location.search, toast]);
 
   // Debug effect to monitor state changes
   useEffect(() => {

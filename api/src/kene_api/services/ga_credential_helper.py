@@ -105,13 +105,20 @@ class GACredentialHelper:
                     logger.error(f"No refresh token available for account {account_id}")
                     return None
 
-                # Get OAuth client configuration from environment
-                import os
-
+                # Get OAuth client configuration. Use get_env_or_secret for BOTH
+                # values: these are stored as sm:// references, which os.getenv
+                # returns unresolved (a literal "sm://..." string) — sending that
+                # as the client_id makes Google reject the refresh with
+                # invalid_client, so the token never refreshes after it expires.
                 from shared.secrets import get_env_or_secret
 
-                client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
-                client_secret = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET")
+                # Strip whitespace: a stored secret with a trailing newline (or a
+                # literal env value get_env_or_secret doesn't strip) makes Google
+                # reject the refresh with invalid_client.
+                client_id = (get_env_or_secret("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
+                client_secret = (
+                    get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET") or ""
+                ).strip()
 
                 logger.info(
                     f"OAuth client ID found: {bool(client_id)}, Secret found: {bool(client_secret)}"
