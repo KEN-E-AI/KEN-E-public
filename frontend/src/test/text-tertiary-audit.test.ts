@@ -187,12 +187,9 @@ const ALLOWED_FILES = new Set<string>([
 
   // settings wizard — value summary on confirm step, helper text under step prompts
   "components/settings/wizard/WizardStep1BasicInfo.tsx",
-  "components/settings/wizard/WizardStep2MarketingChannels.tsx",
   "components/settings/wizard/WizardStep2MarketingChannelsImproved.tsx",
   "components/settings/wizard/WizardStep2TemplateSelection.tsx",
-  "components/settings/wizard/WizardStep3ProductIntegrations.tsx",
   "components/settings/wizard/WizardStep3ProductIntegrationsImproved.tsx",
-  "components/settings/wizard/WizardStep5Confirm.tsx",
   "components/settings/wizard/WizardStep5ConfirmImproved.tsx",
 
   // shared UI primitives (non-shadcn) — helper text, dim icons, validation captions
