@@ -313,6 +313,7 @@ These rules ensure maintainability, safety, and developer velocity.
 | `update-design-docs` | Cross-document dependency propagation + Linear Design References update | `product-assistant` Flow 2 (or human directly) |
 | `linear-sprint-ops` | Reusable Linear API operations (cycle queries, issue lifecycle, dependency graphs) | Loaded by autonomous-agent workflow skills (image-baked); human-readable reference here |
 | `frontend-design` | Visual design reference (typography, spatial, motion, color, etc.) | Loaded by `frontend-engineer` sub-agent (image-baked); human-readable reference here |
+| `ast-grep` | AST-based structural code search, lint, and rewrite — preferred over regex/`sed` for code migrations (e.g. `datetime.utcnow()` sweeps, Pydantic `class Config` → `ConfigDict`). Requires the `ast-grep` binary (`brew install ast-grep`). | Auto-loaded by Claude Code when structural search or a code migration is needed |
 
 **Note on the autonomous-agent workflow.** The full development lifecycle (Sprint Manager → SCRUM Master → Dev Team → Test Team) runs on GCE VMs dispatched by Linear webhooks; those workflow skills are baked into the VM image and not committed here. See [`docs/dev-workflow.md`](docs/dev-workflow.md) for the human-facing summary of how that pipeline works (roles, status transitions, error scenarios).
 
