@@ -286,7 +286,14 @@ export function SessionsSidebar({
       </div>
 
       {/* Sessions List */}
-      <ScrollArea className="flex-1">
+      {/*
+        Force Radix ScrollArea's internal viewport wrapper (style="display:table;
+        min-width:100%") to display:block so it stays exactly the viewport width.
+        Without this, the table wrapper grows to the widest card's content, so the
+        card title/preview `truncate` never gets a bounded width to clip against
+        and a long last-message preview stretches the card past the panel.
+      */}
+      <ScrollArea className="flex-1 [&>div:first-child>div]:!block">
         <div className="px-4 pb-4 space-y-2">
           {isError && (
             <p className="text-[var(--text-body-sm)] text-[var(--color-text-tertiary)] text-center py-4">
