@@ -325,6 +325,7 @@ function LayoutCInner() {
                 <ChatInterface
                   compact
                   sessionId={widgetSessionId}
+                  accountId={accountId}
                   onCreateSession={
                     chatV2Enabled ? onWidgetCreateSession : undefined
                   }

@@ -10,6 +10,7 @@ import {
   streamChatCompletion,
 } from "@/lib/chatApi";
 import type { ChatMessage, StreamEvent } from "@/lib/chatApi";
+import type { AccountId } from "@/lib/branded-types";
 import { parseConversationHistory } from "@/lib/parseConversationHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
@@ -34,6 +35,10 @@ type Message = {
 
 type ChatInterfaceProps = {
   sessionId?: string;
+  // Account the chat turn is scoped to. Forwarded to streamChatCompletion so the
+  // completion request carries account_id — without it the backend can't write
+  // the side-table title (renders "Untitled session") or its stop-stamp.
+  accountId?: AccountId | null;
   // Lazily create a session on the first message when there is no sessionId.
   // Returns the new session id (without navigating) or null on failure.
   onCreateSession?: () => Promise<string | null>;
@@ -68,6 +73,7 @@ const TEXT_SIZE_CLASSES: Record<TextSize, string> = {
 
 export function ChatInterface({
   sessionId,
+  accountId,
   onCreateSession,
   onSessionStarted,
   onSessionResolved,
@@ -303,7 +309,7 @@ export function ChatInterface({
       for await (const event of streamChatCompletion(
         history,
         activeSessionId,
-        undefined,
+        accountId ?? undefined,
         controller.signal,
       )) {
         if (event.type === "session") {
@@ -366,6 +372,7 @@ export function ChatInterface({
     isOrgInactive,
     messages,
     sessionId,
+    accountId,
     onCreateSession,
     onSessionStarted,
     onSessionResolved,

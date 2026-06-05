@@ -19,9 +19,15 @@ LINT_SCRIPT = (
     REPO_ROOT / "api" / "scripts" / "lint" / "check_context_window_registry_coverage.py"
 )
 
-# Models that are deployed in non-test code under app/adk/agents/
+# Models that are deployed in non-test code under app/adk/agents/.
+# gemini-3.5-flash is the root chatbot's runtime model (resolved from the live
+# agent config, not a static model= literal), so the coverage lint cannot see
+# it — but svc.create() looks it up on every new session, and a missing entry
+# silently breaks all side-table writes (no sidebar rows, no titles). Pin it
+# here so the registry is guarded regardless of what the lint can scan.
 DEPLOYED_MODEL_IDS = frozenset(
     {
+        "gemini-3.5-flash",
         "gemini-2.5-flash",
         "gemini-2.5-pro",
         "gpt-4o",
@@ -63,7 +69,7 @@ class TestRegistryCoversDeployedModels:
             )
 
     def test_gemini_context_windows_are_one_million_plus(self) -> None:
-        for model_id in ("gemini-2.5-flash", "gemini-2.5-pro"):
+        for model_id in ("gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro"):
             entry = MODEL_CONTEXT_WINDOW_REGISTRY[model_id]
             assert entry.context_window_max >= 1_000_000, (
                 f"{model_id}: expected context_window_max >= 1M, got {entry.context_window_max}"

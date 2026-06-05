@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { ChatInterface } from "./ChatInterface";
 import type { StreamEvent } from "@/lib/chatApi";
+import type { AccountId } from "@/lib/branded-types";
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
@@ -465,6 +466,27 @@ describe("ChatInterface", () => {
       expect(mockStreamChatCompletion.mock.calls[0][1]).toBe("sess_X"),
     );
     expect(onCreateSession).not.toHaveBeenCalled();
+  });
+
+  // ── TC-Account: the accountId prop is forwarded to the stream request ──
+
+  test("TC-Account: streams with the accountId prop as the 3rd positional arg", async () => {
+    mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
+
+    render(
+      <ChatInterface sessionId="sess_X" accountId={"acc_123" as AccountId} />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    // 3rd positional arg of streamChatCompletion is accountId — without it the
+    // backend can't title the session (regression from PR #844).
+    await waitFor(() =>
+      expect(mockStreamChatCompletion.mock.calls[0][2]).toBe("acc_123"),
+    );
   });
 
   // ── TC-Defer-4: a failed create surfaces an error, no stream ──

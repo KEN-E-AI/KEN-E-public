@@ -8,7 +8,10 @@ import { ChatInterface } from "@/components/chat/ChatInterface";
 import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateChatSession } from "@/hooks/useCreateChatSession";
-import { useChatSessions, CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
+import {
+  useChatSessions,
+  CHAT_SESSIONS_QUERY_KEY,
+} from "@/hooks/useChatSessions";
 import type { ChatCategoryId } from "@/lib/chatApi";
 import { createChatConversation, toChatSessionId } from "@/lib/chatApi";
 import { ArtifactsPanel } from "@/components/chat/ArtifactsPanel";
@@ -228,6 +231,7 @@ export default function Chat() {
           {viewState === "message" ? (
             <ChatInterface
               sessionId={sessionId ?? undefined}
+              accountId={accountId}
               onCreateSession={onCreateSession}
               onSessionStarted={onSessionStarted}
               onSessionResolved={onSessionResolved}

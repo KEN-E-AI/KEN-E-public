@@ -18,6 +18,14 @@ from ..models.chat import ModelContextWindowEntry
 # ---------------------------------------------------------------------------
 
 MODEL_CONTEXT_WINDOW_REGISTRY: dict[str, ModelContextWindowEntry] = {
+    # Gemini 3.5 Flash — 1,048,576 token input context (Gemini-family default;
+    # global-endpoint-only model the dev root chatbot runs). Update if the
+    # official model card publishes a different limit.
+    # The context window only feeds the status-view context_usage_percent meter.
+    "gemini-3.5-flash": ModelContextWindowEntry(
+        model_id="gemini-3.5-flash",
+        context_window_max=1_048_576,
+    ),
     # Gemini 2.5 Flash — 1,048,576 token input context
     # https://ai.google.dev/gemini-api/docs/models#gemini-2.5-flash
     "gemini-2.5-flash": ModelContextWindowEntry(

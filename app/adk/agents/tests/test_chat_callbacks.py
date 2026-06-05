@@ -81,6 +81,9 @@ class TestAttachChatSideTableCallbacks:
 @dataclass
 class _MockPart:
     text: str | None = None
+    # ADK reasoning/thinking summaries arrive as Part(text=..., thought=True);
+    # default False so plain-text fixtures are treated as answer text.
+    thought: bool = False
 
 
 @dataclass
@@ -167,6 +170,25 @@ class TestBuildTurnDelta:
         ]
         delta = _build_turn_delta(events, self._now())
         assert delta.last_message_preview == "hello world"
+
+    def test_final_text_excludes_thought_parts(self) -> None:
+        """Reasoning (thought=True) parts must not leak into last_message_preview.
+
+        ADK attaches the thinking summary as a thought part that precedes the
+        answer in the final-response content; without filtering, the preview
+        (final_text[:160]) would show the agent's reasoning instead of its reply.
+        """
+        event = _MockEvent(is_final=True)
+        event.content = _MockContent(
+            parts=[
+                _MockPart(
+                    text="Let me reason about the request first...", thought=True
+                ),
+                _MockPart(text="Here is your answer", thought=False),
+            ]
+        )
+        delta = _build_turn_delta([event], self._now())
+        assert delta.last_message_preview == "Here is your answer"
 
     def test_final_text_truncated_at_160(self) -> None:
         long_text = "x" * 200

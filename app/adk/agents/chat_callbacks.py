@@ -206,10 +206,14 @@ def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
             _content = getattr(event, "content", None)
             if _content is not None:
                 _parts = getattr(_content, "parts", None) or []
+                # Exclude thought/reasoning parts (Part(text=..., thought=True))
+                # so last_message_preview holds the agent's actual answer, not its
+                # leading reasoning summary. Mirrors the streaming reasoning/text
+                # split in api chat.py and the reasoning filter in tracking/callbacks.py.
                 final_text = "".join(
                     getattr(_p, "text", None) or ""
                     for _p in _parts
-                    if getattr(_p, "text", None)
+                    if getattr(_p, "text", None) and not getattr(_p, "thought", False)
                 )
 
     if _token_extract_errors:
