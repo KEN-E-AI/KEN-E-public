@@ -1,5 +1,21 @@
 """Phase 2 parity test — Chat + Billing (AH-61, merge blocker for AH-PRD-09 Phase 2).
 
+MERGE BLOCKER STATUS (AH-110 / AH-PRD-13 §7 AC #3):
+  This file is the canonical merge gate for the ADK 2.0 Foundation migration
+  (AH-PRD-13). It must remain green on google-adk==2.0.0 with agent.google_search
+  unassigned (GitHub #3984 leaves AgentTool.run_async dropping inner events on 2.0;
+  the AgentTool cutover is AH-PRD-15 and gates prod, not this merge).
+
+  Evidence trail:
+  - AH-104 (Phase-0 de-risking spike) locally verified total_billable=1430 for both
+    Mode A and Mode B under the .venv-adk2 environment with the AlwaysTrueSubAgentList
+    shim. See docs/spike-ah104-deploy-sandbox-weave.md §3.2.1.
+  - AH-105 (PR #843) committed the AlwaysTrueSubAgentList shim in hierarchy.py and
+    sub_agent_attacher.py and verified 24/24 pass on the pinned 2.0.0 stack.
+  - AH-110 (this issue) codifies the merge-gate status, adds the AgentTool exclusion
+    regression guard (TestNoAgentToolInGate), and ports the AH-99 probe assertions
+    into the CI test suite.
+
 CANONICAL FIXTURE (from api/tests/unit/chat/test_token_accounting_parity.py):
   prompt_token_count        = 1250
   candidates_token_count    =  380
@@ -580,3 +596,124 @@ class TestMultiTurnRouting:
             f"investigate ADK's _get_subagent_to_resume + "
             f"_get_events(current_invocation=True) behavior."
         )
+
+
+# ---------------------------------------------------------------------------
+# TestNoAgentToolInGate — AH-110 / AH-PRD-13 §3 + §9 regression guard.
+#
+# PRD §3 + §9 require Foundation to be validated with agent.google_search
+# unassigned. GitHub #3984 (still OPEN) means AgentTool.run_async drops inner
+# events on ADK 2.0 — any AgentTool in the parity-gate topology would make
+# billing/trace assertions unreliable. The AgentTool cutover is AH-PRD-15 and
+# gates prod cutover, not this merge.
+#
+# This test walks the Mode A and Mode B test topologies and asserts that no
+# google.adk.tools.agent_tool.AgentTool instance is present. It fails as soon
+# as any AgentTool is introduced, catching AH-PRD-15-deferred surfaces before
+# they silently corrupt the merge gate.
+# ---------------------------------------------------------------------------
+
+
+class TestNoAgentToolInGate:
+    """Regression guard: no AgentTool must be present in the parity-gate topology.
+
+    If this test fails after a future refactor, stop and read AH-PRD-15 before
+    proceeding — the AgentTool cutover is a separate gated migration (prod
+    cutover gate), not a parity-gate concern.
+    """
+
+    def _collect_tools(self, agent: LlmAgent) -> list[Any]:
+        """Walk agent tree and collect all tool objects (recursive)."""
+        tools: list[Any] = list(getattr(agent, "tools", None) or [])
+        for sub in getattr(agent, "sub_agents", None) or []:
+            tools.extend(self._collect_tools(sub))
+        return tools
+
+    def _build_mode_a_topology(self) -> LlmAgent:
+        """Mode A: root with sub_agents=[specialist] as in _capture_mode_a_events."""
+        specialist = _make_deterministic_specialist()
+        return LlmAgent(
+            name="root_agent",
+            model=_RouterStubLlm(),
+            instruction="Route queries.",
+            sub_agents=[specialist],
+        )
+
+    def _build_mode_b_topology(self) -> LlmAgent:
+        """Mode B: root with AlwaysTrueSubAgentList as in _capture_mode_b_events."""
+        from app.adk.agents.agent_factory import sub_agent_attacher as attacher
+
+        specialist = _make_deterministic_specialist("test_specialist")
+        root = LlmAgent(
+            name="root_agent",
+            model=_TransferToSpecialistStubLlm(),
+            instruction="Route queries.",
+            tools=[],
+            before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+        )
+        root.sub_agents = AlwaysTrueSubAgentList()
+        # Manually attach the specialist so the topology walk can inspect it.
+        root.sub_agents.append(specialist)
+        return root
+
+    def test_no_agent_tool_in_mode_a_topology(self) -> None:
+        """Mode A topology must contain no AgentTool instance.
+
+        Protects the merge gate from AH-PRD-15-deferred agent.google_search
+        surface (#3984 still OPEN: AgentTool.run_async drops inner events on 2.0).
+        """
+        try:
+            from google.adk.tools.agent_tool import AgentTool
+        except ImportError:
+            pytest.skip("AgentTool not importable — skip guard (ADK version check)")
+
+        root = self._build_mode_a_topology()
+        all_tools = self._collect_tools(root)
+        agent_tools = [t for t in all_tools if isinstance(t, AgentTool)]
+        assert agent_tools == [], (
+            "Mode A parity-gate topology must not contain any AgentTool instance. "
+            f"Found: {[getattr(t, 'name', repr(t)) for t in agent_tools]}. "
+            "AgentTool cutover is AH-PRD-15 (prod-cutover gate) — do not introduce "
+            "AgentTool into the parity-gate topology before that migration lands."
+        )
+
+    def test_no_agent_tool_in_mode_b_topology(self) -> None:
+        """Mode B topology must contain no AgentTool instance.
+
+        Same rationale as test_no_agent_tool_in_mode_a_topology.
+        """
+        try:
+            from google.adk.tools.agent_tool import AgentTool
+        except ImportError:
+            pytest.skip("AgentTool not importable — skip guard (ADK version check)")
+
+        root = self._build_mode_b_topology()
+        all_tools = self._collect_tools(root)
+        agent_tools = [t for t in all_tools if isinstance(t, AgentTool)]
+        assert agent_tools == [], (
+            "Mode B parity-gate topology must not contain any AgentTool instance. "
+            f"Found: {[getattr(t, 'name', repr(t)) for t in agent_tools]}. "
+            "AgentTool cutover is AH-PRD-15 (prod-cutover gate) — do not introduce "
+            "AgentTool into the parity-gate topology before that migration lands."
+        )
+
+    def test_no_google_search_tool_by_name(self) -> None:
+        """No tool named 'google_search' must be present in either topology.
+
+        Explicitly guards the AH-PRD-15-deferred agent.google_search surface
+        regardless of AgentTool class name changes in future ADK versions.
+        """
+        root_a = self._build_mode_a_topology()
+        root_b = self._build_mode_b_topology()
+
+        for mode, root in (("A", root_a), ("B", root_b)):
+            all_tools = self._collect_tools(root)
+            named_search = [
+                t for t in all_tools
+                if getattr(t, "name", None) == "google_search"
+            ]
+            assert named_search == [], (
+                f"Mode {mode} parity-gate topology must not contain a tool named "
+                f"'google_search'. Found: {named_search}. "
+                "agent.google_search is deferred to AH-PRD-15 (prod-cutover gate)."
+            )

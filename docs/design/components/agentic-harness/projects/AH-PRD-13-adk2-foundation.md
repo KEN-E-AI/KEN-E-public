@@ -154,3 +154,4 @@ No HTTP API change. `ChatResponse` and all chat endpoints are unchanged.
 - [AH-PRD-05](./AH-PRD-05-multi-step-workflows.md) (supervisor — the consumer of this foundation), [AH-PRD-09 §4.6](./AH-PRD-09-per-turn-dispatch.md) (dispatch + AH-75 event-loss evidence)
 - [mcp-architecture.md § ADK 2.0 Compatibility](../mcp-architecture.md#adk-20-compatibility)
 - GitHub `google/adk-python#3984` (AgentTool event-streaming — still OPEN)
+- **CI merge gate (AH-110):** `app/adk/agents/agent_factory/tests/test_chat_billing_parity.py` (canonical merge gate — Mode A/B parity + AgentTool exclusion guard); `app/adk/agents/agent_factory/tests/test_adk2_session_roundtrip.py` (AH-99 probe-5 offline port — node_info/isolation_scope round-trip); `app/adk/agents/agent_factory/tests/test_adk2_loop_agent_billing.py` (AH-99 probe-7 offline port — LoopAgent billing parity). All three collected by the `app-adk-tests` Cloud Build step.
