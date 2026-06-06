@@ -281,6 +281,129 @@ class TestFingerprintCache:
 
         assert tool_a not in agent.tools
 
+    def test_populated_guard_forces_resolve_on_fresh_empty_tools(self) -> None:
+        """ADK 2.0 populated-guard (AH-108): a per-turn clone starts with
+        ``tools=[]``.  Even when the config hash matches the previously applied
+        hash, a non-empty ``root.tools`` is required to skip the resolve — so a
+        fresh empty clone still gets its tools resolved.
+
+        This mirrors ``sub_agent_attacher.py:284`` (``_applied_state == ...
+        and root_agent.sub_agents``).
+        """
+        tool_a = _make_tool("tool_a")
+        cfg = _make_config(tool_ids=["agent.tool_a"])
+
+        # Turn 1 — first resolve; hash NOT applied yet.
+        agent1 = _make_root_agent(tools=[])
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=[tool_a]
+        ):
+            attach_root_tools(agent1, account_id="acc_guard")
+
+        assert agent1.tools == [tool_a]
+        # _applied_hash is now set to cfg's hash.
+
+        # Turn 2 — simulate a fresh per-turn ADK 2.0 clone: same config, but
+        # a NEW agent object with tools=[].  The hash hits but tools are empty →
+        # populated-guard must force a re-resolve.
+        agent2 = _make_root_agent(tools=[])  # fresh clone for turn 2
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=[tool_a]
+        ) as mock_resolve:
+            attach_root_tools(agent2, account_id="acc_guard")
+            # Resolve ran again (populated-guard bypassed the hash-hit early return).
+            mock_resolve.assert_called_once()
+
+        assert agent2.tools == [tool_a]
+
+    def test_zero_tool_config_resolves_correctly_each_turn(self) -> None:
+        """An account whose config legitimately resolves to zero tools always
+        re-resolves on ADK 2.0 (fresh clone starts with ``tools=[]``), but the
+        result is correct and stable — the resolver returns ``[]``, which matches
+        the clone's starting state, so no spurious write occurs.
+
+        This documents the accepted trade-off: per-turn re-resolve is necessary
+        for correctness on ADK 2.0 (without it, every turn after the first
+        would see zero tools even for accounts that have tools configured).
+        """
+        cfg_empty = _make_config(tool_ids=None)
+
+        # Turn 1 — first clone for a zero-tool account.
+        agent1 = _make_root_agent(tools=[])
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_empty
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=[]
+        ) as mock_resolve_1:
+            attach_root_tools(agent1, account_id="acc_zero")
+            mock_resolve_1.assert_called_once()
+
+        assert agent1.tools == []
+
+        # Turn 2 — fresh clone; same config; zero tools.  Hash matches but
+        # tools=[] → populated-guard fires → re-resolve.
+        agent2 = _make_root_agent(tools=[])
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_empty
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=[]
+        ) as mock_resolve_2:
+            attach_root_tools(agent2, account_id="acc_zero")
+            # Re-resolve fires (populated-guard) but result is still [].
+            mock_resolve_2.assert_called_once()
+
+        assert agent2.tools == []
+
+    def test_inplace_slice_assignment_preserves_list_identity(self) -> None:
+        """``root.tools[:] = resolved_tools`` mutates the list in-place so any
+        holder that references the same list object sees the updated tools.
+
+        Invoke ``attach_root_tools`` twice with different resolved tools (config
+        change forces a second resolve) and assert the list identity of
+        ``agent.tools`` is unchanged — the same list object is updated in-place
+        rather than replaced.
+        """
+        agent = _make_root_agent(tools=[])
+        original_list = agent.tools  # capture identity before any attach
+
+        tool_a = _make_tool("tool_a")
+        tool_b = _make_tool("tool_b")
+
+        cfg_v1 = _make_config(tool_ids=["agent.tool_a"])
+        cfg_v1.model_dump_json.return_value = '{"tool_ids": ["agent.tool_a"]}'
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_v1
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=[tool_a]
+        ):
+            attach_root_tools(agent, account_id="acc_identity")
+
+        assert agent.tools is original_list, (
+            "In-place slice assignment should preserve the list identity; "
+            "attribute reassignment (root.tools = ...) would break this."
+        )
+        assert agent.tools == [tool_a]
+
+        # Trigger a second resolve (config change → hash miss).
+        cfg_v2 = _make_config(tool_ids=["agent.tool_b"])
+        cfg_v2.model_dump_json.return_value = '{"tool_ids": ["agent.tool_b"]}'
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_v2
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=[tool_b]
+        ):
+            attach_root_tools(agent, account_id="acc_identity")
+
+        # List identity preserved across the second resolve.
+        assert agent.tools is original_list
+        assert agent.tools == [tool_b]
+
     def test_applied_hash_not_committed_on_resolver_error(self) -> None:
         """On a resolver failure, the applied hash must NOT be updated so the
         next turn retries rather than silently serving stale tools."""

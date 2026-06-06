@@ -15,7 +15,7 @@ the 60 s ``get_cached_merged_config`` TTL) and replaces ``root.tools`` when the
 resolved list differs — the same hot-reload horizon admins expect for
 ``instruction`` and specialist edits.
 
-ADK behaviour confirmation (google-adk==1.27.5 — Task 1 spike):
+ADK behaviour confirmation (google-adk==1.27.5 — AH-100 Task 1 spike):
     ``base_agent.run_async`` fires ``_handle_before_agent_callback`` *before*
     ``_run_async_impl`` (``base_agent.py:291``). ``_process_agent_tools`` reads
     ``agent.tools`` directly at LLM-request build time without a pre-invocation
@@ -23,6 +23,25 @@ ADK behaviour confirmation (google-adk==1.27.5 — Task 1 spike):
     replacement inside ``before_agent_callback`` IS honoured on the same turn.
     See ``tests/test_root_tools_attacher_adk_smoke.py`` for the static-proof
     and live-Runner confirmation tests.
+
+ADK 2.0 re-validation (google-adk==2.0.0 — AH-108 Task 1 probe):
+    ``Runner._run_node_async`` in ADK 2.0 creates a per-turn clone of the root
+    agent via ``build_node().clone()``.  The ``before_agent_callback`` fires
+    on the clone's invocation context (``_invocation_context.agent`` IS the
+    clone), so mutating ``agent.tools`` inside the callback IS visible to
+    ``_process_agent_tools`` on the same turn — the LLM request carries the
+    injected tool declarations (Path 1 confirmed, probe PASSES).
+    The clone is discarded after the turn; mutations do NOT propagate back to
+    the original agent object, which is why the post-turn ``agent.tools``
+    assertion in the legacy xfail test fails.
+    Two consistency cleanups apply (mirroring ``sub_agent_attacher.py``,
+    AH-104 / AH-105):
+    (a) In-place slice assignment ``root.tools[:] = resolved_tools`` so the
+        list object identity is preserved (``sub_agent_attacher.py:398``).
+    (b) Populated-guard: the hash-hit early-return also requires
+        ``root.tools`` to be non-empty so a fresh per-turn clone (which
+        starts with ``tools=[]``) still gets its tools resolved even when the
+        config hash has not changed (``sub_agent_attacher.py:284``).
 
 Per-process safety note (cf. ``sub_agent_attacher.py:48-51``):
     Agent Engine deploys one root instance per worker process. Mutating
@@ -203,8 +222,22 @@ def _attach_locked(
     #    reflects this exact config. Single global slot (see ``_applied_hash``):
     #    an account switch changes ``content_hash`` and forces a re-resolve, so
     #    one account never serves another's tools from the shared slot.
+    #
+    #    ADK 2.0 populated-guard: on ADK 2.0, Runner clones the root agent
+    #    per turn; the clone's ``tools`` list starts empty (the original root
+    #    retains ``tools=[]`` because callback mutations on the clone never
+    #    propagate back). Without the ``and root.tools`` check, a hash hit
+    #    would early-return and leave the clone's tool list empty, causing the
+    #    LLM to see zero tools on every turn after the first. Requiring
+    #    ``root.tools`` to be non-empty forces re-resolve on any empty clone —
+    #    which, on ADK 2.0, is every turn. The resolve path is cheap (Firestore
+    #    fetch is TTL-cached; resolver reads from in-memory registry), so the
+    #    per-turn re-resolve is the accepted trade-off. Accounts whose config
+    #    legitimately resolves to zero tools also re-resolve on every turn by
+    #    the same reasoning — correct and acceptable (mirrors sub_agent_attacher
+    #    §284, which has an identical guard for the same reason).
     content_hash = _hash_config(config)
-    if _applied_hash == content_hash:
+    if _applied_hash == content_hash and root.tools:
         return  # No-op: root.tools already reflects this config version.
 
     # 3. Resolve the tool list via the shared roster resolver.
@@ -254,7 +287,7 @@ def _attach_locked(
         _applied_hash = content_hash
         return
 
-    root.tools = resolved_tools
+    root.tools[:] = resolved_tools
     _applied_hash = content_hash
     logger.debug(
         "[ATTACH-ROOT-TOOLS] root.tools reconciled (account=%r): "

@@ -18,7 +18,6 @@ import argparse
 import importlib.metadata
 import logging
 import os
-import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -31,13 +30,21 @@ from vertexai.preview import reasoning_engines
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add shared package to path for secret resolution
+# Add repo root to path for shared package + app.adk.deploy_packaging imports.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from shared.secrets import get_env_or_secret
 except ImportError:
     logger.error("❌ Could not import shared secrets utility")
+    sys.exit(1)
+
+# Deploy-tree assembly helper — encapsulates the copy-tree logic so it can be
+# exercised by CI without triggering an actual deploy (AH-106 decoupling).
+try:
+    from app.adk.deploy_packaging import assemble_strategy_deploy_tree
+except ImportError:
+    logger.error("❌ Could not import assemble_strategy_deploy_tree from deploy_packaging")
     sys.exit(1)
 
 # Strategy tree is pinned to this google-adk major.minor (see
@@ -100,7 +107,7 @@ ENV_CONFIG = {
 }
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="Deploy Strategy Supervisor to Vertex AI Agent Engine"
@@ -199,258 +206,214 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
     logger.info(f"Processed .env written to {dest_path} with mode 0o600")
 
 
-# Parse command-line arguments
-args = parse_args()
+def main() -> None:
+    """Run the strategy-supervisor deploy flow.
 
-# Guard: the strategy tree must be built from a 1.34.1 venv (cloudpickle skew).
-_require_local_adk_version(STRATEGY_ADK_VERSION_PREFIX)
+    Kept under ``main()`` / the ``__main__`` guard so the module is
+    import-safe: the strategy deploy-tree smoke test imports this module
+    (``verify_strategy_deploy_tree.py`` Check 3) to catch import-order
+    regressions without resolving secrets or triggering a live Agent
+    Engine deploy.
+    """
+    # Parse command-line arguments
+    args = parse_args()
 
-# Get configuration for target environment
-env_config = ENV_CONFIG[args.env]
-PROJECT_ID = env_config["project_id"]
-PROJECT_NUMBER = env_config["project_number"]
-LOCATION = args.location
-STAGING_BUCKET = f"gs://{PROJECT_ID}-adk-staging"
+    # Guard: the strategy tree must be built from a 1.34.1 venv (cloudpickle skew).
+    _require_local_adk_version(STRATEGY_ADK_VERSION_PREFIX)
 
-# Save current directory
-original_dir = os.getcwd()
+    # Get configuration for target environment
+    env_config = ENV_CONFIG[args.env]
+    PROJECT_ID = env_config["project_id"]
+    PROJECT_NUMBER = env_config["project_number"]
+    LOCATION = args.location
+    STAGING_BUCKET = f"gs://{PROJECT_ID}-adk-staging"
 
-logger.info("=" * 70)
-logger.info(f"Deploying Strategy Agent with Python {PYTHON_VERSION}")
-logger.info(f"Environment: {args.env.upper()}")
-logger.info(f"Project: {PROJECT_ID} ({PROJECT_NUMBER})")
-logger.info(f"Location: {LOCATION}")
-logger.info("=" * 70)
+    # Save current directory
+    original_dir = os.getcwd()
 
-# Create temporary deployment directory
-with tempfile.TemporaryDirectory() as temp_dir:
-    temp_path = Path(temp_dir)
-    logger.info(f"Created temporary directory: {temp_path}")
+    logger.info("=" * 70)
+    logger.info(f"Deploying Strategy Agent with Python {PYTHON_VERSION}")
+    logger.info(f"Environment: {args.env.upper()}")
+    logger.info(f"Project: {PROJECT_ID} ({PROJECT_NUMBER})")
+    logger.info(f"Location: {LOCATION}")
+    logger.info("=" * 70)
 
-    # Copy agents directory
-    agents_src = Path("agents")
-    if agents_src.exists():
-        shutil.copytree(agents_src, temp_path / "agents")
-        logger.info("Copied agents directory")
-    else:
-        logger.error("❌ agents directory not found")
-        sys.exit(1)
+    # Create temporary deployment directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        logger.info(f"Created temporary directory: {temp_path}")
 
-    # Copy shared package (contains secrets utility and other shared code)
-    shared_src = Path(__file__).parent.parent.parent / "shared"
-    if shared_src.exists():
-        shutil.copytree(shared_src, temp_path / "shared")
-        logger.info("Copied shared package")
-    else:
-        logger.warning("⚠️  shared package not found")
-
-    # Copy app sub-packages needed by agent code (weave_observability, etc.)
-    # These are imported as ``from app.utils.* import ...``, so replicate
-    # the package structure. (trace_metadata lives in shared/ now.)
-    adk_root = Path(__file__).parent  # app/adk/
-    app_root = adk_root.parent  # app/
-    app_dest = temp_path / "app"
-    app_dest.mkdir(parents=True, exist_ok=True)
-
-    # Copy app/adk/ sub-packages so absolute imports like
-    # ``from app.adk.tools.agent_tools.google_search import …`` (added in AH-98)
-    # resolve on the Agent Engine backend. The strategy agent re-exports
-    # create_google_search_agent at package import, so without these the agent
-    # fails to unpickle with ``ModuleNotFoundError: No module named 'app.adk'``.
-    # Mirrors deploy_packaging.assemble_deploy_tree (used by the chat deploy).
-    app_adk_dest = app_dest / "adk"
-    app_adk_dest.mkdir(parents=True, exist_ok=True)
-    (app_dest / "__init__.py").touch()
-    (app_adk_dest / "__init__.py").touch()
-    for subpkg in ("agents", "security", "tracking", "tools", "mcp_config"):
-        src = adk_root / subpkg
-        if src.exists():
-            shutil.copytree(
-                src,
-                app_adk_dest / subpkg,
-                ignore=shutil.ignore_patterns("tests", "__pycache__"),
-            )
-            logger.info(f"Copied app.adk.{subpkg} package")
-        else:
-            logger.warning(f"app/adk/{subpkg} not found")
-
-    # Copy app/utils/ (weave_observability, etc.)
-    app_utils_src = app_root / "utils"
-    if app_utils_src.exists():
-        shutil.copytree(
-            app_utils_src,
-            app_dest / "utils",
-            ignore=shutil.ignore_patterns("tests", "__pycache__"),
-        )
-        logger.info("Copied app/utils package")
-
-    # Copy the strategy-tree manifest (google-adk==1.34.1) as requirements.txt —
-    # Agent Engine requires that filename. The chat tree uses
-    # app/adk/requirements.txt (google-adk[mcp]==2.0.0); the two trees deploy on
-    # different ADK majors, so they MUST stay on separate manifests (AH-105 /
-    # AH-106 decoupling). Resolved by script location, not CWD.
-    strategy_reqs = Path(__file__).parent / "requirements-strategy.txt"
-    if strategy_reqs.exists():
-        shutil.copy2(strategy_reqs, temp_path / "requirements.txt")
-        logger.info(
-            "Copied requirements-strategy.txt → requirements.txt (google-adk==1.34.1)"
-        )
-    else:
-        logger.error("❌ requirements-strategy.txt not found at %s", strategy_reqs)
-        sys.exit(1)
-
-    # Process environment-specific .env file (resolve sm:// references)
-    # Use .env.{environment} file, fallback to .env
-    env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
-    env_name = env_mapping.get(args.env, args.env)
-    env_file = Path(f".env.{env_name}")
-
-    if not env_file.exists():
-        logger.warning(f"⚠️  {env_file} not found, trying .env")
-        env_file = Path(".env")
-
-    if env_file.exists():
-        logger.info(f"Using {env_file} for {args.env} environment")
-        process_env_file(env_file, temp_path / ".env")
-        logger.info("Processed and copied .env file to root")
-        # Also copy to agents directory for runtime loading
-        process_env_file(env_file, temp_path / "agents" / ".env")
-        logger.info("Copied .env file to agents/ directory for runtime loading")
-    else:
-        logger.error("❌ No .env file found")
-        sys.exit(1)
-
-    # Change to temp directory for deployment
-    os.chdir(temp_path)
-
-    # Force correct project in environment
-    os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
-    os.environ["VERTEX_AI_PROJECT_ID"] = PROJECT_ID
-
-    # Initialize Vertex AI
-    vertexai.init(
-        project=PROJECT_ID,
-        location=LOCATION,
-        staging_bucket=STAGING_BUCKET,
-    )
-
-    # Import the app from orchestrator
-    sys.path.insert(0, str(Path.cwd()))
-    from agents.strategy_agent.orchestrator import app
-
-    if app is None:
-        logger.error("❌ Failed to import app from orchestrator")
-        sys.exit(1)
-
-    logger.info(f"✅ Loaded app: {type(app)}")
-
-    # Deploy using Python API — update existing engine in place when possible
-    # (preserves the engine resource and avoids burning ReasoningEngineEntities-
-    # PerProjectPerRegion quota on every CI run).
-    logger.info(f"📦 Deploying with sys_version='{PYTHON_VERSION}'...")
-
-    display_name = f"strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}"
-    description = (
-        f"Strategy supervisor with Python {PYTHON_VERSION}, split agents, Neo4j, W&B"
-    )
-
-    # Resolve existing engine ID from Secret Manager
-    sm_client = secretmanager.SecretManagerServiceClient()
-    secret_path = (
-        f"projects/{PROJECT_NUMBER}/secrets/"
-        "strategy-supervisor-engine-id/versions/latest"
-    )
-    existing_engine_id: str | None = None
-    try:
-        response = sm_client.access_secret_version(request={"name": secret_path})
-        existing_engine_id = response.payload.data.decode("UTF-8").strip()
-        logger.info(f"Found existing engine in Secret Manager: {existing_engine_id}")
-    except gcp_exceptions.NotFound:
-        # Genuine first deploy — the secret/version doesn't exist yet → create below.
-        # Any OTHER error (PermissionDenied, a transient 500/timeout) is deliberately
-        # NOT caught: it propagates and aborts the deploy rather than being mistaken
-        # for "no engine", which would bootstrap a duplicate and orphan the canonical
-        # one — the same failure mode the update path was hardened against.
-        logger.info(
-            "No strategy-supervisor-engine-id secret yet (first deploy); "
-            "will create a new engine"
-        )
-
-    try:
-        if existing_engine_id:
-            logger.info(f"Updating existing engine {existing_engine_id} in place...")
-            # Let an update failure propagate to the handler below (→ sys.exit(1)).
-            # Do NOT fall back to creating a new engine: a transient 500 from
-            # reasoningEngines polling often fires after the update already
-            # succeeded server-side, so a fallback create would orphan a fresh
-            # engine (the secret still points at the original) and accumulate
-            # duplicates that push the API's 500 rate higher.
-            existing = reasoning_engines.ReasoningEngine(existing_engine_id)
-            deployed_engine = existing.update(
-                reasoning_engine=app,
-                requirements="requirements.txt",
-                display_name=display_name,
-                description=description,
-                sys_version=PYTHON_VERSION,
-                extra_packages=["agents", "shared", "app"],
-            )
-            logger.info("✅ Updated existing engine in place")
-        else:
-            # Bootstrap path: no engine ID in Secret Manager yet (first deploy).
-            logger.info("No existing engine ID found; creating new ReasoningEngine...")
-            deployed_engine = reasoning_engines.ReasoningEngine.create(
-                reasoning_engine=app,
-                requirements="requirements.txt",
-                display_name=display_name,
-                description=description,
-                sys_version=PYTHON_VERSION,
-                extra_packages=["agents", "shared", "app"],
-            )
-            logger.info("✅ Created new engine")
-
-        logger.info("✅ Deployment successful!")
-        logger.info(f"Engine ID: {deployed_engine.resource_name}")
-
-        # Save to log file (in original directory)
-        log_file = Path(original_dir) / "agents/logs/strategy_supervisor_deployment.txt"
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_file, "w") as f:
-            f.write(
-                f"Deployment: strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}\n"
-            )
-            f.write(f"Python Version: {PYTHON_VERSION}\n")
-            f.write(f"Engine ID: {deployed_engine.resource_name}\n")
-            f.write(f"Project: {PROJECT_ID}\n")
-            f.write(f"Location: {LOCATION}\n")
-
-        # Update Secret Manager with new engine ID
+        # Assemble the strategy deploy tree (agents/, shared/, app/adk/*, app/utils/,
+        # requirements-strategy.txt → requirements.txt).  The packaging logic lives
+        # in deploy_packaging.assemble_strategy_deploy_tree() (AH-106) so CI can
+        # exercise it without a live deploy.
+        #
+        # Note: copy_env is intentionally omitted (defaults to True for a live
+        # deploy).  The .env file is NOT written by the helper — .env resolution
+        # via process_env_file() is the caller's (this script's) responsibility,
+        # happening in the block below.  The helper only copies static artefacts.
         try:
-            client = secretmanager.SecretManagerServiceClient()
-            # Use project number (not ID) for Secret Manager
-            parent = f"projects/{PROJECT_NUMBER}/secrets/strategy-supervisor-engine-id"
-            response = client.add_secret_version(
-                request={
-                    "parent": parent,
-                    "payload": {"data": deployed_engine.resource_name.encode("UTF-8")},
-                }
+            assemble_strategy_deploy_tree(temp_path)
+        except FileNotFoundError as exc:
+            logger.error("❌ %s", exc)
+            sys.exit(1)
+
+        # Process environment-specific .env file (resolve sm:// references)
+        # Use .env.{environment} file, fallback to .env
+        env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}
+        env_name = env_mapping.get(args.env, args.env)
+        env_file = Path(f".env.{env_name}")
+
+        if not env_file.exists():
+            logger.warning(f"⚠️  {env_file} not found, trying .env")
+            env_file = Path(".env")
+
+        if env_file.exists():
+            logger.info(f"Using {env_file} for {args.env} environment")
+            process_env_file(env_file, temp_path / ".env")
+            logger.info("Processed and copied .env file to root")
+            # Also copy to agents directory for runtime loading
+            process_env_file(env_file, temp_path / "agents" / ".env")
+            logger.info("Copied .env file to agents/ directory for runtime loading")
+        else:
+            logger.error("❌ No .env file found")
+            sys.exit(1)
+
+        # Change to temp directory for deployment
+        os.chdir(temp_path)
+
+        # Force correct project in environment
+        os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
+        os.environ["VERTEX_AI_PROJECT_ID"] = PROJECT_ID
+
+        # Initialize Vertex AI
+        vertexai.init(
+            project=PROJECT_ID,
+            location=LOCATION,
+            staging_bucket=STAGING_BUCKET,
+        )
+
+        # Import the app from orchestrator
+        sys.path.insert(0, str(Path.cwd()))
+        from agents.strategy_agent.orchestrator import app
+
+        if app is None:
+            logger.error("❌ Failed to import app from orchestrator")
+            sys.exit(1)
+
+        logger.info(f"✅ Loaded app: {type(app)}")
+
+        # Deploy using Python API — update existing engine in place when possible
+        # (preserves the engine resource and avoids burning ReasoningEngineEntities-
+        # PerProjectPerRegion quota on every CI run).
+        logger.info(f"📦 Deploying with sys_version='{PYTHON_VERSION}'...")
+
+        display_name = f"strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}"
+        description = (
+            f"Strategy supervisor with Python {PYTHON_VERSION}, split agents, Neo4j, W&B"
+        )
+
+        # Resolve existing engine ID from Secret Manager
+        sm_client = secretmanager.SecretManagerServiceClient()
+        secret_path = (
+            f"projects/{PROJECT_NUMBER}/secrets/"
+            "strategy-supervisor-engine-id/versions/latest"
+        )
+        existing_engine_id: str | None = None
+        try:
+            response = sm_client.access_secret_version(request={"name": secret_path})
+            existing_engine_id = response.payload.data.decode("UTF-8").strip()
+            logger.info(f"Found existing engine in Secret Manager: {existing_engine_id}")
+        except gcp_exceptions.NotFound:
+            # Genuine first deploy — the secret/version doesn't exist yet → create below.
+            # Any OTHER error (PermissionDenied, a transient 500/timeout) is deliberately
+            # NOT caught: it propagates and aborts the deploy rather than being mistaken
+            # for "no engine", which would bootstrap a duplicate and orphan the canonical
+            # one — the same failure mode the update path was hardened against.
+            logger.info(
+                "No strategy-supervisor-engine-id secret yet (first deploy); "
+                "will create a new engine"
             )
-            logger.info(f"✅ Updated Secret Manager: {response.name}")
+
+        try:
+            if existing_engine_id:
+                logger.info(f"Updating existing engine {existing_engine_id} in place...")
+                # Let an update failure propagate to the handler below (→ sys.exit(1)).
+                # Do NOT fall back to creating a new engine: a transient 500 from
+                # reasoningEngines polling often fires after the update already
+                # succeeded server-side, so a fallback create would orphan a fresh
+                # engine (the secret still points at the original) and accumulate
+                # duplicates that push the API's 500 rate higher.
+                existing = reasoning_engines.ReasoningEngine(existing_engine_id)
+                deployed_engine = existing.update(
+                    reasoning_engine=app,
+                    requirements="requirements.txt",
+                    display_name=display_name,
+                    description=description,
+                    sys_version=PYTHON_VERSION,
+                    extra_packages=["agents", "shared", "app"],
+                )
+                logger.info("✅ Updated existing engine in place")
+            else:
+                # Bootstrap path: no engine ID in Secret Manager yet (first deploy).
+                logger.info("No existing engine ID found; creating new ReasoningEngine...")
+                deployed_engine = reasoning_engines.ReasoningEngine.create(
+                    reasoning_engine=app,
+                    requirements="requirements.txt",
+                    display_name=display_name,
+                    description=description,
+                    sys_version=PYTHON_VERSION,
+                    extra_packages=["agents", "shared", "app"],
+                )
+                logger.info("✅ Created new engine")
+
+            logger.info("✅ Deployment successful!")
+            logger.info(f"Engine ID: {deployed_engine.resource_name}")
+
+            # Save to log file (in original directory)
+            log_file = Path(original_dir) / "agents/logs/strategy_supervisor_deployment.txt"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_file, "w") as f:
+                f.write(
+                    f"Deployment: strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}\n"
+                )
+                f.write(f"Python Version: {PYTHON_VERSION}\n")
+                f.write(f"Engine ID: {deployed_engine.resource_name}\n")
+                f.write(f"Project: {PROJECT_ID}\n")
+                f.write(f"Location: {LOCATION}\n")
+
+            # Update Secret Manager with new engine ID
+            try:
+                client = secretmanager.SecretManagerServiceClient()
+                # Use project number (not ID) for Secret Manager
+                parent = f"projects/{PROJECT_NUMBER}/secrets/strategy-supervisor-engine-id"
+                response = client.add_secret_version(
+                    request={
+                        "parent": parent,
+                        "payload": {"data": deployed_engine.resource_name.encode("UTF-8")},
+                    }
+                )
+                logger.info(f"✅ Updated Secret Manager: {response.name}")
+            except Exception as e:
+                logger.warning(f"⚠️  Could not update Secret Manager: {e}")
+
+            print("\n" + "=" * 70)
+            print(f"🎉 DEPLOYMENT SUCCESSFUL WITH PYTHON {PYTHON_VERSION}!")
+            print("=" * 70)
+            print(f"Engine ID: {deployed_engine.resource_name}")
+            print(f"Python Version: {PYTHON_VERSION}")
+            print("=" * 70 + "\n")
+
         except Exception as e:
-            logger.warning(f"⚠️  Could not update Secret Manager: {e}")
+            logger.error(f"❌ Deployment failed: {e}")
+            import traceback
 
-        print("\n" + "=" * 70)
-        print(f"🎉 DEPLOYMENT SUCCESSFUL WITH PYTHON {PYTHON_VERSION}!")
-        print("=" * 70)
-        print(f"Engine ID: {deployed_engine.resource_name}")
-        print(f"Python Version: {PYTHON_VERSION}")
-        print("=" * 70 + "\n")
+            traceback.print_exc()
+            sys.exit(1)
+        finally:
+            # Return to original directory
+            os.chdir(original_dir)
 
-    except Exception as e:
-        logger.error(f"❌ Deployment failed: {e}")
-        import traceback
 
-        traceback.print_exc()
-        sys.exit(1)
-    finally:
-        # Return to original directory
-        os.chdir(original_dir)
+if __name__ == "__main__":
+    main()

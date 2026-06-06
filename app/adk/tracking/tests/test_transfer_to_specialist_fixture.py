@@ -4,6 +4,9 @@ Validates that transfer_to_specialist_trace.json satisfies the post-AH-75 trace
 contract documented in docs/trace-structure-spec.md and
 docs/design/components/agentic-harness/projects/AH-PRD-09-trace-contract-diff.md.
 
+This test is the CI regression guard for AH-PRD-13 §7 AC #4: the fixture must
+pass on google-adk==2.0.0 with the current single-specialist behaviour unchanged.
+
 Under AH-75 the deploy-time / per-turn distinction in dispatch dropped away:
 both modes route through ADK's native ``transfer_to_agent`` + ``sub_agents``,
 so the trace shape is one ``transfer_to_agent`` action followed by a

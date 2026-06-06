@@ -28,7 +28,7 @@ from .review_pipeline import (
     get_worker_name,
 )
 from .review_pipeline_tracing import emit_iteration_span, set_pipeline_attrs
-from .supervisor_utils import invoke_pipeline
+from .supervisor_utils import invoke_pipeline, is_adk_framework_exception
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,16 @@ def dispatch_to_company_news(
             "agent": "news",
         }
     except Exception as e:
-        logger.error(f"Error in news agent dispatch: {e}")
+        # Re-raise ADK framework exceptions (ADK 2.0 node control-flow signals
+        # such as NodeTimeoutError / DynamicNodeFailError) so the framework's
+        # retry machinery handles them rather than swallowing them as an
+        # error-dict. Every OTHER exception — GoogleAPICallError, httpx errors,
+        # KeyError, etc. — is still converted to the error-dict below, so this
+        # tool keeps its never-leak contract for non-framework failures.
+        # NodeInterruptedError (BaseException) is never caught here regardless.
+        if is_adk_framework_exception(e):
+            raise
+        logger.error(f"Error in news agent dispatch: {e}", exc_info=True)
         return {
             "status": "error",
             "query": query,
@@ -287,7 +296,20 @@ def dispatch_to_google_analytics(
             "tenant_id": tenant_id,
         }
     except Exception as e:
-        logger.error(f"[GA-DISPATCH] Error in analytics agent dispatch: {e}")
+        # Re-raise ADK framework exceptions (ADK 2.0 node control-flow signals
+        # such as NodeTimeoutError / DynamicNodeFailError) so the framework's
+        # retry machinery handles them rather than swallowing them as an
+        # error-dict. This path calls invoke_pipeline() / invoke_agent_with_retry(),
+        # both of which run on the 2.0 graph engine, so the same never-swallow
+        # contract as dispatch_to_company_news applies here. Every OTHER exception
+        # — GoogleAPICallError, httpx errors, KeyError, etc. — is still converted
+        # to the error-dict below. NodeInterruptedError (BaseException) is never
+        # caught here regardless.
+        if is_adk_framework_exception(e):
+            raise
+        logger.error(
+            f"[GA-DISPATCH] Error in analytics agent dispatch: {e}", exc_info=True
+        )
         return {
             "status": "error",
             "query": query,
@@ -421,7 +443,18 @@ def dispatch_to_strategy(
             "account_id": params.account_id,
         }
     except Exception as e:
-        logger.error(f"[SUPERVISOR] Error in strategy agent dispatch: {e}")
+        # Re-raise ADK framework exceptions (ADK 2.0 node control-flow signals
+        # such as NodeTimeoutError / DynamicNodeFailError) before any failure
+        # logging so the framework's retry machinery handles them rather than the
+        # signal being recorded as a failed completion and swallowed into an
+        # error-dict. Every OTHER exception — GoogleAPICallError, httpx errors,
+        # KeyError, etc. — is still logged and converted to the error-dict below.
+        # NodeInterruptedError (BaseException) is never caught here regardless.
+        if is_adk_framework_exception(e):
+            raise
+        logger.error(
+            f"[SUPERVISOR] Error in strategy agent dispatch: {e}", exc_info=True
+        )
         supervisor_logger.log_error(
             e, {"phase": "strategy_dispatch", "query_preview": query[:200]}
         )

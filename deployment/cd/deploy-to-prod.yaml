@@ -26,7 +26,18 @@ steps:
   # CrewAI deployment removed - using ADK Agent Engine ID directly in API
 
   # Deploy Strategy Supervisor Agent to Production
-  # This must happen BEFORE API deployment so API gets the fresh engine ID
+  # This must happen BEFORE API deployment so API gets the fresh engine ID.
+  #
+  # Two-deploy-tree decoupling (AH-105 / AH-106): the strategy tree is pinned
+  # to google-adk==1.34.1 while the chat tree runs on google-adk==2.0.0.  Both
+  # trees share the same app/ source but deploy from different ADK venvs so the
+  # agent is cloudpickled against the correct major.  The strategy step MUST use
+  # its own dedicated .venv-adk1 built from requirements-strategy.txt — do NOT
+  # reuse the chat step's 2.0 venv (app/adk/.venv) or `uv run` which would
+  # resolve against app/adk/pyproject.toml (2.0.0).
+  #
+  # References: AH-105 (chat pin bump), AH-106 (CD decoupling), requirements-
+  # strategy.txt header.
   - name: "python:3.12-slim"
     id: deploy-strategy-supervisor-prod
     entrypoint: /bin/bash
@@ -35,8 +46,10 @@ steps:
       - |
         cd app/adk
         pip install uv --user
-        uv sync --frozen
-        uv run python deploy_with_sys_version.py --env prod
+        uv venv .venv-adk1
+        uv pip install --python .venv-adk1/bin/python \
+          -r requirements-strategy.txt
+        .venv-adk1/bin/python deploy_with_sys_version.py --env prod
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT=${_PROD_PROJECT_ID}'
@@ -46,7 +59,13 @@ steps:
       - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-production'
 
   # Deploy KEN-E Chat Agent to Production
-  # This must happen BEFORE API deployment so API gets the fresh engine ID
+  # This must happen BEFORE API deployment so API gets the fresh engine ID.
+  #
+  # Two-deploy-tree decoupling (AH-105 / AH-106): the chat tree uses
+  # google-adk[mcp]==2.0.0.  `cd app/adk && uv sync --frozen` creates the 2.0
+  # venv from the regenerated app/adk/uv.lock (AH-106); `uv run` then invokes
+  # deploy_ken_e.py from that 2.0 venv.  The strategy step above runs from its
+  # own .venv-adk1 (1.34.1) and does not interfere with this step.
   - name: "python:3.12-slim"
     id: deploy-ken-e-agent-prod
     entrypoint: /bin/bash
@@ -54,6 +73,7 @@ steps:
       - "-c"
       - |
         cd app/adk
+        uv sync --frozen
         uv run python deploy_ken_e.py --env prod
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'

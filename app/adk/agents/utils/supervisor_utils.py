@@ -32,6 +32,29 @@ from .context_loader import HierarchicalContextManager
 logger = logging.getLogger(__name__)
 
 
+def is_adk_framework_exception(exc: BaseException) -> bool:
+    """Return True if *exc* originates from the ADK framework itself.
+
+    ADK 2.0 raises node control-flow signals (e.g. ``NodeTimeoutError``,
+    ``DynamicNodeFailError``) that the framework's node-retry machinery is meant
+    to catch. Dispatch/pipeline helpers must re-raise these rather than swallow
+    them into a legacy error-dict/-tuple, otherwise the framework never sees the
+    signal and retry/interrupt handling silently breaks.
+
+    Matched by *module origin* rather than ``isinstance``: importing the ADK
+    node-exception types at module scope would couple this shared module to ADK
+    2.0 and break the ``google-adk==1.34`` strategy tree (the exact regression
+    ``deployment/ci/scripts/verify_strategy_deploy_tree.py`` Check 5 guards
+    against). Matching the defining module keeps the predicate ADK-major-agnostic
+    and future-proof: any framework exception under ``google.adk`` propagates,
+    while every non-ADK error (``GoogleAPICallError``, ``httpx`` errors,
+    ``KeyError``, …) is still converted to the caller's legacy error response.
+    ``NodeInterruptedError`` extends ``BaseException`` and propagates regardless
+    of any ``except Exception`` guard.
+    """
+    return type(exc).__module__.startswith("google.adk")
+
+
 def extract_tenant_context(
     input_data: Any,
 ) -> tuple[str | None, dict[str, Any] | None, str]:
@@ -145,6 +168,8 @@ async def _run_pipeline_collecting_events(
     async for event in runner.run_async(
         user_id=user_id, session_id=session_id, new_message=user_message
     ):
+        # Local buffer for sync return; the framework yield is `runner.run_async`
+        # above — never mutate `session.events` directly here.
         events.append(event)
         if event.content and event.content.parts:
             if text := "".join(part.text or "" for part in event.content.parts):
@@ -211,7 +236,16 @@ def _invoke_pipeline_collecting_events(
             [],
         )
     except Exception as e:
-        logger.error(f"Error in sync pipeline invocation: {e!s}")
+        # Re-raise ADK framework exceptions (ADK 2.0 node control-flow signals
+        # such as NodeTimeoutError / DynamicNodeFailError) so the framework's
+        # retry machinery handles them instead of swallowing them into an error
+        # tuple. Every OTHER exception — GoogleAPICallError, httpx errors,
+        # KeyError, etc. — is still converted to the legacy error response, so
+        # this tool keeps its never-leak contract for non-framework failures.
+        # NodeInterruptedError (BaseException) is never caught here regardless.
+        if is_adk_framework_exception(e):
+            raise
+        logger.error(f"Error in sync pipeline invocation: {e!s}", exc_info=True)
         return (f"Error: Failed to complete the request - {e!s}", {}, [])
 
 

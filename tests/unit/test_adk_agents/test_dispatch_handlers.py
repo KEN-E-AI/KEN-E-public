@@ -1242,3 +1242,212 @@ class TestHallucinatedApprovalDetectionDispatch:
         dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
 
         mock_check_hallucination.assert_called_once_with([], "news_review")
+
+
+# ── TestFrameworkExceptionReraiseDispatchCompanyNews ──────────────────────────
+
+
+class TestFrameworkExceptionReraiseDispatchCompanyNews:
+    """AC #2 (dispatch_handlers): only ADK *framework* exceptions escape dispatch_to_company_news.
+
+    The handler catches ``Exception`` and re-raises anything whose defining module
+    is under ``google.adk`` (ADK 2.0 node control-flow signals such as
+    NodeTimeoutError / DynamicNodeFailError) so the framework's retry machinery
+    sees them. Every non-framework exception — RuntimeError, KeyError, a
+    GoogleAPICallError from ``google.api_core`` — is still converted to the legacy
+    error-dict, so the tool never leaks an unrelated raw exception to the caller.
+    NodeInterruptedError (BaseException) propagates regardless.
+    """
+
+    class _SimulatedNodeTimeoutError(Exception):
+        """Stand-in for ADK's NodeTimeoutError (an Exception defined under google.adk)."""
+
+    # Make the stand-in's defining module match the real ADK framework so the
+    # module-origin predicate (is_adk_framework_exception) re-raises it.
+    _SimulatedNodeTimeoutError.__module__ = "google.adk.agents._control_flow"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_base_exception_subclass_propagates(self, mock_invoke, mock_get_registry):
+        """A BaseException subclass raised from the dispatcher propagates; not swallowed as error-dict."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        class _SimulatedNodeInterruptedError(BaseException):
+            """Stand-in for ADK's NodeInterruptedError (BaseException)."""
+
+        mock_invoke.side_effect = _SimulatedNodeInterruptedError("interrupted")
+
+        try:
+            dispatch_to_company_news("query", acceptance_criteria=None)
+            raised = False
+        except _SimulatedNodeInterruptedError:
+            raised = True
+
+        assert raised, "BaseException subclass must propagate; dispatch must not swallow it"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_adk_framework_exception_propagates(self, mock_invoke, mock_get_registry):
+        """An Exception defined under google.adk propagates out (simulating NodeTimeoutError)."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        mock_invoke.side_effect = self._SimulatedNodeTimeoutError("node timed out")
+
+        try:
+            dispatch_to_company_news("query", acceptance_criteria=None)
+            raised = False
+        except self._SimulatedNodeTimeoutError:
+            raised = True
+
+        assert raised, "ADK framework exception must propagate; dispatch must not swallow it"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_runtime_error_returns_error_dict(self, mock_invoke, mock_get_registry):
+        """RuntimeError (concrete recoverable type) still produces the legacy error-dict response."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        mock_invoke.side_effect = RuntimeError("transient failure")
+
+        result = dispatch_to_company_news("query", acceptance_criteria=None)
+
+        assert result["status"] == "error"
+        assert "transient failure" in result["error"]
+        assert result["agent"] == "news"
+        assert result["source"] == "company_news_specialist"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_non_framework_google_exception_returns_error_dict(
+        self, mock_invoke, mock_get_registry
+    ):
+        """A non-ADK exception (e.g. GoogleAPICallError from google.api_core) is
+        converted to the error-dict, NOT leaked raw.
+
+        Regression guard for the over-broad-propagation bug: the earlier
+        `except (RuntimeError, ValueError, OSError)` let any other exception
+        (GoogleAPICallError, httpx errors, KeyError) escape the tool. Only
+        exceptions defined under ``google.adk`` may propagate now.
+        """
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        class _SimulatedGoogleAPIError(Exception):
+            """Stand-in for google.api_core.exceptions.GoogleAPICallError."""
+
+        _SimulatedGoogleAPIError.__module__ = "google.api_core.exceptions"
+        mock_invoke.side_effect = _SimulatedGoogleAPIError("backend 503")
+
+        result = dispatch_to_company_news("query", acceptance_criteria=None)
+
+        assert result["status"] == "error"
+        assert "backend 503" in result["error"]
+        assert result["agent"] == "news"
+        assert result["source"] == "company_news_specialist"
+
+
+# ── TestFrameworkExceptionReraiseDispatchGoogleAnalytics ──────────────────────
+
+
+class TestFrameworkExceptionReraiseDispatchGoogleAnalytics:
+    """AC #2 (dispatch_handlers): only ADK *framework* exceptions escape dispatch_to_google_analytics.
+
+    Mirrors ``TestFrameworkExceptionReraiseDispatchCompanyNews`` for the GA path.
+    The GA handler runs on the ADK 2.0 graph engine (it calls invoke_pipeline /
+    invoke_agent_with_retry), so a node control-flow signal raised mid-dispatch
+    must reach the framework's retry machinery rather than being swallowed into
+    an error-dict. Without the re-raise guard the supervisor-layer re-raise in
+    ``_invoke_pipeline_collecting_events`` is undone here, because this handler's
+    own ``except Exception`` re-catches the propagated signal.
+    """
+
+    class _SimulatedNodeTimeoutError(Exception):
+        """Stand-in for ADK's NodeTimeoutError (an Exception defined under google.adk)."""
+
+    # Make the stand-in's defining module match the real ADK framework so the
+    # module-origin predicate (is_adk_framework_exception) re-raises it.
+    _SimulatedNodeTimeoutError.__module__ = "google.adk.agents._control_flow"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_base_exception_subclass_propagates(self, mock_invoke, mock_get_registry):
+        """A BaseException subclass raised from the dispatcher propagates; not swallowed as error-dict."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        class _SimulatedNodeInterruptedError(BaseException):
+            """Stand-in for ADK's NodeInterruptedError (BaseException)."""
+
+        mock_invoke.side_effect = _SimulatedNodeInterruptedError("interrupted")
+
+        try:
+            dispatch_to_google_analytics("query", acceptance_criteria=None)
+            raised = False
+        except _SimulatedNodeInterruptedError:
+            raised = True
+
+        assert raised, "BaseException subclass must propagate; dispatch must not swallow it"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_adk_framework_exception_propagates(self, mock_invoke, mock_get_registry):
+        """An Exception defined under google.adk propagates out (simulating NodeTimeoutError)."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        mock_invoke.side_effect = self._SimulatedNodeTimeoutError("node timed out")
+
+        try:
+            dispatch_to_google_analytics("query", acceptance_criteria=None)
+            raised = False
+        except self._SimulatedNodeTimeoutError:
+            raised = True
+
+        assert raised, "ADK framework exception must propagate; dispatch must not swallow it"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_runtime_error_returns_error_dict(self, mock_invoke, mock_get_registry):
+        """RuntimeError (concrete recoverable type) still produces the legacy error-dict response."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        mock_invoke.side_effect = RuntimeError("transient failure")
+
+        result = dispatch_to_google_analytics("query", acceptance_criteria=None)
+
+        assert result["status"] == "error"
+        assert "transient failure" in result["error"]
+        assert result["agent"] == "analytics"
+        assert result["source"] == "google_analytics_specialist"
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_non_framework_google_exception_returns_error_dict(
+        self, mock_invoke, mock_get_registry
+    ):
+        """A non-ADK exception (e.g. GoogleAPICallError from google.api_core) is
+        converted to the error-dict, NOT leaked raw.
+
+        Regression guard: only exceptions defined under ``google.adk`` may
+        propagate out of the GA dispatch; everything else keeps the
+        never-leak contract.
+        """
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+
+        class _SimulatedGoogleAPIError(Exception):
+            """Stand-in for google.api_core.exceptions.GoogleAPICallError."""
+
+        _SimulatedGoogleAPIError.__module__ = "google.api_core.exceptions"
+        mock_invoke.side_effect = _SimulatedGoogleAPIError("backend 503")
+
+        result = dispatch_to_google_analytics("query", acceptance_criteria=None)
+
+        assert result["status"] == "error"
+        assert "backend 503" in result["error"]
+        assert result["agent"] == "analytics"
+        assert result["source"] == "google_analytics_specialist"

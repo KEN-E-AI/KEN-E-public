@@ -1696,3 +1696,166 @@ class TestUserBuiltGaAgentAttach:
         assert root.find_agent(custom_id) is None, (
             "Agent with ken_e_sub_agent=False must not be attached to root.sub_agents"
         )
+
+
+# ---------------------------------------------------------------------------
+# Two-turn per-turn reconciliation — AH-108 (AC #3)
+#
+# Verifies that both the sub_agents reconciliation callback AND the root.tools
+# reconciliation callback (root_tools_attacher) are correctly exercised across
+# two consecutive turns, including the ADK 2.0 populated-guard path where a
+# fresh per-turn clone starts with an empty list.
+# ---------------------------------------------------------------------------
+
+
+class TestPerTurnReconciliationADK2:
+    """AH-108 AC #3 — two-turn per-turn reconciliation under ADK 2.0.
+
+    Simulates the ADK 2.0 per-turn clone pattern (each turn gets a fresh root
+    copy with empty ``sub_agents`` / ``tools``) and asserts:
+
+    1. ``attach_specialists_before_agent_callback`` re-attaches specialists each
+       turn even when the fingerprint matches (populated-guard bypass).
+    2. Same-process account switch does not serve stale specialists.
+    3. ``attach_root_tools_before_agent_callback`` (via ``attach_root_tools``)
+       re-resolves tools each turn on a fresh clone (populated-guard in
+       root_tools_attacher.py).
+    """
+
+    def _make_callback_ctx(
+        self,
+        root: LlmAgent,
+        account_id: str | None = "acc_a",
+    ) -> Any:
+        """Build a minimal mock CallbackContext pointing at *root*."""
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        state_dict: dict[str, Any] = {}
+        if account_id is not None:
+            state_dict["account_id"] = account_id
+        ctx.state.get = lambda k, default=None: state_dict.get(k, default)
+        ctx.state.to_dict = lambda: dict(state_dict)
+        ctx.state.__setitem__ = lambda k, v: state_dict.__setitem__(k, v)
+        ctx.state.__contains__ = lambda k: k in state_dict
+
+        mock_inv = MagicMock()
+        mock_inv.agent = root
+        ctx._invocation_context = mock_inv
+        return ctx
+
+    def test_sub_agents_reattached_on_each_clone_turn(self) -> None:
+        """Specialists are attached to each per-turn clone (which starts with
+        ``sub_agents=[]``) even when the fingerprint slot records a prior hit.
+
+        Simulates ADK 2.0 behaviour: each turn, the root is model_copy'd into a
+        fresh clone; ``attach_specialists_before_agent_callback`` fires on the
+        clone's callback_context.  The populated-guard (``_applied_state == ...
+        and root_agent.sub_agents``) must detect the empty clone and re-resolve.
+        """
+        specialist_a = _make_specialist("ga_spec")
+
+        with _patched_resolvers({"ga_spec": specialist_a}):
+            # --- Turn 1: fresh root, no prior state ---
+            root_turn1 = _make_root()
+            ctx1 = self._make_callback_ctx(root_turn1, "acc_a")
+            result1 = attach_specialists_before_agent_callback(
+                callback_context=ctx1
+            )
+            assert result1 is None
+            assert specialist_a in root_turn1.sub_agents, (
+                "Turn 1: specialist must be attached to the first clone"
+            )
+
+            # --- Turn 2: ADK 2.0 creates a FRESH clone; sub_agents is [] ---
+            root_turn2 = _make_root()  # fresh clone; sub_agents=[]
+            assert list(root_turn2.sub_agents) == [], "Pre-condition: clone starts empty"
+
+            ctx2 = self._make_callback_ctx(root_turn2, "acc_a")
+            result2 = attach_specialists_before_agent_callback(
+                callback_context=ctx2
+            )
+            assert result2 is None
+            # Populated-guard must have forced re-resolve on the empty clone.
+            assert specialist_a in root_turn2.sub_agents, (
+                "Turn 2: populated-guard must re-attach specialists to the fresh "
+                "per-turn clone even when _applied_state fingerprint matches."
+            )
+
+    def test_account_switch_does_not_serve_stale_specialists(self) -> None:
+        """A→B account switch serves B's specialists; A→B→A serves A's again.
+
+        Guards the AH-102 scenario (single _applied_state slot): without the
+        (account_id, fingerprint) composite key, turn 3 (account A, unchanged
+        config) would hit the fingerprint and serve B's specialists.
+        """
+        specialist_a = _make_specialist("ga_spec")
+        specialist_b = _make_specialist("ads_spec")
+
+        def _attach_for(account_id: str, specialist: LlmAgent) -> LlmAgent:
+            root = _make_root()
+            with _patched_resolvers({specialist.name: specialist}):
+                ctx = self._make_callback_ctx(root, account_id)
+                attach_specialists_before_agent_callback(callback_context=ctx)
+            return root
+
+        root_a1 = _attach_for("acc_a", specialist_a)
+        assert specialist_a in root_a1.sub_agents
+
+        root_b = _attach_for("acc_b", specialist_b)
+        assert specialist_b in root_b.sub_agents
+
+        # Account A again — must NOT see specialist_b.
+        root_a2 = _attach_for("acc_a", specialist_a)
+        assert specialist_a in root_a2.sub_agents, "A's specialist must be present on return"
+        assert specialist_b not in root_a2.sub_agents, "B's specialist must NOT appear for A"
+
+    def test_root_tools_reattached_on_each_clone_turn(self) -> None:
+        """``attach_root_tools`` resolves tools on each per-turn clone that
+        starts with ``tools=[]``, even when the config hash matches the slot.
+
+        Mirrors the sub_agents populated-guard test above, for the root.tools
+        path (AH-108 Task 3a / AC #1 + #3).
+        """
+        from unittest.mock import MagicMock, patch
+
+        from app.adk.agents.agent_factory import root_tools_attacher as rta
+        from app.adk.agents.agent_factory.root_tools_attacher import attach_root_tools
+
+        rta._reset_applied_hash_for_tests()
+
+        def _make_tool_mock(name: str) -> MagicMock:
+            t = MagicMock()
+            t.name = name
+            return t
+
+        tool_x = _make_tool_mock("tool_x")
+        cfg = MagicMock()
+        cfg.tool_ids = ["tool_x"]
+        cfg.model_dump_json.return_value = '{"tool_ids": ["tool_x"]}'
+
+        try:
+            with patch.object(
+                rta, "get_cached_merged_config", return_value=cfg
+            ), patch.object(
+                rta, "resolve_specialist_roster", return_value=[tool_x]
+            ) as mock_resolve:
+                # Turn 1 — fresh root, hash miss → resolve fires.
+                root_turn1 = _make_root()
+                attach_root_tools(root_turn1, account_id="acc_tools")
+                assert tool_x in root_turn1.tools, "Turn 1: tool_x must be attached"
+                assert mock_resolve.call_count == 1
+
+                # Turn 2 — ADK 2.0 fresh clone; tools=[] but hash matches.
+                root_turn2 = _make_root()  # fresh clone
+                assert list(root_turn2.tools) == [], "Pre-condition: clone starts with no tools"
+
+                attach_root_tools(root_turn2, account_id="acc_tools")
+                # Populated-guard forces re-resolve even on hash hit.
+                assert mock_resolve.call_count == 2, (
+                    "Turn 2: populated-guard must re-resolve when clone starts with "
+                    "tools=[] even when _applied_hash matches the config."
+                )
+                assert tool_x in root_turn2.tools, "Turn 2: tool_x must be in the fresh clone"
+        finally:
+            rta._reset_applied_hash_for_tests()

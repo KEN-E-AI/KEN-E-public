@@ -247,6 +247,44 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Strategy deploy-tree smoke test: validates that the strategy-supervisor
+  # deploy artefacts (deploy_with_sys_version.py, google-adk==1.34.1) can be
+  # assembled and imported without triggering a live Vertex AI deploy, and that
+  # the strategy tree has no accidental ADK 2.0-only imports at module scope.
+  #
+  # Two-deploy-tree decoupling (AH-105 / AH-106): the chat tree (deploy_ken_e.py)
+  # runs on google-adk==2.0.0 while the strategy-supervisor tree stays pinned to
+  # google-adk==1.34.1 until it is removed in a later release.  CI must smoke-
+  # test each tree under its own pinned major to catch version-guard failures
+  # before they reach staging.
+  #
+  # Step structure:
+  #   1. Create a dedicated 1.34.1 venv (.venv-adk1) so this step is isolated
+  #      from the root venv (2.0.0) built by install-dependencies.
+  #   2. Install app/adk/requirements-strategy.txt into it (google-adk==1.34.1
+  #      + all strategy-tree transitive deps).
+  #   3. Run verify_strategy_deploy_tree.py from that venv so sys.executable is
+  #      the 1.34.1 Python — required for Check 3 (subprocess import of
+  #      deploy_with_sys_version.py which asserts the local ADK is 1.34.x).
+  #
+  # waitFor install-dependencies only for the uv binary; does not reuse the root
+  # 2.0 venv.  See deployment/ci/scripts/verify_strategy_deploy_tree.py.
+  - name: "python:3.11-slim"
+    id: strategy-deploy-tree-smoke
+    waitFor: ['install-dependencies']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        pip install uv --user
+        uv venv .venv-adk1
+        uv pip install --python .venv-adk1/bin/python \
+          -r app/adk/requirements-strategy.txt
+        .venv-adk1/bin/python deployment/ci/scripts/verify_strategy_deploy_tree.py
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
   # Validate trace compliance — runs the validator unit tests AND checks that
   # canonical per-agent-type fixtures in app/adk/tracking/tests/fixtures/ all
   # pass validate_trace_compliance(). Non-compliant fixtures fail the build.

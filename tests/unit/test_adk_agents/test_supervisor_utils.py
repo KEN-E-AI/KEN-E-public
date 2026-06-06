@@ -232,9 +232,17 @@ class TestInvokeAgentSyncState:
         mock_session_cls.return_value = mock_session_service
         mock_session_service.create_session = AsyncMock()
 
+        mock_session = MagicMock()
+        mock_session.state = {}
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        async def _no_events(*a, **kw):
+            return
+            yield  # makes it an async generator
+
         mock_runner = MagicMock()
         mock_runner_cls.return_value = mock_runner
-        mock_runner.run_async.return_value = iter([])
+        mock_runner.run_async = _no_events
 
         mock_agent = MagicMock()
         mock_agent.name = "test_agent"
@@ -258,9 +266,17 @@ class TestInvokeAgentSyncState:
         mock_session_cls.return_value = mock_session_service
         mock_session_service.create_session = AsyncMock()
 
+        mock_session = MagicMock()
+        mock_session.state = {}
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        async def _no_events(*a, **kw):
+            return
+            yield  # makes it an async generator
+
         mock_runner = MagicMock()
         mock_runner_cls.return_value = mock_runner
-        mock_runner.run_async.return_value = iter([])
+        mock_runner.run_async = _no_events
 
         mock_agent = MagicMock()
         mock_agent.name = "test_agent"
@@ -419,6 +435,218 @@ class TestInvokePipelineState:
             # Simulate no running event loop, then a runtime error from asyncio.run().
             mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
             mock_asyncio.run.side_effect = RuntimeError("ADK error")
+
+            mock_agent = MagicMock()
+            mock_agent.name = "test_pipeline"
+            text, state, events = invoke_pipeline(mock_agent, "test query")
+
+        assert "error" in text.lower()
+        assert state == {}
+        assert events == []
+
+
+class TestLocalEventBufferContract:
+    """AC #1: events.append at line ~148 is a local-list buffer, not session.events mutation.
+
+    These tests pin the contract so a future refactor cannot accidentally write
+    directly to session.events (which would bypass the framework yield in ADK 2.0).
+    """
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_events_returned_match_runner_yield_order(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """Events list returned by invoke_pipeline matches exactly what runner.run_async yielded."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+
+        mock_session = MagicMock()
+        mock_session.state = {}
+        mock_session_service.create_session = AsyncMock()
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        # Create three distinct mock events to verify order preservation.
+        event_a = MagicMock(name="event_a")
+        event_a.content = None
+        event_b = MagicMock(name="event_b")
+        event_b.content = None
+        event_c = MagicMock(name="event_c")
+        event_c.content = None
+
+        async def _three_events(*a, **kw):
+            for ev in [event_a, event_b, event_c]:
+                yield ev
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async = _three_events
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_pipeline"
+
+        _text, _state, events = invoke_pipeline(mock_agent, "test query")
+
+        assert events == [event_a, event_b, event_c]
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_empty_run_yields_empty_events_list(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """An agent that emits no events produces an empty events list (not None or session.events)."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_session = MagicMock()
+        mock_session.state = {}
+        mock_session_service.create_session = AsyncMock()
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        async def _no_events(*a, **kw):
+            return
+            yield  # makes it an async generator
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async = _no_events
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_pipeline"
+
+        _text, _state, events = invoke_pipeline(mock_agent, "test query")
+
+        assert events == []
+        assert isinstance(events, list)
+
+
+class TestFrameworkExceptionReraisePropagation:
+    """AC #2 (supervisor_utils): only ADK *framework* exceptions escape invoke_pipeline.
+
+    The handler catches ``Exception`` and re-raises anything whose defining module
+    is under ``google.adk`` (ADK 2.0 node control-flow signals such as
+    NodeTimeoutError / DynamicNodeFailError) so the framework's retry machinery
+    sees them. Every non-framework exception — RuntimeError, a GoogleAPICallError
+    from ``google.api_core`` — is still converted to the legacy error-tuple.
+    NodeInterruptedError (BaseException) propagates regardless.
+    """
+
+    class _SimulatedNodeTimeoutError(Exception):
+        """Stand-in for ADK's NodeTimeoutError (an Exception defined under google.adk)."""
+
+    # Make the stand-in's defining module match the real ADK framework so the
+    # module-origin predicate (is_adk_framework_exception) re-raises it.
+    _SimulatedNodeTimeoutError.__module__ = "google.adk.agents._control_flow"
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_base_exception_subclass_propagates(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """A BaseException subclass raised from asyncio.run() propagates out of invoke_pipeline."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+
+        class _SimulatedNodeInterruptedError(BaseException):
+            """Stand-in for ADK's NodeInterruptedError."""
+
+        with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = _SimulatedNodeInterruptedError("interrupted")
+
+            mock_agent = MagicMock()
+            mock_agent.name = "test_pipeline"
+
+            try:
+                invoke_pipeline(mock_agent, "test query")
+                raised = False
+            except _SimulatedNodeInterruptedError:
+                raised = True
+
+        assert raised, "BaseException subclass must propagate; invoke_pipeline must not swallow it"
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_adk_framework_exception_propagates(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """An Exception defined under google.adk propagates (simulating NodeTimeoutError)."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+
+        with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = self._SimulatedNodeTimeoutError("node timed out")
+
+            mock_agent = MagicMock()
+            mock_agent.name = "test_pipeline"
+
+            try:
+                invoke_pipeline(mock_agent, "test query")
+                raised = False
+            except self._SimulatedNodeTimeoutError:
+                raised = True
+
+        assert raised, "ADK framework exception must propagate; invoke_pipeline must not swallow it"
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_runtime_error_returns_error_tuple(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """RuntimeError (concrete recoverable type) still produces the legacy error-tuple return."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+
+        with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = RuntimeError("transient error")
+
+            mock_agent = MagicMock()
+            mock_agent.name = "test_pipeline"
+            text, state, events = invoke_pipeline(mock_agent, "test query")
+
+        assert "error" in text.lower()
+        assert state == {}
+        assert events == []
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_non_framework_google_exception_returns_error_tuple(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """A non-ADK exception (e.g. GoogleAPICallError from google.api_core) is
+        converted to the error-tuple, NOT leaked raw.
+
+        Regression guard for the over-broad-propagation bug: the earlier
+        `except (RuntimeError, ValueError, OSError)` let any other exception
+        (GoogleAPICallError, httpx errors, KeyError) escape invoke_pipeline.
+        Only exceptions defined under ``google.adk`` may propagate now.
+        """
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+
+        class _SimulatedGoogleAPIError(Exception):
+            """Stand-in for google.api_core.exceptions.GoogleAPICallError."""
+
+        _SimulatedGoogleAPIError.__module__ = "google.api_core.exceptions"
+
+        with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = _SimulatedGoogleAPIError("backend 503")
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"

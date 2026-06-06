@@ -6,8 +6,9 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "baml-py>=0.207.1",
     "google-adk[mcp]==2.0.0",  # [mcp] extra is load-bearing: ADK 2.0 demoted `mcp` from a core dep to the `[mcp]` extra; the GA specialist needs it for its live MCP/SSE connection (without it `import mcp` fails only at runtime on Agent Engine). Bumped to 2.0.0 in AH-105 (AH-PRD-13 Foundation). app/adk/requirements.txt MUST match the pyproject pin and uv.lock — version skew breaks Agent Engine deploy with an opaque 400/500 and a ReasoningEngine ModuleNotFoundError that only surfaces in Cloud Logging.
-    "google-cloud-aiplatform>=1.140.0",
+    "google-cloud-aiplatform[agent-engines]>=1.140.0",  # [agent-engines] extra is load-bearing for the LOCAL deploy venv (uv sync --frozen): it pulls cloudpickle + the reasoning_engines deploy machinery that deploy_ken_e.py cloudpickles the agent with. Under google-adk 1.34.1 these arrived transitively; ADK 2.0 slimmed its deps, so without the extra the chat CD step ImportErrors at deploy time (AH-106).
     "google-cloud-firestore>=2.23.0",
+    "google-cloud-secret-manager>=2.20.0",  # Used by deploy_ken_e.py (engine-id read/update) and shared/secrets.py (sm:// .env resolution). Not provided by the aiplatform[agent-engines] extra, and no longer pulled transitively by google-adk 2.0 — declare it directly so uv sync --frozen installs it into the deploy venv (AH-106).
     "neo4j>=5.14.0",
     "openai>=1.0.0",
     "pypdf2>=3.0.1",

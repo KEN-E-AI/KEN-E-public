@@ -126,39 +126,39 @@ class TestADKToolsMutationStaticProof:
 class TestMutationHonouredOnSameTurn:
     """End-to-end confirmation against a mock-model Runner.
 
-    The test builds an LlmAgent with ``tools=[]`` and a ``before_agent_callback``
-    that appends ``_SEARCH_TOOL``. It verifies that:
-    1. The agent starts with zero tools.
-    2. After one turn through the Runner (with a mock model that does not
-       actually call the tool), the tool list is non-empty — i.e. the mutation
-       persisted on the agent object.
-    3. The mock LLM was invoked with the tool declaration present in the
-       request (confirming ``_process_agent_tools`` saw the mutated list).
+    AH-108 probe result (google-adk==2.0.0):
+        Path 1 confirmed — ``_invocation_context.agent`` in ADK 2.0 IS the
+        per-turn clone, so a ``before_agent_callback`` that mutates
+        ``agent.tools`` via attribute reassignment IS visible to
+        ``_process_agent_tools`` on the same invocation (the LLM request
+        carries the tool declarations).  The tool mutation does NOT propagate
+        back to the original agent object (the original's ``tools`` stays
+        ``[]``), so the pre-existing xfail test below remains xfailing — the
+        *original-agent* assertion is the wrong invariant for production.
+
+        The production-relevant invariant — "the LLM sees the mutated tools
+        mid-turn" — is captured by ``test_llm_sees_mutated_tools_on_same_turn``
+        (Task 1 probe), which passes.  Tasks 3a/4a apply the two consistency
+        cleanups: in-place slice assignment + populated-guard (so a fresh
+        per-turn clone with ``tools=[]`` that hits the hash-fingerprint cache
+        still gets its tools resolved).
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "ADK 2.0: Runner.build_node().clone() creates a per-turn clone whose "
-            "tool mutations do not propagate back to the original agent object. "
-            "AH-108 owns the re-validation and fallback implementation for the "
-            "AH-100 per-turn root.tools attach pattern under google-adk==2.0.0. "
-            "strict=True: when AH-108 ships and this test passes, XPASS failure "
-            "forces removal of the marker and confirms the fix is solid."
-        ),
-    )
-    def test_tools_mutated_in_before_callback_are_on_agent_after_turn(self) -> None:
-        """A tool added to ``agent.tools`` inside ``before_agent_callback`` is
-        present on the agent object after the turn completes."""
+    def test_llm_sees_mutated_tools_on_same_turn(self) -> None:
+        """AH-108 Task 1 probe: the mock LLM's llm_request.tools_dict contains
+        the tool appended by the before_agent_callback — i.e. the LLM-observable
+        production property holds on google-adk==2.0.0.
 
+        This is the correct invariant for the AH-100 mechanism: what matters is
+        that the LLM call site sees the mutated tool list on the same invocation,
+        not whether the original agent's ``.tools`` attribute is updated after
+        the turn (the clone-doesn't-propagate-back xfail below covers that).
+        """
         received_tools: list[Any] = []
 
         def _adding_callback(*, callback_context: CallbackContext) -> None:  # type: ignore[misc]
-            # Simulate what attach_root_tools_before_agent_callback does:
-            # replace the tool list.
             agent = callback_context._invocation_context.agent
             agent.tools = [_SEARCH_TOOL]
-            # No return value → agent proceeds normally.
             return None
 
         agent = LlmAgent(
@@ -169,14 +169,58 @@ class TestMutationHonouredOnSameTurn:
             before_agent_callback=_adding_callback,
         )
 
-        # Confirm starting state.
-        assert agent.tools == []
-
-        # Drive one turn through a minimal mock.  We only need the callback
-        # to fire; we don't need a real model response.
         _run_one_turn_with_mock_model(agent, user_text="hello", received_tools=received_tools)
 
-        # After the callback fires, the mutation is visible on the agent.
+        # The LLM request must contain the tool declaration injected by the callback.
+        assert len(received_tools) > 0, (
+            "LLM did not receive any tool declarations — the before_agent_callback "
+            "mutation was not visible to _process_agent_tools on this turn. "
+            "This would mean Path 2 (re-resolving toolset fallback) is required."
+        )
+        assert "_search_web" in received_tools, (
+            f"Expected '_search_web' in llm_request.tools_dict keys; got {received_tools!r}"
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "ADK 2.0: Runner.build_node().clone() creates a per-turn clone whose "
+            "tool mutations do not propagate back to the original agent object. "
+            "The production-relevant invariant ('LLM sees the mutated tools mid-turn') "
+            "is covered by test_llm_sees_mutated_tools_on_same_turn (which passes). "
+            "This test's post-turn original-agent assertion is intentionally left "
+            "as a permanent xfail to document the ADK 2.0 clone semantics."
+        ),
+    )
+    def test_tools_mutated_in_before_callback_are_on_agent_after_turn(self) -> None:
+        """Documents that tool mutations inside before_agent_callback do NOT
+        persist on the original agent object under ADK 2.0 (clone semantics).
+
+        The original agent's ``tools`` remains ``[]`` after the turn because the
+        callback mutates the per-turn clone, which is discarded after the turn.
+        This is expected behaviour on ADK 2.0 and does NOT indicate a production
+        bug — see test_llm_sees_mutated_tools_on_same_turn for the production check.
+        """
+        received_tools: list[Any] = []
+
+        def _adding_callback(*, callback_context: CallbackContext) -> None:  # type: ignore[misc]
+            agent = callback_context._invocation_context.agent
+            agent.tools = [_SEARCH_TOOL]
+            return None
+
+        agent = LlmAgent(
+            name="spike_root",
+            model="gemini-2.0-flash",
+            instruction="You are a test agent.",
+            tools=[],
+            before_agent_callback=_adding_callback,
+        )
+
+        assert agent.tools == []
+        _run_one_turn_with_mock_model(agent, user_text="hello", received_tools=received_tools)
+
+        # This assertion FAILS on ADK 2.0 (xfail): the original agent's tools
+        # are not updated because only the per-turn clone was mutated.
         assert len(agent.tools) == 1
         assert agent.tools[0] is _SEARCH_TOOL
 

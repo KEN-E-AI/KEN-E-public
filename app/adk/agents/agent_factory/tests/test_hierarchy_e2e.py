@@ -618,13 +618,19 @@ class TestRootToolsHotReload:
 
     def test_hot_reload_idempotent_no_fingerprint_churn(self) -> None:
         """Calling the callback twice with no config change is a no-op — the
-        fingerprint cache prevents redundant resolver calls."""
+        fingerprint cache prevents redundant resolver calls.
+
+        The config must resolve to a non-empty tool list: under the ADK 2.0
+        populated-guard (``_applied_hash == content_hash and root.tools``) a
+        config that resolves to zero tools re-resolves every turn by design
+        (see ``test_zero_tool_config_resolves_correctly_each_turn``), so a
+        zero-tool config would not exercise the fingerprint-hit early-return."""
         from app.adk.agents.agent_factory import root_tools_attacher as rta
         from app.adk.agents.agent_factory.roster import resolve_specialist_roster
 
         root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
         ctx = self._make_callback_context(root, account_id="acc_idempotent")
-        cfg = self._make_merged_config(tool_ids=[])
+        cfg = self._make_merged_config(tool_ids=["agent.google_search"])
 
         resolve_call_count = 0
         original_resolve = resolve_specialist_roster
