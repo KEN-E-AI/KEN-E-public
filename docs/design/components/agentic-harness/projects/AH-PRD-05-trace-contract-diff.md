@@ -56,9 +56,11 @@ KEN-E root agent invocation (root span)
     │   └── mode='task' specialist run
     └── task_delegation: {task_id_B}
         └── mode='task' specialist run
-└── synthesis: {result_key}          ← synthesizer task (depends_on both)
-    └── mode='task' specialist run
+└── task_delegation: {task_id}       ← synthesis step (depends_on both fan-out result keys;
+    └── mode='task' specialist run      specialist query references upstream result_key values)
 ```
+
+**Note on the synthesis step:** the synthesis span is a standard `task_delegation` (not a distinct `synthesis`-named span type) — §3.1 attribute table applies. It is distinguished from other `task_delegation` spans by its `query`/`criteria` referencing upstream `<result_key>` template values injected by the coordinator.
 
 ---
 
@@ -74,6 +76,7 @@ KEN-E root agent invocation (root span)
 | `criteria` | `str` | `TodoItem.criteria` | Acceptance criteria for the LoopAgent wrapper (empty = single-pass) |
 | `task_status` | `str` | Set at completion | `completed` / `failed` |
 | `cache_hit` | `bool` | `specialist_runtime.resolve_agent_with_hit` | True when LRU cache served the specialist |
+| `node_path` | `str` | ADK 2.0 event stream (probe-1 / probe-4 evidence) | Hierarchical path of the ADK node that produced the inner events. Task-mode calls nest under the coordinator (e.g., `coordinator@1/task_specialist@adk-30c59a97-…`). Fan-out branches are rooted at the dispatched agent (e.g., `specialist_a@1`). Downstream consumers (e.g., `SessionTurnAccumulator` — see AH-123) **SHOULD** key on `(invocation_id, node_path)` for branch attribution in fan-out turns. |
 
 ### 3.2 `fanout` span (new, when `ctx.run_node` is used)
 
@@ -82,6 +85,7 @@ KEN-E root agent invocation (root span)
 | `task_ids` | `list[str]` | Fan-out branch task IDs | Identifies which TODO items ran in parallel |
 | `branch_count` | `int` | Len of parallel group | |
 | `all_succeeded` | `bool` | Set after gather completes | |
+| `node_path` | `str` | ADK 2.0 event stream (probe-4 evidence) | Path of the fan-out coordinator node (e.g., `coordinator@1`). Each child `task_delegation` carries its own `node_path` reflecting the branch (e.g., `specialist_a@1`, `specialist_b@1`). |
 
 ### 3.3 Usage metadata on task-mode spans
 
@@ -121,25 +125,32 @@ task_delegation: {task_id}
 
 ## §6 Fixture Pointer
 
-When the first AH-PRD-05 implementation PR lands, a canonical staging fixture will be committed to:
+The canonical staging fixture is committed at:
 
 ```
 app/adk/tracking/tests/fixtures/supervisor_orchestration_trace.json
 ```
 
-MER-E should validate extractors against that fixture before the PR merges to main. Until then, the span-attribute table in §3 is the contract.
+The fixture models §2.2: one sequential `task_delegation` (task-mode call-and-return), a `fanout` span with two parallel `task_delegation` children, and a synthesis `task_delegation` whose `query` references upstream result keys. Every supervisor-specific span carries `emission_status: deferred` + `deferred_reason` referencing AH-PRD-05 — the runtime does not yet emit these; they are the target shape.
+
+The schema-conformance test suite at `app/adk/tracking/tests/test_supervisor_orchestration_fixture.py` pins the emission-status honesty contract and asserts every §3.1 / §3.2 attribute (including `node_path`) is present with the expected type. It is wired into the standard pytest run and serves as the CI regression guard against fixture drift.
+
+**MER-E should validate extractors against the fixture and the conformance test** before any AH-PRD-05 implementation PR merges to main.
 
 ---
 
 ## §7 MER-E Validation Checklist
 
-Before any AH-PRD-05 implementation PR merges to main:
+Before any AH-PRD-05 implementation PR merges to main, run extractor validation against `app/adk/tracking/tests/fixtures/supervisor_orchestration_trace.json` and confirm:
 
+- [ ] `pytest app/adk/tracking/tests/test_supervisor_orchestration_fixture.py -v` passes (schema-conformance gate).
 - [ ] `extract_billable_tokens` correctly sums `usage_metadata` from task-mode sub-agent events in the outer stream (same helper, new events).
 - [ ] MER-E extractors recognize `task_delegation` span by `span.name == "task_delegation"` + presence of `task_id` attribute.
-- [ ] Fan-out spans (`fanout`) are correctly attributed as parallel-group parents.
+- [ ] MER-E extractors read `node_path` from `task_delegation` summary for branch attribution in fan-out turns (task-mode path: `coordinator@1/task_specialist@…`; fan-out path: `specialist_a@1` / `specialist_b@1`).
+- [ ] Fan-out spans (`fanout`) are correctly attributed as parallel-group parents using `task_ids` + `branch_count`.
 - [ ] LoopAgent review iterations appear as grandchildren of `task_delegation` and are extracted as today.
 - [ ] Old `execute_workflow` pattern is removed from any extractor that searched for it.
+- [ ] Sign-off recorded in §8 Owner Pairing with date and reviewer name.
 
 ---
 

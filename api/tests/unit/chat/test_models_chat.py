@@ -3,6 +3,7 @@
 from datetime import datetime
 
 import pytest
+from pydantic import ValidationError
 from src.kene_api.models.chat import (
     ChatArtifactIndex,
     ChatCategoryDefinition,
@@ -212,6 +213,52 @@ class TestTodoItem:
         assert item.completed is False
         assert item.completed_at is None
 
+    def test_legacy_shape_round_trips(self) -> None:
+        """Legacy payload (only item_id + text) deserializes with correct defaults and re-validates."""
+        item = TodoItem(item_id="i1", text="x")
+        assert item.model_dump() == {
+            "item_id": "i1",
+            "text": "x",
+            "completed": False,
+            "completed_at": None,
+            "assignee": None,
+            "query": None,
+            "criteria": None,
+            "depends_on": [],
+            "result_key": None,
+            "status": "pending",
+        }
+        assert TodoItem(**item.model_dump()) == item
+
+    def test_widened_shape_round_trips(self) -> None:
+        """All six supervisor fields survive a dump → re-validate round-trip."""
+        item = TodoItem(
+            item_id="task_01",
+            text="Analyze GA data",
+            assignee="google_analytics_specialist",
+            query="What was the traffic trend last 30 days?",
+            criteria="Must include week-over-week comparison",
+            depends_on=["task_00"],
+            result_key="ga_analysis_result",
+            status="dispatched",
+        )
+        dump = item.model_dump()
+        reloaded = TodoItem(**dump)
+        assert reloaded == item
+
+    def test_status_literal_rejects_unknown(self) -> None:
+        """An unrecognized status value raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TodoItem(item_id="i1", text="x", status="bogus")
+
+    def test_length_caps_enforced(self) -> None:
+        """item_id > 128 or text > 1024 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TodoItem(item_id="x" * 129, text="t")
+
+        with pytest.raises(ValidationError):
+            TodoItem(item_id="i1", text="t" * 1025)
+
 
 class TestTodoList:
     def test_instantiates(self) -> None:
@@ -225,6 +272,28 @@ class TestTodoList:
         todo = TodoList(list_id="l1", title="Phase 1", items=items, is_current=True)
         assert len(todo.items) == 1
         assert todo.is_current is True
+
+    def test_mixed_legacy_and_widened_items(self) -> None:
+        """TodoList containing both a legacy item and a widened item deserializes correctly.
+
+        Guards the chat/todos.py read path: TodoList(**raw) must tolerate a mix
+        of pre-widening and post-widening item shapes stored in session.state.
+        """
+        legacy_item = TodoItem(item_id="i1", text="Legacy task")
+        widened_item = TodoItem(
+            item_id="i2",
+            text="Supervisor task",
+            assignee="google_analytics_specialist",
+            status="completed",
+            result_key="ga_result",
+        )
+        todo = TodoList(list_id="l1", title="Mixed", items=[legacy_item, widened_item])
+        dump = todo.model_dump()
+        reloaded = TodoList(**dump)
+        assert len(reloaded.items) == 2
+        assert reloaded.items[0].status == "pending"  # legacy default
+        assert reloaded.items[1].status == "completed"
+        assert reloaded.items[1].assignee == "google_analytics_specialist"
 
 
 # ---------------------------------------------------------------------------

@@ -35,7 +35,7 @@ def _make_fake_stream(chunks: list[Any]):
     """Return a stand-in for AgentEngineClient.stream_chat_completion.
 
     Mirrors the real generator: feeds each raw chunk to the accumulator before
-    yielding a ``(channel, text)`` fragment on the "text" channel.
+    yielding a ``(channel, text, author)`` fragment on the "text" channel.
     """
 
     async def _fake_stream(
@@ -44,7 +44,7 @@ def _make_fake_stream(chunks: list[Any]):
         for chunk in chunks:
             if accumulator is not None:
                 accumulator.add_stream_chunk(chunk)
-            yield ("text", "chunk-text")
+            yield ("text", "chunk-text", "model")
 
     return _fake_stream
 
@@ -270,7 +270,7 @@ class TestStreamCompletionCancellation:
                 accumulator.add_stream_chunk(
                     _stream_chunk("inv-fail", prompt=200, candidates=50)
                 )
-            yield ("text", "chunk-text")
+            yield ("text", "chunk-text", "model")
             raise RuntimeError("agent exploded")
 
         mock_apply = MagicMock(return_value={"status": "applied"})

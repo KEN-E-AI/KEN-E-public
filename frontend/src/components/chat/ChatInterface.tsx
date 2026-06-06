@@ -31,6 +31,7 @@ type Message = {
   stopped?: boolean;
   reasoning?: { thoughts: string[]; durationSeconds: number };
   artifacts?: MessageArtifact[];
+  author?: string;
 };
 
 type ChatInterfaceProps = {
@@ -278,10 +279,19 @@ export function ChatInterface({
     abortRef.current = controller;
 
     const assistantId = `asst-${crypto.randomUUID()}`;
-    let accumulated = "";
     // Local accumulator mirrors liveThoughts so we can read the final value
     // inside setMessages without a stale closure.
     let collectedThoughts: string[] = [];
+    // Multi-author fan-out: one bubble per distinct author seen in the turn.
+    // Each entry holds the bubble's message ID and its accumulated text.
+    // The first text event claims assistantId so the pre-created placeholder
+    // is repurposed rather than left as a ghost.
+    type BubbleState = { id: string; accumulated: string };
+    const authorBubbleMap = new Map<string, BubbleState>();
+    let firstTextAuthorSeen = false;
+    // currentAssistantId tracks the most-recently updated bubble — used for
+    // the stop/abort cleanup path and for attaching final reasoning.
+    let currentAssistantId = assistantId;
 
     setMessages((prev) => [
       ...prev,
@@ -289,6 +299,7 @@ export function ChatInterface({
         id: assistantId,
         role: "assistant",
         content: "",
+        author: "model",
         timestamp: new Date(),
       },
     ]);
@@ -325,21 +336,60 @@ export function ChatInterface({
           liveThoughtsRef.current = collectedThoughts;
           setLiveThoughts(collectedThoughts);
         } else {
-          accumulated += event.text;
+          const incomingAuthor = event.author ?? "model";
+          if (!authorBubbleMap.has(incomingAuthor)) {
+            // First time seeing this author in the turn.
+            if (!firstTextAuthorSeen) {
+              // Claim the pre-created placeholder bubble for this author.
+              firstTextAuthorSeen = true;
+              authorBubbleMap.set(incomingAuthor, {
+                id: assistantId,
+                accumulated: "",
+              });
+              if (incomingAuthor !== "model") {
+                // Update the placeholder's author field.
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, author: incomingAuthor } : m,
+                  ),
+                );
+              }
+            } else {
+              // Spawn a new bubble for this author.
+              const newId = `asst-${crypto.randomUUID()}`;
+              authorBubbleMap.set(incomingAuthor, {
+                id: newId,
+                accumulated: "",
+              });
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: newId,
+                  role: "assistant",
+                  content: "",
+                  author: incomingAuthor,
+                  timestamp: new Date(),
+                },
+              ]);
+            }
+          }
+          const bubble = authorBubbleMap.get(incomingAuthor)!;
+          bubble.accumulated += event.text;
+          currentAssistantId = bubble.id;
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantId ? { ...m, content: accumulated } : m,
+              m.id === bubble.id ? { ...m, content: bubble.accumulated } : m,
             ),
           );
         }
       }
 
-      // Persist reasoning on the completed message when thoughts were collected.
+      // Persist reasoning on the last in-flight bubble when thoughts were collected.
       const finalThoughts = collectedThoughts;
       const duration = Math.round((Date.now() - turnStartTime) / 1000);
       setMessages((prev) =>
         prev.map((m) => {
-          if (m.id !== assistantId) return m;
+          if (m.id !== currentAssistantId) return m;
           if (finalThoughts.length === 0) return m;
           return {
             ...m,
@@ -352,7 +402,8 @@ export function ChatInterface({
       const name = (err as Error)?.name;
       if (name === "CanceledError" || name === "AbortError") {
         // handleStop already appended the stopped message; remove the ghost placeholder
-        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        // (only the last in-flight bubble is a ghost — earlier finalized bubbles stay).
+        setMessages((prev) => prev.filter((m) => m.id !== currentAssistantId));
         return;
       }
       const message =
@@ -433,6 +484,12 @@ export function ChatInterface({
                   </div>
                 ) : (
                   <>
+                    {/* Author label — shown only for non-default (non-"model") specialist authors */}
+                    {message.author && message.author !== "model" && (
+                      <p className="text-xs text-muted-foreground mb-1 px-1">
+                        {message.author}
+                      </p>
+                    )}
                     {/* Reasoning, demoted to an inline line, grouped with the response it produced */}
                     {message.reasoning && (
                       <div className="mb-2">

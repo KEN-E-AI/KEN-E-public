@@ -191,7 +191,7 @@ async def test_agent_chat():
         print(f"📤 Streaming message: '{test_messages[0].content}'")
 
         response_parts = []
-        async for channel, text in client.stream_chat_completion(
+        async for channel, text, _author in client.stream_chat_completion(
             messages=test_messages,
             user_context=test_user,
             session_id=test_session_id + "_stream",

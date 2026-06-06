@@ -466,6 +466,49 @@ Every PRD follows the shared 10-section structure used across sibling components
 9. Risks & open questions
 10. Reference — links back to sibling PRDs, upstream design docs
 
+### 7.14 SSE multi-author event contract
+
+The `POST /api/v1/chat/completions` (streaming) SSE wire supports multi-author fan-out turns (supervisor model, AH-PRD-05) via an additive author-tagging mechanism. Existing single-author clients that do not handle the new event type continue to work unchanged.
+
+**Wire frames**
+
+| Frame | Format | When emitted |
+|---|---|---|
+| Author sidecar | `event: author\ndata: <name>\n\n` | Once per author transition (not per text frame). Emitted immediately before the first text frame of a new author. |
+| Text frame | `data: <text fragment>\n\n` | Unchanged. Author tracked via the most-recent preceding sidecar. |
+| Reasoning frame | `event: reasoning\ndata: {"text":"...","seq":N}\n\n` (single author) or `event: reasoning\ndata: {"text":"...","seq":N,"author":"<name>"}\n\n` (non-default author) | `"author"` key is present only when author ≠ `"model"`. |
+| Session frame | `event: session\ndata: {"session_id":"..."}\n\n` | Unchanged. Not author-tagged. |
+| Done | `data: [DONE]\n\n` | Unchanged. |
+
+**Default author**
+
+The default author is `"model"` — the ADK root agent's canonical author string, matching `accumulator._is_message_event`. Single-author turns (`author == "model"` throughout) emit **zero** sidecar frames. Their wire bytes are byte-for-byte identical to the pre-author-tagging baseline.
+
+**Parser contract (stateful)**
+
+A compliant parser initializes `currentAuthor = "model"` before the stream starts. Each `event: author` sidecar updates `currentAuthor` to the sidecar's data value (ignoring empty/whitespace-only values). Each subsequent text event carries the current `currentAuthor` value. SSE's guaranteed in-order delivery makes this safe.
+
+```
+Initial state:  currentAuthor = "model"
+event: author  → data = "specialist_a"   → currentAuthor = "specialist_a"
+data: Hello    → text event, author = "specialist_a"
+data: World    → text event, author = "specialist_a"
+event: author  → data = "specialist_b"   → currentAuthor = "specialist_b"
+data: Hi       → text event, author = "specialist_b"
+```
+
+**Rendering contract**
+
+One assistant bubble per distinct author seen in a turn. Same-author fragments accumulate in the current bubble. A new bubble is spawned when the incoming event's `author` differs from the in-flight bubble's author. Author labels appear above each bubble whose author ≠ `"model"` (the default single-specialist author produces no label — UI is unchanged for single-author turns).
+
+**Back-compat guarantees**
+
+- Legacy parsers that drop unknown event types (`event: author` → silently dropped) continue to work; they render all fragments as `author = "model"` which is visually correct for current single-specialist turns.
+- `ChatResponse` (non-streaming response shape) is **unchanged** — the `author` field exists on the SSE wire only.
+- The `"author"` key in the reasoning JSON payload is optional; a `JSON.parse` client that casts to `{ text: string; seq: number }` ignores it.
+
+**Cross-references:** AH-PRD-14 §4 (SSE multi-author event contract), §6 (API contract — author field additive). Implementation: `api/src/kene_api/routers/chat.py` (`_format_sse`, `_stream_completion_sse`); `frontend/src/lib/chatApi.ts` (`StreamEvent`, `streamChatCompletion`).
+
 ---
 
 <!-- PRD MAINTENANCE NOTES

@@ -6,7 +6,7 @@ Tests cover:
 - Contentless event chunks between thought+text produce zero output bytes (CH-59 regression).
 
 These tests monkey-patch ``agent_client.stream_chat_completion`` to return a
-known sequence of (channel, text) tuples — no real Vertex AI calls are made.
+known sequence of (channel, text, author) tuples — no real Vertex AI calls are made.
 
 References: CH-60 Implementation Plan Task 5.
 """
@@ -39,8 +39,8 @@ async def _collect_sse(gen) -> list[str]:
     return frames
 
 
-async def _fake_stream(items: list[tuple[str, str]]):
-    """Async generator that yields pre-defined (channel, text) tuples."""
+async def _fake_stream(items: list[tuple[str, str, str]]):
+    """Async generator that yields pre-defined (channel, text, author) tuples."""
     for item in items:
         yield item
 
@@ -66,11 +66,11 @@ def _make_user_context():
 async def test_text_and_reasoning_interleaving():
     """Two reasoning blocks and three text blocks produce correctly framed SSE."""
     items = [
-        ("text", "Hi. "),
-        ("reasoning", "I should think step by step."),
-        ("text", "Let me "),
-        ("reasoning", "First, check assumptions."),
-        ("text", "answer."),
+        ("text", "Hi. ", "model"),
+        ("reasoning", "I should think step by step.", "model"),
+        ("text", "Let me ", "model"),
+        ("reasoning", "First, check assumptions.", "model"),
+        ("text", "answer.", "model"),
     ]
 
     async def fake_stream(**kwargs):
@@ -128,7 +128,7 @@ async def test_cancellation_path_calls_flush():
     """CancelledError triggers the finally block which calls _flush_stream_turn."""
 
     async def fake_stream_raises(**kwargs):
-        yield ("text", "partial")
+        yield ("text", "partial", "model")
         raise asyncio.CancelledError()
 
     with (

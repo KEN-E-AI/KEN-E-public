@@ -36,9 +36,18 @@ def _make_token_event(
     candidates: int = 0,
     thoughts: int = 0,
     cached: int = 0,
+    author: str | None = None,
+    event_id: str | None = None,
+    node_info: object = None,
+    isolation_scope: str | None = None,
 ) -> SimpleNamespace:
-    """Build an event with usage_metadata but no special type/author."""
-    return SimpleNamespace(
+    """Build an event with usage_metadata but no special type/author.
+
+    Extended with author, event_id, node_info, and isolation_scope kwargs to
+    support multi-author supervisor-model tests and ADK 2.0 field-tolerance
+    tests (AH-PRD-14 §7 AC-2).
+    """
+    ns = SimpleNamespace(
         usage_metadata=SimpleNamespace(
             prompt_token_count=prompt,
             candidates_token_count=candidates,
@@ -46,11 +55,18 @@ def _make_token_event(
             cached_content_token_count=cached,
         ),
         type=None,
-        author=None,
+        author=author,
         is_final_text=False,
         text="",
         content=None,
     )
+    if event_id is not None:
+        ns.id = event_id
+    if node_info is not None:
+        ns.node_info = node_info
+    if isolation_scope is not None:
+        ns.isolation_scope = isolation_scope
+    return ns
 
 
 def _make_tool_call_event() -> SimpleNamespace:
@@ -650,3 +666,317 @@ class TestBuildStreamDelta:
         delta = SessionTurnAccumulator().build_stream_delta()
         assert delta["input_tokens_total"].value == 0
         assert delta["current_context_tokens"].value == 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-task / fan-out aggregation (AH-PRD-14 §7 AC-2)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiTaskAggregation:
+    """AC-2: aggregate token / tool-call / message counts equal the sum of
+    per-specialist baselines under a multi-specialist supervisor turn."""
+
+    def test_two_specialist_tokens_equal_sum_of_baselines(self) -> None:
+        """CH-10 parity fixture per specialist: prompt=1250, cached=200, candidates=380
+        → input=1050, output=380.  Two specialists → 2100/760/0 aggregate."""
+        a = SessionTurnAccumulator()
+        # specialist_a response
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200, author="specialist_a")
+        )
+        # specialist_b response
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200, author="specialist_b")
+        )
+        assert a._input == 2100
+        assert a._output == 760
+        assert a._reasoning == 0
+
+    def test_two_specialist_delta_input_tokens_equal_sum(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200, author="specialist_a")
+        )
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200, author="specialist_b")
+        )
+        delta = a.build_delta()
+        assert delta["input_tokens_total"].value == 2100
+        assert delta["output_tokens_total"].value == 760
+
+    def test_fan_out_group_with_tool_calls_counted_once(self) -> None:
+        """Tool-call events from fan-out branches contribute to tool_call_count."""
+        a = SessionTurnAccumulator()
+        a.add_event(SimpleNamespace(
+            usage_metadata=None, type="tool_call", author="specialist_a",
+            is_final_text=False, text="", content=None,
+        ))
+        a.add_event(SimpleNamespace(
+            usage_metadata=None, type="tool_call", author="specialist_b",
+            is_final_text=False, text="", content=None,
+        ))
+        assert a.tool_call_count == 2
+
+    def test_aggregate_all_three_counters_equal_sum_of_baselines(self) -> None:
+        """AC-2 merge-blocker: tokens + tool_calls + messages all equal sum of
+        per-specialist baselines for a two-specialist fan-out turn."""
+        a = SessionTurnAccumulator()
+        # specialist_a: 1 LLM response + 1 tool call
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200, author="specialist_a")
+        )
+        a.add_event(SimpleNamespace(
+            usage_metadata=None, type="tool_call", author="specialist_a",
+            is_final_text=False, text="", content=None,
+        ))
+        # specialist_b: 1 LLM response + 1 tool call
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200, author="specialist_b")
+        )
+        a.add_event(SimpleNamespace(
+            usage_metadata=None, type="tool_call", author="specialist_b",
+            is_final_text=False, text="", content=None,
+        ))
+        assert a._input == 2100           # sum of per-specialist input tokens
+        assert a._output == 760           # sum of per-specialist output tokens
+        assert a.tool_call_count == 2     # sum of per-specialist tool calls
+        assert a.message_count_delta == 2  # sum of per-specialist LLM responses
+
+
+# ---------------------------------------------------------------------------
+# ADK 2.0 field tolerance (AH-PRD-14 §2 — tolerate node_info / isolation_scope)
+# ---------------------------------------------------------------------------
+
+
+class TestADK20FieldTolerance:
+    """Events carrying ADK 2.0 fields (node_info, isolation_scope) must not
+    be dropped — tokens counted and message counted where applicable."""
+
+    def test_event_with_node_info_tokens_counted(self) -> None:
+        a = SessionTurnAccumulator()
+        node_info = SimpleNamespace(path="coordinator@1/task_specialist@2", output_for=[])
+        ev = _make_token_event(
+            prompt=1250, candidates=380, cached=200,
+            author="task_specialist",
+            node_info=node_info,
+        )
+        a.add_event(ev)
+        assert a._input == 1050
+        assert a._output == 380
+
+    def test_event_with_isolation_scope_tokens_counted(self) -> None:
+        a = SessionTurnAccumulator()
+        ev = _make_token_event(
+            prompt=500, candidates=200,
+            author="coordinator",
+            isolation_scope="fc_abc",
+        )
+        a.add_event(ev)
+        assert a._input == 500
+        assert a._output == 200
+
+    def test_event_with_both_adk2_fields_not_dropped(self) -> None:
+        """node_info + isolation_scope together must not cause the event to be dropped."""
+        a = SessionTurnAccumulator()
+        node_info = SimpleNamespace(path="coordinator@1", output_for=["task_1"])
+        ev = _make_token_event(
+            prompt=800, candidates=300,
+            author="coordinator",
+            node_info=node_info,
+            isolation_scope="fc_xyz",
+        )
+        a.add_event(ev)
+        assert a._input == 800
+        assert a._output == 300
+
+    def test_llm_authored_event_with_node_info_counted_in_message_count(self) -> None:
+        """LLM-authored events with node_info and usage_metadata contribute +1 to
+        message_count_delta (non-user, non-model author with usage_metadata)."""
+        a = SessionTurnAccumulator()
+        node_info = SimpleNamespace(path="task_specialist@1", output_for=[])
+        ev = _make_token_event(
+            prompt=400, candidates=150,
+            author="task_specialist",
+            node_info=node_info,
+        )
+        a.add_event(ev)
+        assert a.message_count_delta == 1
+
+
+# ---------------------------------------------------------------------------
+# Defensive event-identity deduplification (AH-PRD-14 §2)
+# ---------------------------------------------------------------------------
+
+
+class TestEventIdentityDedupe:
+    """Events with the same id must only fold into counters once."""
+
+    def test_duplicate_event_id_not_double_counted_tokens(self) -> None:
+        a = SessionTurnAccumulator()
+        ev = _make_token_event(prompt=1250, candidates=380, cached=200, event_id="evt-1")
+        a.add_event(ev)
+        a.add_event(ev)  # replay of the same event
+        assert a._input == 1050
+        assert a._output == 380
+
+    def test_duplicate_event_id_not_double_counted_message(self) -> None:
+        a = SessionTurnAccumulator()
+        ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=100, candidates_token_count=50,
+                thoughts_token_count=0, cached_content_token_count=0,
+            ),
+            type=None, author="model", is_final_text=False, text="", content=None,
+            id="evt-model-1",
+        )
+        a.add_event(ev)
+        a.add_event(ev)
+        assert a.message_count_delta == 1
+
+    def test_different_event_ids_both_counted(self) -> None:
+        a = SessionTurnAccumulator()
+        ev1 = _make_token_event(prompt=500, candidates=100, event_id="evt-a")
+        ev2 = _make_token_event(prompt=500, candidates=100, event_id="evt-b")
+        a.add_event(ev1)
+        a.add_event(ev2)
+        assert a._input == 1000
+        assert a._output == 200
+
+    def test_event_without_id_falls_through_dedupe(self) -> None:
+        """Events with no id attribute bypass dedupe and are counted normally."""
+        a = SessionTurnAccumulator()
+        ev = _make_token_event(prompt=300, candidates=100)  # no event_id
+        a.add_event(ev)
+        a.add_event(ev)
+        # No id → no dedupe → both folds counted (preserves current behaviour)
+        assert a._input == 600
+        assert a._output == 200
+
+    def test_duplicate_event_not_pushed_to_rolling_buffer(self) -> None:
+        """A replayed event must not reach _event_buffer — otherwise the
+        compaction window-token helper would double-count it."""
+        a = SessionTurnAccumulator()
+        ev = _make_token_event(prompt=100, candidates=50, event_id="buf-evt-1")
+        a.add_event(ev)
+        a.add_event(ev)  # replay
+        assert len(a._event_buffer) == 1
+
+    def test_replayed_compaction_event_not_double_processed(self) -> None:
+        """A compaction event replayed with the same id must not double-increment
+        compaction_count_delta or overwrite latest_summary."""
+        a = SessionTurnAccumulator()
+        ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace(total_token_count=800),
+            type="compaction_summary",
+            author=None,
+            is_final_text=False,
+            text="",
+            content="First summary",
+            id="compaction-1",
+        )
+        a.add_event(ev)
+        a.add_event(ev)  # replay
+        assert a.compaction_count_delta == 1
+        assert a.latest_summary == "First summary"
+
+
+# ---------------------------------------------------------------------------
+# Multi-author message-count (AH-PRD-14 §7 AC-2 / Decision 2)
+# ---------------------------------------------------------------------------
+
+
+class TestMultiAuthorMessageCount:
+    """Non-user, non-model authors carrying usage_metadata contribute +1 to
+    message_count_delta.  Tool-call events and events without usage_metadata
+    from the same authors do not."""
+
+    def test_coordinator_with_usage_metadata_increments(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_event(_make_token_event(prompt=100, candidates=50, author="coordinator"))
+        assert a.message_count_delta == 1
+
+    def test_specialist_a_with_usage_metadata_increments(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_event(_make_token_event(prompt=100, candidates=50, author="specialist_a"))
+        assert a.message_count_delta == 1
+
+    def test_specialist_b_with_usage_metadata_increments(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_event(_make_token_event(prompt=100, candidates=50, author="specialist_b"))
+        assert a.message_count_delta == 1
+
+    def test_task_specialist_with_usage_metadata_increments(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_event(_make_token_event(prompt=100, candidates=50, author="task_specialist"))
+        assert a.message_count_delta == 1
+
+    def test_all_four_supervisor_authors_each_increment_once(self) -> None:
+        """Four distinct supervisor-authored LLM responses contribute 4 to message_count."""
+        a = SessionTurnAccumulator()
+        for author in ("coordinator", "specialist_a", "specialist_b", "task_specialist"):
+            a.add_event(_make_token_event(prompt=100, candidates=50, author=author))
+        assert a.message_count_delta == 4
+
+    def test_tool_call_from_supervisor_author_does_not_increment(self) -> None:
+        """type='tool_call' events are excluded regardless of author."""
+        a = SessionTurnAccumulator()
+        for author in ("coordinator", "specialist_a", "specialist_b", "task_specialist"):
+            a.add_event(SimpleNamespace(
+                usage_metadata=None, type="tool_call", author=author,
+                is_final_text=False, text="", content=None,
+            ))
+        assert a.message_count_delta == 0
+
+    def test_tool_call_with_usage_metadata_does_not_increment(self) -> None:
+        """tool_call events are excluded even when they carry usage_metadata —
+        the type guard takes precedence over the usage_metadata presence check."""
+        a = SessionTurnAccumulator()
+        ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=100, candidates_token_count=0,
+                thoughts_token_count=0, cached_content_token_count=0,
+            ),
+            type="tool_call",
+            author="coordinator",
+            is_final_text=False,
+            text="",
+            content=None,
+        )
+        a.add_event(ev)
+        assert a.message_count_delta == 0
+        assert a.tool_call_count == 1
+
+    def test_non_llm_author_with_usage_metadata_increments(self) -> None:
+        """Documents the new _is_message_event semantics: any non-user, non-model
+        author (including 'system') carrying usage_metadata and not type='tool_call'
+        contributes +1.  In practice, ADK 'system' events do not carry
+        usage_metadata, so this only fires for LLM-authored responses; it is
+        explicit here to pin the structural rule."""
+        a = SessionTurnAccumulator()
+        a.add_event(SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=100, candidates_token_count=50,
+                thoughts_token_count=0, cached_content_token_count=0,
+            ),
+            type=None,
+            author="system",
+            is_final_text=False,
+            text="",
+            content=None,
+        ))
+        assert a.message_count_delta == 1
+
+    def test_supervisor_author_without_usage_metadata_does_not_increment(self) -> None:
+        """Non-user, non-model authors without usage_metadata do not count."""
+        a = SessionTurnAccumulator()
+        for author in ("coordinator", "specialist_a"):
+            a.add_event(_make_author_event(author))  # no usage_metadata
+        assert a.message_count_delta == 0
+
+    def test_legacy_user_model_authors_still_increment_without_usage_metadata(self) -> None:
+        """Preserves legacy behaviour: user and model count without needing usage_metadata."""
+        a = SessionTurnAccumulator()
+        a.add_event(_make_author_event("user"))   # no usage_metadata
+        a.add_event(_make_author_event("model"))  # no usage_metadata
+        assert a.message_count_delta == 2

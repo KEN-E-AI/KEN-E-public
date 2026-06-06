@@ -77,7 +77,7 @@ describe("streamChatCompletion — SSE parser", () => {
 
   test("plain data line yields text event", async () => {
     const events = await driveStream("data: hello\n\ndata: [DONE]\n\n");
-    expect(events).toEqual([{ type: "text", text: "hello" }]);
+    expect(events).toEqual([{ type: "text", text: "hello", author: "model" }]);
   });
 
   test("event: reasoning + data yields reasoning event", async () => {
@@ -85,7 +85,9 @@ describe("streamChatCompletion — SSE parser", () => {
     const events = await driveStream(
       `event: reasoning\ndata: ${payload}\n\ndata: [DONE]\n\n`,
     );
-    expect(events).toEqual([{ type: "reasoning", text: "step 1" }]);
+    expect(events).toEqual([
+      { type: "reasoning", text: "step 1", author: "model" },
+    ]);
   });
 
   test("unknown event type is silently dropped", async () => {
@@ -93,7 +95,7 @@ describe("streamChatCompletion — SSE parser", () => {
       "event: unknown\ndata: x\n\ndata: answer\n\ndata: [DONE]\n\n",
     );
     // Only the default "answer" text line should survive; unknown event dropped.
-    expect(events).toEqual([{ type: "text", text: "answer" }]);
+    expect(events).toEqual([{ type: "text", text: "answer", author: "model" }]);
   });
 
   test("malformed reasoning JSON is silently dropped (no throw)", async () => {
@@ -108,7 +110,7 @@ describe("streamChatCompletion — SSE parser", () => {
       "data: before\n\ndata: [DONE]\n\ndata: after\n\n",
     );
     // "after" should not appear — generator returned on [DONE]
-    expect(events).toEqual([{ type: "text", text: "before" }]);
+    expect(events).toEqual([{ type: "text", text: "before", author: "model" }]);
   });
 
   test("interleaved text and reasoning events in order", async () => {
@@ -125,11 +127,11 @@ describe("streamChatCompletion — SSE parser", () => {
     const events = await driveStream(raw);
 
     expect(events).toEqual([
-      { type: "text", text: "Hi. " },
-      { type: "reasoning", text: "thinking…" },
-      { type: "text", text: "Let me " },
-      { type: "reasoning", text: "more thoughts" },
-      { type: "text", text: "answer." },
+      { type: "text", text: "Hi. ", author: "model" },
+      { type: "reasoning", text: "thinking…", author: "model" },
+      { type: "text", text: "Let me ", author: "model" },
+      { type: "reasoning", text: "more thoughts", author: "model" },
+      { type: "text", text: "answer.", author: "model" },
     ]);
   });
 
@@ -143,8 +145,8 @@ describe("streamChatCompletion — SSE parser", () => {
 
     const events = await driveStream(raw);
     expect(events).toEqual([
-      { type: "reasoning", text: "reason" },
-      { type: "text", text: "plain text" },
+      { type: "reasoning", text: "reason", author: "model" },
+      { type: "text", text: "plain text", author: "model" },
     ]);
   });
 
@@ -154,7 +156,9 @@ describe("streamChatCompletion — SSE parser", () => {
     const events = await driveStream(
       "data: line one\ndata: line two\n\ndata: [DONE]\n\n",
     );
-    expect(events).toEqual([{ type: "text", text: "line one\nline two" }]);
+    expect(events).toEqual([
+      { type: "text", text: "line one\nline two", author: "model" },
+    ]);
   });
 
   test("blank data lines round-trip a paragraph break", async () => {
@@ -163,7 +167,9 @@ describe("streamChatCompletion — SSE parser", () => {
     const events = await driveStream(
       "data: para one\ndata: \ndata: para two\n\ndata: [DONE]\n\n",
     );
-    expect(events).toEqual([{ type: "text", text: "para one\n\npara two" }]);
+    expect(events).toEqual([
+      { type: "text", text: "para one\n\npara two", author: "model" },
+    ]);
   });
 
   test("multi-line text split across reads still joins correctly", async () => {
@@ -188,7 +194,9 @@ describe("streamChatCompletion — SSE parser", () => {
     const events = await collectEvents(
       streamChatCompletion([{ role: "user", content: "hi" }]),
     );
-    expect(events).toEqual([{ type: "text", text: "first\nsecond" }]);
+    expect(events).toEqual([
+      { type: "text", text: "first\nsecond", author: "model" },
+    ]);
   });
 
   test("event: session + data yields session event before text events", async () => {
@@ -198,7 +206,7 @@ describe("streamChatCompletion — SSE parser", () => {
     );
     expect(events).toEqual([
       { type: "session", sessionId: "real_42" },
-      { type: "text", text: "hello" },
+      { type: "text", text: "hello", author: "model" },
     ]);
   });
 

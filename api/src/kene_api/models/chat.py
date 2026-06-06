@@ -5,7 +5,7 @@ No cost fields anywhere in this module — per-session cost is out of scope
 """
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -160,6 +160,16 @@ class TodoItem(BaseModel):
     completed: bool = False
     completed_at: datetime | None = None
 
+    # Supervisor-orchestration fields (AH-PRD-14 §4 / AH-122)
+    assignee: str | None = None
+    query: str | None = None
+    criteria: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+    result_key: str | None = None
+    status: Literal[
+        "pending", "dispatched", "awaiting_review", "completed", "failed"
+    ] = "pending"
+
 
 class TodoList(BaseModel):
     """Agent-authored todo list stored in session.state["todo_lists"][list_id].
@@ -217,7 +227,9 @@ class CreateCategoryRequest(BaseModel):
 
 
 class AssignCategoryRequest(BaseModel):
-    category_id: str | None = Field(default=None, max_length=100)  # None → Uncategorized
+    category_id: str | None = Field(
+        default=None, max_length=100
+    )  # None → Uncategorized
 
 
 class DeleteSessionResponse(BaseModel):

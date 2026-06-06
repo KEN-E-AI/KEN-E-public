@@ -114,7 +114,7 @@ async def test_stream_chat_completion(agent_client, test_user):
     ]
 
     chunks = []
-    async for channel, text in agent_client.stream_chat_completion(
+    async for channel, text, _author in agent_client.stream_chat_completion(
         messages=messages, user_context=test_user, session_id="test-stream-session"
     ):
         chunks.append((channel, text))

@@ -152,13 +152,17 @@ def _contains_function_event_str(text: str) -> bool:
     )
 
 
-def _format_sse(channel: str, text: str, seq: int = 0) -> str:
+def _format_sse(channel: str, text: str, seq: int = 0, author: str = "model") -> str:
     """Format a Server-Sent Event frame for the given channel.
 
     Args:
-        channel: "text" or "reasoning".
-        text: The payload text.
+        channel: "text", "reasoning", or "author".
+        text: The payload text (for the "author" channel, this IS the author name).
         seq: Monotonically increasing sequence number (only meaningful for reasoning).
+        author: The author identity string; defaults to ``"model"``.  When the
+            channel is ``"reasoning"`` and ``author`` differs from ``"model"``,
+            the JSON payload includes an ``"author"`` key so fan-out turns can be
+            attributed to the emitting specialist in the UI.
 
     Returns:
         A complete SSE frame string ready to be yielded to the client.
@@ -168,12 +172,20 @@ def _format_sse(channel: str, text: str, seq: int = 0) -> str:
     emits one ``data:`` prefix per line per the SSE spec, preventing a
     multi-line model fragment from introducing a spurious event boundary.
     """
+    if channel == "author":
+        # Strip newlines so a malformed agent author name cannot inject synthetic
+        # SSE frames (e.g. "name\n\nevent: session\ndata: ...").
+        safe_author = text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+        return f"event: author\ndata: {safe_author}\n\n"
     if channel == "reasoning":
-        return f"event: reasoning\ndata: {json.dumps({'text': text, 'seq': seq})}\n\n"
+        payload: dict[str, object] = {"text": text, "seq": seq}
+        if author != "model":
+            payload["author"] = author
+        return f"event: reasoning\ndata: {json.dumps(payload)}\n\n"
     # SSE spec §9.2.6: multi-line data uses one "data:" prefix per line.
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    payload = "".join(f"data: {line}\n" for line in lines)
-    return f"{payload}\n"
+    data = "".join(f"data: {line}\n" for line in lines)
+    return f"{data}\n"
 
 
 async def load_organization_context_from_neo4j(account_id: str) -> str | None:
@@ -2043,7 +2055,7 @@ class AgentEngineClient:
         conversation_name: str | None = None,
         account_id: str | None = None,
         accumulator: SessionTurnAccumulator | None = None,
-    ) -> AsyncGenerator[tuple[str, str], None]:
+    ) -> AsyncGenerator[tuple[str, str, str], None]:
         """Stream a chat completion from the Agent Engine using agent_engines API.
 
         When `accumulator` is supplied, every raw chunk is folded into it via
@@ -2051,14 +2063,17 @@ class AgentEngineClient:
         stream still flushes partial token counts (CH-PRD-01 §7 AC-8).
 
         Yields:
-            Tuples of ``(channel, text)`` where ``channel`` is one of
+            Tuples of ``(channel, text, author)`` where ``channel`` is one of
             ``"text"``, ``"reasoning"``, or ``"session"`` (emitted at most once when a
-            ``pending_`` placeholder is resolved to the real session id).
+            ``pending_`` placeholder is resolved to the real session id), and
+            ``author`` identifies the emitting specialist (``"model"`` for the
+            default single-agent case).
         """
         if not self.agent_engine:
             yield (
                 "text",
                 "I'm sorry, but I'm unable to process your request at the moment. Please try again later.",
+                "model",
             )
             return
 
@@ -2066,7 +2081,7 @@ class AgentEngineClient:
             # Get the latest message
             latest_message = messages[-1] if messages else None
             if not latest_message:
-                yield ("text", "I didn't receive any message to process.")
+                yield ("text", "I didn't receive any message to process.", "model")
                 return
 
             user_input = latest_message.content
@@ -2089,7 +2104,7 @@ class AgentEngineClient:
             # session event so the client can swap its URL and resume marker before
             # any text or reasoning frames arrive (CH-62).
             if incoming_session_id != actual_session_id:
-                yield ("session", actual_session_id)
+                yield ("session", actual_session_id, "model")
             elif incoming_session_id:
                 # Reused an existing session — refresh its GA credentials so a
                 # connection made after the session was created is picked up
@@ -2180,6 +2195,8 @@ class AgentEngineClient:
                             accumulator.add_stream_chunk(chunk)
 
                         if isinstance(chunk, dict):
+                            # Extract author from the chunk; default to "model".
+                            author = chunk.get("author") or "model"
                             # Handle actual dictionary response
                             # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
                             if "content" in chunk and isinstance(
@@ -2201,13 +2218,13 @@ class AgentEngineClient:
                                             and part.get("thought", False)
                                             and "text" in part
                                         ):
-                                            yield ("reasoning", part["text"])
+                                            yield ("reasoning", part["text"], author)
                                         elif isinstance(part, dict) and "text" in part:
-                                            yield ("text", part["text"])
+                                            yield ("text", part["text"], author)
                                         else:
-                                            yield ("text", str(part))
+                                            yield ("text", str(part), author)
                                 else:
-                                    yield ("text", str(content))
+                                    yield ("text", str(content), author)
                             # Handle direct structure: {'parts': [{'text': '...'}]}
                             elif "parts" in chunk and isinstance(chunk["parts"], list):
                                 for part in chunk["parts"]:
@@ -2222,13 +2239,13 @@ class AgentEngineClient:
                                         and part.get("thought", False)
                                         and "text" in part
                                     ):
-                                        yield ("reasoning", part["text"])
+                                        yield ("reasoning", part["text"], author)
                                     elif isinstance(part, dict) and "text" in part:
-                                        yield ("text", part["text"])
+                                        yield ("text", part["text"], author)
                                     else:
-                                        yield ("text", str(part))
+                                        yield ("text", str(part), author)
                             elif "content" in chunk:
-                                yield ("text", str(chunk["content"]))
+                                yield ("text", str(chunk["content"]), author)
                             else:
                                 # CH-59: a dict chunk with no `content`/`parts` is a
                                 # contentless ADK control event (e.g. the state-delta
@@ -2278,11 +2295,11 @@ class AgentEngineClient:
                                                 isinstance(part, dict)
                                                 and "text" in part
                                             ):
-                                                yield ("text", part["text"])
+                                                yield ("text", part["text"], "model")
                                     else:
-                                        yield ("text", chunk)
+                                        yield ("text", chunk, "model")
                                 except (ValueError, SyntaxError):
-                                    yield ("text", chunk)
+                                    yield ("text", chunk, "model")
 
                             # Check if the chunk contains both function data and text
                             elif _contains_function_event_str(chunk):
@@ -2308,7 +2325,7 @@ class AgentEngineClient:
 
                                     # Only yield the text part if it exists and isn't empty
                                     if text_part:
-                                        yield ("text", text_part)
+                                        yield ("text", text_part, "model")
                                 else:
                                     # Try simpler approach: split by the last }} and take what comes after
                                     # This handles cases where the regex might fail
@@ -2318,16 +2335,16 @@ class AgentEngineClient:
                                             # Check if the remaining part isn't another JSON object
                                             remaining = parts[1].strip()
                                             if not remaining.startswith("{"):
-                                                yield ("text", remaining)
+                                                yield ("text", remaining, "model")
                                     elif not chunk.strip().startswith("{"):
                                         # If it doesn't start with {, it's probably just text
-                                        yield ("text", chunk)
+                                        yield ("text", chunk, "model")
                             else:
-                                yield ("text", chunk)
+                                yield ("text", chunk, "model")
                         elif hasattr(chunk, "content"):
-                            yield ("text", str(chunk.content))
+                            yield ("text", str(chunk.content), "model")
                         else:
-                            yield ("text", str(chunk))
+                            yield ("text", str(chunk), "model")
                     return
 
                 # Fallback: use regular query and yield the result
@@ -2362,37 +2379,41 @@ class AgentEngineClient:
                         response = self.agent_engine(formatted_input)
 
                 else:
-                    yield f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}"
+                    yield (
+                        "text",
+                        f"Unable to find a valid query method on the Agent Engine. Available methods: {', '.join(available_methods[:10])}",
+                        "model",
+                    )
                     return
 
                 logger.debug(f"Streaming response received: {type(response)}")
 
                 # Process and yield the response
                 if isinstance(response, str):
-                    yield response
+                    yield ("text", response, "model")
                 elif hasattr(response, "content"):
-                    yield str(response.content)
+                    yield ("text", str(response.content), "model")
                 elif hasattr(response, "text"):
-                    yield str(response.text)
+                    yield ("text", str(response.text), "model")
                 elif isinstance(response, dict):
                     if "content" in response:
-                        yield str(response["content"])
+                        yield ("text", str(response["content"]), "model")
                     elif "text" in response:
-                        yield str(response["text"])
+                        yield ("text", str(response["text"]), "model")
                     elif "message" in response:
-                        yield str(response["message"])
+                        yield ("text", str(response["message"]), "model")
                     else:
-                        yield str(response)
+                        yield ("text", str(response), "model")
                 else:
-                    yield str(response)
+                    yield ("text", str(response), "model")
 
             except Exception as call_error:
                 logger.error(f"Error calling Agent Engine for streaming: {call_error}")
-                yield f"Error processing your request: {call_error!s}"
+                yield ("text", f"Error processing your request: {call_error!s}", "model")
 
         except Exception as e:
             logger.error(f"Error in streaming chat completion: {e}")
-            yield f"Error: Failed to process chat request - {e!s}"
+            yield ("text", f"Error: Failed to process chat request - {e!s}", "model")
 
 
 # Global client instance
@@ -2554,7 +2575,8 @@ async def _stream_completion_sse(
     resolved_session_id = session_id
     try:
         _reasoning_seq = 0
-        async for channel, text in agent_client.stream_chat_completion(
+        _current_author = "model"
+        async for channel, text, author in agent_client.stream_chat_completion(
             messages=messages,
             user_context=user_context,
             session_id=session_id,
@@ -2569,9 +2591,15 @@ async def _stream_completion_sse(
                 resolved_session_id = text
                 yield f"event: session\ndata: {json.dumps({'session_id': text})}\n\n"
             elif channel == "reasoning":
-                yield _format_sse("reasoning", text, _reasoning_seq)
+                yield _format_sse("reasoning", text, _reasoning_seq, author=author)
                 _reasoning_seq += 1
             else:
+                # Emit an author sidecar frame when the emitting specialist changes.
+                # Single-author turns (author always "model") produce zero sidecar
+                # frames, preserving backward compatibility with existing clients.
+                if author != _current_author:
+                    yield _format_sse("author", author)
+                    _current_author = author
                 yield _format_sse("text", text, 0)
         yield "data: [DONE]\n\n"
     except (asyncio.CancelledError, GeneratorExit, Exception):

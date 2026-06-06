@@ -44,8 +44,8 @@ def _fake_user_context(user_id: str = "user_1") -> MagicMock:
 
 
 async def _collect(
-    gen: AsyncGenerator[tuple[str, str], None],
-) -> list[tuple[str, str]]:
+    gen: AsyncGenerator[tuple[str, str, str], None],
+) -> list[tuple[str, str, str]]:
     return [t async for t in gen]
 
 
@@ -96,10 +96,10 @@ class TestStreamChatCompletionSessionChannel:
                 )
             )
 
-        # The first tuple must be ("session", "real_session_42").
+        # The first tuple must be ("session", "real_session_42", "model").
         assert len(tuples) >= 1
-        assert tuples[0] == ("session", "real_session_42"), (
-            f"Expected first tuple ('session', 'real_session_42'), got {tuples[0]}"
+        assert tuples[0] == ("session", "real_session_42", "model"), (
+            f"Expected first tuple ('session', 'real_session_42', 'model'), got {tuples[0]}"
         )
 
     async def test_no_session_tuple_when_ids_match(self):
@@ -167,7 +167,7 @@ class TestStreamChatCompletionSessionChannel:
         # None != "brand_new_99" → session tuple is yielded (correct per AC).
         session_tuples = [t for t in tuples if t[0] == "session"]
         assert len(session_tuples) == 1
-        assert session_tuples[0] == ("session", "brand_new_99")
+        assert session_tuples[0] == ("session", "brand_new_99", "model")
 
     async def test_session_tuple_is_first(self):
         """The session tuple precedes any text tuples in the output sequence."""

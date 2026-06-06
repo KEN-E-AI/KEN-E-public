@@ -904,7 +904,7 @@ the **deferred** target shape (each tagged with `emission_status` and a
 compliance — including that the emitted-vs-deferred labelling matches this spec — and
 is wired into the standard pytest run.
 
-**Supervisor-orchestration dispatch shape (AH-PRD-05, target post-ADK-2.0 unpin):** Multi-task supervisor-orchestrated turns produce a different span hierarchy. See [AH-PRD-05-trace-contract-diff.md](design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md) for the MER-E contract diff. Key differences: the root agent span contains coordinator task-ledger spans; each task produces a `task_delegation` sub-span with `usage_metadata` on the outer stream natively; fan-out branches are `fanout` spans containing parallel `task_delegation` children.
+**Supervisor-orchestration dispatch shape (AH-PRD-05, target post-ADK-2.0 unpin):** Multi-task supervisor-orchestrated turns produce a different span hierarchy. See [AH-PRD-05-trace-contract-diff.md](design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md) for the MER-E contract diff. Key differences: the root agent span contains coordinator task-ledger spans; each task produces a `task_delegation` sub-span with `usage_metadata` on the outer stream natively; fan-out branches are `fanout` spans containing parallel `task_delegation` children. The canonical staging fixture for MER-E extractor validation is committed at `app/adk/tracking/tests/fixtures/supervisor_orchestration_trace.json`; the schema-conformance test suite that locks the emission-status honesty contract and every §3.1 / §3.2 attribute is at `app/adk/tracking/tests/test_supervisor_orchestration_fixture.py`.
 
 ---
 

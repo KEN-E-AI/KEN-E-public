@@ -353,8 +353,8 @@ export async function postChatCompletion(
  * Unknown SSE event types are silently dropped.
  */
 export type StreamEvent =
-  | { type: "text"; text: string }
-  | { type: "reasoning"; text: string }
+  | { type: "text"; text: string; author?: string }
+  | { type: "reasoning"; text: string; author?: string }
   | { type: "session"; sessionId: string };
 
 /**
@@ -428,11 +428,16 @@ export async function* streamChatCompletion(
   // restores embedded newlines — without it, line and paragraph breaks in the
   // streamed answer collapse (the message bubble renders `whitespace-pre-wrap`).
   let currentEvent = "message";
+  let currentAuthor = "model";
   let dataLines: string[] = [];
 
   // Build the StreamEvent for a completed event block, or null when it should
   // be dropped (unknown event type, malformed reasoning JSON).
-  const buildEvent = (eventType: string, data: string): StreamEvent | null => {
+  const buildEvent = (
+    eventType: string,
+    data: string,
+    author: string,
+  ): StreamEvent | null => {
     if (eventType === "session") {
       try {
         const parsed = JSON.parse(data) as { session_id: string };
@@ -451,8 +456,16 @@ export async function* streamChatCompletion(
     }
     if (eventType === "reasoning") {
       try {
-        const parsed = JSON.parse(data) as { text: string; seq: number };
-        return { type: "reasoning", text: parsed.text };
+        const parsed = JSON.parse(data) as {
+          text: string;
+          seq: number;
+          author?: string;
+        };
+        return {
+          type: "reasoning",
+          text: parsed.text,
+          author: parsed.author ?? author,
+        };
       } catch {
         // Malformed reasoning JSON — drop silently, no UI noise.
         console.debug(
@@ -463,7 +476,7 @@ export async function* streamChatCompletion(
       }
     }
     if (eventType === "message") {
-      return { type: "text", text: data };
+      return { type: "text", text: data, author };
     }
     // Unknown event types (e.g. "event: ping") — dropped.
     return null;
@@ -487,7 +500,15 @@ export async function* streamChatCompletion(
             if (data === "[DONE]") {
               return;
             }
-            const event = buildEvent(currentEvent, data);
+            // Handle author sidecar: update tracking state, do not yield.
+            if (currentEvent === "author") {
+              if (data.trim()) {
+                currentAuthor = data.trim();
+              }
+              currentEvent = "message";
+              continue;
+            }
+            const event = buildEvent(currentEvent, data, currentAuthor);
             if (event) {
               yield event;
             }
@@ -512,9 +533,15 @@ export async function* streamChatCompletion(
     if (dataLines.length > 0) {
       const data = dataLines.join("\n");
       if (data !== "[DONE]") {
-        const event = buildEvent(currentEvent, data);
-        if (event) {
-          yield event;
+        if (currentEvent === "author") {
+          if (data.trim()) {
+            currentAuthor = data.trim();
+          }
+        } else {
+          const event = buildEvent(currentEvent, data, currentAuthor);
+          if (event) {
+            yield event;
+          }
         }
       }
     }

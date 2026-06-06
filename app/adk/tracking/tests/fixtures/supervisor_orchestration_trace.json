@@ -1,0 +1,144 @@
+{
+  "trace_id": "supervisor_orchestration_ah_125_sample",
+  "description": "Canonical fixture for the AH-PRD-05 supervisor-orchestration trace contract. Models §2.2 of AH-PRD-05-trace-contract-diff.md: one sequential task_delegation (task-mode call-and-return), a fanout span with two parallel task_delegation children (ctx.run_node + asyncio.gather), and a synthesis task_delegation that depends on both fan-out result keys. Every supervisor-specific span carries emission_status='deferred' + a deferred_reason referencing AH-PRD-05 (the runtime does not yet emit any of this — it is the target shape gated on AH-PRD-13 + AH-PRD-05). The root ken_e span is emission_status='emitted' since that behavior is unchanged. node_path values in each task_delegation's summary are sourced verbatim from the AH-99 probe-1 / probe-4 evidence (docs/spike-adk2-supervisor-orchestration-live.md §4). See docs/trace-structure-spec.md and docs/design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md for the authoritative spec. MER-E extractors MUST treat all 'deferred' spans as absent in live traces until AH-PRD-05 ships. Conformance test: app/adk/tracking/tests/test_supervisor_orchestration_fixture.py.",
+  "spans": [
+    {
+      "name": "ken_e",
+      "emission_status": "emitted",
+      "summary": {
+        "agent_name": "ken_e",
+        "agent_kind": "root"
+      },
+      "children": [
+        {
+          "name": "task_delegation",
+          "emission_status": "deferred",
+          "deferred_reason": "AH-PRD-05 not yet shipped; target shape only — runtime emission gated on AH-PRD-13 + AH-PRD-05. This task_delegation represents a sequential (non-fan-out) coordinator delegation to a task-mode specialist. node_path pattern sourced from AH-99 probe-1 evidence (docs/spike-adk2-supervisor-orchestration-live.md §4); UUID replaced with synthetic value.",
+          "summary": {
+            "task_id": "task_001_analyze_traffic",
+            "assignee": "google_analytics_specialist",
+            "query": "Analyze website traffic trends for the last 30 days and identify the top 3 acquisition channels.",
+            "criteria": "Report must include trend direction, percentage change, and channel attribution.",
+            "task_status": "completed",
+            "cache_hit": false,
+            "node_path": "coordinator@1/task_specialist@adk-00000000-0000-0000-0000-000000000001"
+          },
+          "children": [
+            {
+              "name": "google_analytics_specialist",
+              "emission_status": "deferred",
+              "deferred_reason": "AH-PRD-05 not yet shipped; mode='task' specialist run is the target shape only.",
+              "summary": {
+                "specialist_name": "google_analytics_specialist",
+                "agent_kind": "task_mode",
+                "task_id": "task_001_analyze_traffic"
+              }
+            }
+          ]
+        },
+        {
+          "name": "fanout",
+          "emission_status": "deferred",
+          "deferred_reason": "AH-PRD-05 not yet shipped; target shape only — runtime emission gated on AH-PRD-13 + AH-PRD-05. This fanout span represents a ctx.run_node + asyncio.gather parallel execution group with two branches. task_ids matches the child task_delegation span task_ids. node_path values sourced from AH-99 probe-4 evidence (docs/spike-adk2-supervisor-orchestration-live.md §4).",
+          "summary": {
+            "task_ids": ["task_002_performance_data", "task_003_competitor_data"],
+            "branch_count": 2,
+            "all_succeeded": true,
+            "node_path": "coordinator@1"
+          },
+          "children": [
+            {
+              "name": "task_delegation",
+              "emission_status": "deferred",
+              "deferred_reason": "AH-PRD-05 not yet shipped; target shape only — fan-out branch A. node_path sourced from AH-99 probe-4 specialist_a evidence.",
+              "summary": {
+                "task_id": "task_002_performance_data",
+                "assignee": "google_analytics_specialist",
+                "query": "Pull conversion rate and bounce rate metrics for the last 30 days broken down by device type.",
+                "criteria": "Must include mobile, desktop, and tablet segments with absolute and relative values.",
+                "task_status": "completed",
+                "cache_hit": true,
+                "node_path": "specialist_a@1"
+              },
+              "children": [
+                {
+                  "name": "google_analytics_specialist",
+                  "emission_status": "deferred",
+                  "deferred_reason": "AH-PRD-05 not yet shipped; mode='task' specialist run is the target shape only.",
+                  "summary": {
+                    "specialist_name": "google_analytics_specialist",
+                    "agent_kind": "task_mode",
+                    "task_id": "task_002_performance_data"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "task_delegation",
+              "emission_status": "deferred",
+              "deferred_reason": "AH-PRD-05 not yet shipped; target shape only — fan-out branch B. node_path sourced from AH-99 probe-4 specialist_b evidence.",
+              "summary": {
+                "task_id": "task_003_competitor_data",
+                "assignee": "google_analytics_specialist",
+                "query": "Retrieve search visibility and keyword ranking data to benchmark against competitive landscape.",
+                "criteria": "Must cover top 20 branded and non-branded keywords with position trend.",
+                "task_status": "completed",
+                "cache_hit": false,
+                "node_path": "specialist_b@1"
+              },
+              "children": [
+                {
+                  "name": "google_analytics_specialist",
+                  "emission_status": "deferred",
+                  "deferred_reason": "AH-PRD-05 not yet shipped; mode='task' specialist run is the target shape only.",
+                  "summary": {
+                    "specialist_name": "google_analytics_specialist",
+                    "agent_kind": "task_mode",
+                    "task_id": "task_003_competitor_data"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "task_delegation",
+          "emission_status": "deferred",
+          "deferred_reason": "AH-PRD-05 not yet shipped; target shape only — this task_delegation is the synthesis step that depends_on both fan-out result keys (task_002_performance_data_result + task_003_competitor_data_result). Its query template references upstream result keys, demonstrating the fan-in synthesis pattern.",
+          "summary": {
+            "task_id": "task_004_synthesis",
+            "assignee": "google_analytics_specialist",
+            "query": "Synthesise the traffic analysis from task_002_performance_data_result and task_003_competitor_data_result into a concise executive summary with 3 actionable recommendations.",
+            "criteria": "Must reference specific metrics from both upstream results and prioritise recommendations by expected impact.",
+            "task_status": "completed",
+            "cache_hit": false,
+            "node_path": "coordinator@1/task_specialist@adk-c1d2e3f4-0000-0000-0000-000000000004"
+          },
+          "children": [
+            {
+              "name": "google_analytics_specialist",
+              "emission_status": "deferred",
+              "deferred_reason": "AH-PRD-05 not yet shipped; mode='task' specialist run is the target shape only.",
+              "summary": {
+                "specialist_name": "google_analytics_specialist",
+                "agent_kind": "task_mode",
+                "task_id": "task_004_synthesis"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "agent_id": "ken_e_chatbot",
+    "agent_version": "v1.0.0",
+    "account_id": "acc_sample_ah_125",
+    "session_id": "sess_00000000000000000000000125",
+    "environment": "staging",
+    "rollout_percentage": 100,
+    "feature_flags": {
+      "supervisor_orchestration": true
+    }
+  }
+}

@@ -1,6 +1,7 @@
 """Per-turn in-memory delta accumulator for the Chat component.
 
 References: CH-PRD-01 §5.2 (reference implementation), §7 AC-6, AC-9, AC-10.
+AH-PRD-14 §2, §7 AC-2: multi-task / fan-out aggregation under one invocation_id.
 
 The `SessionTurnAccumulator` is instantiated once per streaming completion
 request, receives every ADK event via `add_event(event)` as they stream, and
@@ -27,6 +28,13 @@ Design decisions (per CH-12 Implementation Plan):
  - `build_delta()` is one-shot by contract. CH-13 (callback wiring) must
    guarantee a single call per turn. This is documented, not enforced, so
    the state remains readable for testing.
+ - Multi-task / fan-out aggregation (AH-PRD-14 §2): `_seen_event_ids` dedupes
+   replayed events; `_is_message_event` counts both legacy `user`/`model`
+   authors and any non-user author that carries `usage_metadata` and is not a
+   tool-call (coordinator, specialist_a, task_specialist, etc.).
+   Aggregation keys on `(invocation_id, event.id)` per AH-PRD-14 §9 resolution
+   against AH-99 probe-4 evidence (each fan-out branch emits distinct event IDs;
+   node_path varies per surface but event.id is canonical).
 """
 
 from __future__ import annotations
@@ -111,16 +119,30 @@ def _is_final_text_event(event: Any) -> bool:
     return bool(getattr(event, "is_final_text", False))
 
 
-def _is_user_or_model_author_event(event: Any) -> bool:
-    """Return True iff event.author is exactly 'user' or 'model'.
+def _is_message_event(event: Any) -> bool:
+    """Return True for events that represent a user or LLM message.
 
-    AC-9 (CH-PRD-01 §7): case-sensitive exact-string match.  'User', 'USER',
-    'assistant', 'agent', '' all return False.  ADK documents lowercase strings
-    (CH-7 spike confirmed author='root' for the root agent; 'user' for the
-    human turn; 'model' for assistant response).
+    Two cases:
+    1. Legacy authors "user" / "model" — counted unconditionally (AC-9,
+       CH-PRD-01 §7; case-sensitive; '' / 'User' / 'assistant' return False).
+    2. Supervisor-model authors (coordinator, specialist_a, task_specialist,
+       etc.) — counted when they carry usage_metadata and are NOT tool-call
+       events, so each LLM-billable response contributes exactly one message
+       count regardless of which specialist authored it (AH-PRD-14 §7 AC-2,
+       Decision 2).
+
+    Author allowlists are intentionally avoided: the supervisor model (AH-PRD-09)
+    allows admin agents to register new specialists per turn; an allowlist would
+    silently undercount any newly-registered specialist.
     """
     author = getattr(event, "author", None)
-    return author in ("user", "model")
+    if author in ("user", "model"):
+        return True
+    return (
+        author is not None
+        and getattr(event, "usage_metadata", None) is not None
+        and getattr(event, "type", None) != "tool_call"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -165,10 +187,18 @@ class SessionTurnAccumulator:
         # Final-text preview (last 160 chars of the most recent final-text event)
         self.final_text: str = ""
 
-        # ADK invocation id, captured from the first stream chunk that carries
-        # one (add_stream_chunk path only). The /completions finally block uses
-        # it to build the shared per-turn idempotency key.
+        # ADK invocation id — populated from the first event or stream chunk
+        # that carries one.  The /completions finally block uses it to build
+        # the shared per-turn idempotency key; AH-128's _build_turn_delta
+        # mirrors it for the supervisor-model parity check.
         self.invocation_id: str | None = None
+
+        # Defensive event-identity dedupe (AH-PRD-14 §2 / Decision 1).
+        # Keyed by event.id string; events with no id bypass this set and are
+        # counted normally (preserves current behaviour for id-less events).
+        # Bounded per-turn: a turn produces O(100s) of events, well within
+        # in-process memory.  No eviction needed — the accumulator is per-turn.
+        self._seen_event_ids: set[str] = set()
 
         # Rolling buffer: last 11 events (summary + overlap + 10 retained)
         # Used by compute_post_compaction_window_tokens on compaction.
@@ -183,7 +213,31 @@ class SessionTurnAccumulator:
 
         Called for every event in the streaming response before it is
         forwarded to the SSE client — this path must be fast and non-blocking.
+
+        Multi-task / fan-out (AH-PRD-14 §2): events carrying a stable `id`
+        are deduped against `_seen_event_ids` so replayed events (same event
+        emitted under multiple node_paths in a fan-out branch) are counted
+        once.  Events without an `id` fall through to preserve current
+        behaviour.  Unknown ADK 2.0 fields (`node_info`, `isolation_scope`)
+        are tolerated via duck-typing and never cause an event to be dropped.
         """
+        # Defensive dedupe: if the event carries a stable id and we have
+        # already folded it in, skip — it is a replay.  Must precede both
+        # _event_buffer.append and extract_billable_tokens so a replayed event
+        # does not push to the rolling compaction buffer either.
+        event_id = getattr(event, "id", None)
+        if event_id and isinstance(event_id, str):
+            if event_id in self._seen_event_ids:
+                return
+            self._seen_event_ids.add(event_id)
+
+        # Capture invocation_id from the first event that carries one (mirrors
+        # the add_stream_chunk first-wins pattern; AH-PRD-14 Decision 3).
+        if self.invocation_id is None:
+            inv_id = getattr(event, "invocation_id", None)
+            if isinstance(inv_id, str) and inv_id:
+                self.invocation_id = inv_id
+
         # Always push to the rolling buffer first so compaction helper has the
         # full window including the compaction event itself.
         self._event_buffer.append(event)
@@ -198,8 +252,9 @@ class SessionTurnAccumulator:
         if _is_tool_call_event(event):
             self.tool_call_count += 1
 
-        # Message count (AC-9): user + model events only.
-        if _is_user_or_model_author_event(event):
+        # Message count (AC-9 + AH-PRD-14 §7 AC-2): user/model (legacy) plus
+        # any non-user author carrying a billable LLM response.
+        if _is_message_event(event):
             self.message_count_delta += 1
 
         # Compaction: capture summary + recompute baseline (AC-10).

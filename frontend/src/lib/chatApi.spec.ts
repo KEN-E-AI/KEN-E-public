@@ -456,8 +456,8 @@ describe("streamChatCompletion", () => {
     }
 
     expect(events).toEqual([
-      { type: "text", text: "chunk1" },
-      { type: "text", text: "chunk2" },
+      expect.objectContaining({ type: "text", text: "chunk1" }),
+      expect.objectContaining({ type: "text", text: "chunk2" }),
     ]);
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/v1/chat/completions"),
@@ -491,7 +491,9 @@ describe("streamChatCompletion", () => {
     ])) {
       events.push(event);
     }
-    expect(events).toEqual([{ type: "text", text: "hello" }]);
+    expect(events).toEqual([
+      expect.objectContaining({ type: "text", text: "hello" }),
+    ]);
   });
 
   it("throws when fetch is invoked with an aborted signal", async () => {

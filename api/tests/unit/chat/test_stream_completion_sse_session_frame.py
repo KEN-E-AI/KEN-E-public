@@ -62,13 +62,13 @@ def _parse_sse_frames(frames: list[str]) -> list[dict]:
 @pytest.mark.asyncio
 class TestStreamCompletionSseSessionFrame:
     async def test_session_tuple_produces_event_session_frame(self):
-        """A ("session", "real_42") tuple yields event: session + data JSON frame."""
+        """A ("session", "real_42", "model") tuple yields event: session + data JSON frame."""
         from kene_api.routers.chat import _stream_completion_sse
         from kene_api.routers.chat import ChatMessage
 
-        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str], None]:
-            yield ("session", "real_42")
-            yield ("text", "Hello.")
+        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str, str], None]:
+            yield ("session", "real_42", "model")
+            yield ("text", "Hello.", "model")
 
         with patch(
             "kene_api.routers.chat.agent_client.stream_chat_completion",
@@ -104,9 +104,9 @@ class TestStreamCompletionSseSessionFrame:
         from kene_api.routers.chat import _stream_completion_sse
         from kene_api.routers.chat import ChatMessage
 
-        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str], None]:
-            yield ("session", "real_99")
-            yield ("text", "Answer text.")
+        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str, str], None]:
+            yield ("session", "real_99", "model")
+            yield ("text", "Answer text.", "model")
 
         with patch(
             "kene_api.routers.chat.agent_client.stream_chat_completion",
@@ -151,8 +151,8 @@ class TestStreamCompletionSseSessionFrame:
         from kene_api.routers.chat import _stream_completion_sse
         from kene_api.routers.chat import ChatMessage
 
-        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str], None]:
-            yield ("text", "No session resolution here.")
+        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str, str], None]:
+            yield ("text", "No session resolution here.", "model")
 
         with patch(
             "kene_api.routers.chat.agent_client.stream_chat_completion",
@@ -185,9 +185,9 @@ class TestStreamCompletionSseSessionFrame:
         from kene_api.routers.chat import _stream_completion_sse
         from kene_api.routers.chat import ChatMessage
 
-        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str], None]:
-            yield ("session", "real_77")
-            yield ("text", "The real answer.")
+        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str, str], None]:
+            yield ("session", "real_77", "model")
+            yield ("text", "The real answer.", "model")
 
         with patch(
             "kene_api.routers.chat.agent_client.stream_chat_completion",
@@ -225,9 +225,9 @@ class TestStreamCompletionSseSessionFrame:
         from kene_api.routers.chat import _stream_completion_sse
         from kene_api.routers.chat import ChatMessage
 
-        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str], None]:
-            yield ("session", "real_once")
-            yield ("text", "reply")
+        async def _fake_stream(**kwargs) -> AsyncGenerator[tuple[str, str, str], None]:
+            yield ("session", "real_once", "model")
+            yield ("text", "reply", "model")
 
         with patch(
             "kene_api.routers.chat.agent_client.stream_chat_completion",
