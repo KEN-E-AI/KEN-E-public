@@ -29,6 +29,10 @@ KEN-E root agent invocation (root span)
 
 This path is **unchanged** by AH-PRD-05. AH-PRD-09 `transfer_to_agent` for single-specialist turns continues to be the R1 dispatch surface.
 
+**ADK 2.0 verification (AH-113):** Verified on `google-adk==2.0.0` — no span-name additions, no span-name removals, no attribute-shape changes versus the post-AH-75 1.34.1 baseline. The emitter (`app/adk/tracking/callbacks.py` — `weave_before/after_agent_callback`) does not read `Event.node_info` or `Event.isolation_scope`, so the 2.0 event-shape additions leave the single-specialist span tree intact. Reference: `docs/runs/AH-113-adk2-weave-verification.md` §5 (operator-executed 2026-06-06 against the canonical dev 2.0 engine `5957383247464759296`) + offline regression suite passes on 2.0 (AH-113 Wave 1 — `app/adk/tracking/tests/` green in PR CI).
+
+**`google.genai` LLM-call autopatch — carry-forward for MER-E (AH-113):** The Weave `google.genai` LLM-call span (`google.genai.generate_content` or similar) may be **absent** from traces in both ADK 1.34.1 and 2.0.0 due to a known Weave autopatch fragility — the integration does not always register. This was confirmed on 2.0 during AH-113 (`probe-10` Weave-check: `google_genai_autopatch=False`, autopatch registry empty) and is a **pre-existing condition, not a 2.0 regression**. **MER-E extractors must treat the per-LLM-call `google.genai` span as optional** and not depend on its presence for quality scoring. Full detail: `docs/trace-structure-spec.md` (Weave autopatch carry-forward note) + AH-PRD-13 §9. If the autopatch state ever flips to present (registered) without the span appearing in the UI, that *would* be a genuine 2.0 change worth a follow-up.
+
 ### 2.2 Supervisor-orchestrated multi-task turn (new — AH-PRD-05 target)
 
 ```

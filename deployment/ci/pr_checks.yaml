@@ -173,6 +173,10 @@ steps:
   # AH-110 / AH-PRD-13 §7 AC #3: app/adk/agents/agent_factory/tests/ includes
   # the Chat/Billing parity merge gate (test_chat_billing_parity.py) and the
   # ADK 2.0 probe ports (test_adk2_session_roundtrip.py, test_adk2_loop_agent_billing.py).
+  # AH-113 / AH-PRD-13 §7 AC #9: app/adk/tracking/tests/ is the Weave-specific
+  # tracking tier — includes test_no_adk2_event_field_consumers.py (static-analysis
+  # guard: no production tracking module may read node_info / isolation_scope) plus
+  # the emission-status span-set lock in test_transfer_to_specialist_fixture.py.
   - name: "python:3.11-slim"
     id: app-adk-tests
     waitFor: ['install-dependencies']

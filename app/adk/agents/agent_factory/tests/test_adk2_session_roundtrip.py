@@ -33,6 +33,11 @@ Scope note:
 
 from __future__ import annotations
 
+import importlib.util as _importlib_util
+import sys as _sys
+import types as _types
+from pathlib import Path as _Path
+
 import pytest
 from google.adk.events import Event
 from google.adk.events.event import NodeInfo
@@ -233,3 +238,103 @@ class TestPydanticRoundtrip:
         assert restored.node_info is not None
         assert restored.node_info.path == "/coordinator/run_node_branch_a"
         assert restored.isolation_scope == "fc_dyngraph_xyz789"
+
+
+# ---------------------------------------------------------------------------
+# TestChatSessionsMirrorAllowlist
+# ---------------------------------------------------------------------------
+
+def _load_side_table_handlers_allowed_delta_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> frozenset[str]:
+    """Load _ALLOWED_DELTA_FIELDS from side_table_handlers without FastAPI deps.
+
+    Uses spec_from_file_location with the full dotted module name so that the
+    relative import `from .side_table import get_chat_side_table_service`
+    resolves against our stub, not the real package.  Heavy dependencies
+    (google.cloud.firestore, shared.turn_delta) are stubbed via monkeypatch so
+    the ADK venv does not need the API service's full dependency set, and the
+    stubs are automatically removed after the test completes (no sys.modules
+    pollution between tests).
+
+    Returns the frozenset value, which is a plain literal at module scope —
+    independent of any runtime behaviour.
+    """
+    _repo_root = _Path(__file__).resolve().parents[5]
+    _handlers_path = (
+        _repo_root / "api" / "src" / "kene_api" / "chat" / "side_table_handlers.py"
+    )
+
+    # Register stubs for heavy deps via monkeypatch so they are auto-removed
+    # after the test.  Only register stubs for modules not already present so
+    # we don't overwrite real packages (e.g., google.adk is present in this venv).
+    _stub_specs: list[tuple[str, dict[str, object]]] = [
+        ("google.api_core", {}),
+        ("google.api_core.exceptions", {}),
+        ("google.cloud.firestore", {}),
+        ("shared", {}),
+        ("shared.turn_delta", {"TurnDelta": type("TurnDelta", (), {})}),
+        ("kene_api", {}),
+        ("kene_api.chat", {}),
+        # Relative import target: `from .side_table import get_chat_side_table_service`
+        ("kene_api.chat.side_table", {"get_chat_side_table_service": lambda: None}),
+    ]
+    for _mod_name, _attrs in _stub_specs:
+        if _mod_name not in _sys.modules:
+            _stub = _types.ModuleType(_mod_name)
+            for _k, _v in _attrs.items():
+                setattr(_stub, _k, _v)
+            monkeypatch.setitem(_sys.modules, _mod_name, _stub)
+
+    # Load with the full dotted name so __package__ is inferred as "kene_api.chat"
+    # and the relative import can look up sys.modules["kene_api.chat.side_table"].
+    _full_name = "kene_api.chat.side_table_handlers"
+    if _full_name in _sys.modules:
+        # Already loaded in a prior test iteration — return from cache.
+        return _sys.modules[_full_name]._ALLOWED_DELTA_FIELDS  # type: ignore[attr-defined]
+
+    _spec = _importlib_util.spec_from_file_location(_full_name, str(_handlers_path))
+    assert _spec is not None, f"Could not locate {_handlers_path}"
+    _mod = _importlib_util.module_from_spec(_spec)
+    _mod.__package__ = "kene_api.chat"
+    monkeypatch.setitem(_sys.modules, _full_name, _mod)  # register before exec
+    assert _spec.loader is not None
+    _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
+
+    return _mod._ALLOWED_DELTA_FIELDS  # type: ignore[attr-defined]
+
+
+class TestChatSessionsMirrorAllowlist:
+    """CI guard: _ALLOWED_DELTA_FIELDS is disjoint from ADK 2.0 session-layer fields.
+
+    The chat_sessions Firestore mirror is written via _ALLOWED_DELTA_FIELDS in
+    api/src/kene_api/chat/side_table_handlers.py.  ADK 2.0 events gain two
+    additive fields (node_info, isolation_scope) that must NOT be copied into
+    the mirror — they are session-layer internals, not user-facing chat-session
+    metadata.  This test pins that invariant in CI so a future PR that accidentally
+    adds node_info or isolation_scope to the allow-list fails the app-adk-tests
+    Cloud Build step (per AH-PRD-13 §10 reference list).
+
+    AH-112 owns the live VertexAiSessionService counterpart that verifies the
+    mirror row on a deployed engine.  This test guards the code-level gate.
+    """
+
+    def test_adk2_fields_disjoint_from_allowed_delta_fields(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_ALLOWED_DELTA_FIELDS must be disjoint from {node_info, isolation_scope}.
+
+        If this test fails, a PR added at least one of these ADK 2.0 session-layer
+        fields to the mirror allow-list, which would cause task-mode metadata to
+        leak into the chat_sessions side-table.  Revert the allow-list change in
+        api/src/kene_api/chat/side_table_handlers.py.
+        """
+        _adk2_session_fields: frozenset[str] = frozenset({"node_info", "isolation_scope"})
+        allowed = _load_side_table_handlers_allowed_delta_fields(monkeypatch)
+        leaked = allowed & _adk2_session_fields
+        assert not leaked, (
+            f"ADK 2.0 session-layer field(s) found in _ALLOWED_DELTA_FIELDS: {leaked!r}. "
+            "These fields (node_info, isolation_scope) are ADK 2.0 task-mode internals and "
+            "must never be mirrored into the chat_sessions Firestore side-table. "
+            "Revert the allow-list change in api/src/kene_api/chat/side_table_handlers.py."
+        )

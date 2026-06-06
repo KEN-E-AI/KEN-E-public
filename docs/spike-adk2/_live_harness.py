@@ -39,6 +39,10 @@ filters on it so only spike sessions are deleted — never production sessions."
 
 # Dev Agent Engine config — sourced from app/adk/.env.development
 _DEFAULT_PROJECT: str = "ken-e-dev"
+_DEFAULT_PROJECT_NUMBER: str = "525657242938"
+"""Numeric GCP project number for ken-e-dev.  Used to build full Vertex AI resource names
+of the form projects/{number}/locations/{location}/reasoningEngines/{id}.
+Source of truth: `gcloud projects describe ken-e-dev --format='value(projectNumber)'`."""
 _DEFAULT_LOCATION: str = "us-central1"
 _DEFAULT_ENGINE_ID: str = "5957383247464759296"
 """The reasoningEngines resource ID for the dev Agent Engine.

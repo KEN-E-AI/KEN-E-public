@@ -251,6 +251,8 @@ LLM call metadata is auto-captured by ADK's OpenTelemetry GenAI conventions when
 
 > **Note:** OTEL is currently disabled in staging/production (`OTEL_SDK_DISABLED=true`) due to a Pydantic serialization bug where `opentelemetry-instrumentation-google-genai` calls `BaseModel.model_dump()` on Pydantic classes instead of instances. The fields below will be available once the OTEL bug is resolved (Feature 7: OTEL Re-enablement). See ADK >= 1.23.0 for a potential fix.
 
+> **Weave autopatch carry-forward (ADK 1.34.1 and 2.0.0):** The `google.genai` LLM-call span (`google.genai.generate_content` or similar) may be absent from Weave traces in both ADK 1.34.1 and 2.0.0 due to a Weave autopatch fragility — the `google.genai` module integration may not register in all execution environments. This absence is a **pre-existing condition** that predates the ADK 2.0 migration and is **not a 2.0 regression**. AH-113 / AH-PRD-13 §9 classifies it as a non-blocking carry-forward: record the autopatch state, don't block on it. For live inspection of the autopatch registration state, run `docs/spike-adk2/probe-10-deploy-session-weave.py` and check the `google_genai_autopatch` field in its output (see `docs/runs/AH-113-adk2-weave-verification.md` §2 and §3.3).
+
 | Attribute | Type | Source | Description |
 |-----------|------|--------|-------------|
 | `gen_ai.system` | string | Auto | `"vertex_ai"` or `"openai"` |
