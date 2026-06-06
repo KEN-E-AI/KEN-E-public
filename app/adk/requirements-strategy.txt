@@ -1,0 +1,36 @@
+# Strategy-supervisor deploy tree — FROZEN at google-adk==1.34.1.
+#
+# AH-105 moved the CHAT tree (deploy_ken_e.py → app/adk/requirements.txt) to
+# google-adk==2.0.0. The strategy-supervisor tree (deploy_with_sys_version.py)
+# stays on 1.34.1 until AH-106 validates it on 2.0. This file is its manifest.
+#
+# The two trees share the same app/ source but deploy on different ADK majors,
+# so the version pins MUST live in two separate requirements files — do NOT
+# re-point deploy_with_sys_version.py at app/adk/requirements.txt.
+#
+# CRITICAL — build environment: both deploy scripts cloudpickle the agent
+# LOCALLY and the Agent Engine backend unpickles it, so the locally-installed
+# google-adk version is baked into the artifact. A 1.34.1-pinned strategy
+# deploy built from the repo's default 2.0 venv would fail to unpickle on the
+# backend. deploy_with_sys_version.py asserts the locally-installed google-adk
+# is 1.34.x before building (see its main() guard) — run the strategy deploy
+# from a dedicated 1.34.1 venv (e.g. `uv venv .venv-adk1 && VIRTUAL_ENV=.venv-adk1
+# uv pip install -r app/adk/requirements-strategy.txt`).
+google-cloud-aiplatform[adk,agent_engines]
+google-adk==1.34.1
+google-cloud-discoveryengine
+google-cloud-firestore
+google-cloud-logging
+google-cloud-storage
+google-cloud-secret-manager
+python-dotenv
+google-analytics-data
+weave>=0.51.0,<0.51.57
+gql<4
+wandb
+nest-asyncio
+PyPDF2
+certifi
+neo4j>=5.14.0
+openai>=1.0.0
+opentelemetry-instrumentation-fastapi

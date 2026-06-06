@@ -309,7 +309,10 @@ def attach_root_tools_before_agent_callback(
         # ``sub_agent_attacher.attach_specialists_before_agent_callback``. This
         # callback is only attached to the root, so the agent on the invocation
         # context IS the root.
-        root_agent = callback_context._invocation_context.agent
+        # ADK 2.0: `_invocation_context.agent` now has type `BaseNode | None`
+        # because `BaseAgent` is a subtype of `BaseNode`; cast to `BaseAgent`
+        # because this callback is only wired onto the root (a `BaseAgent`).
+        root_agent = cast(BaseAgent, callback_context._invocation_context.agent)
         attach_root_tools(root_agent, account_id)
     except Exception as exc:  # pragma: no cover — defensive
         logger.exception(

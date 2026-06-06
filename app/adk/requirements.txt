@@ -1,8 +1,14 @@
 google-cloud-aiplatform[adk,agent_engines]
 # Must match the google-adk version in pyproject.toml / uv.lock: the agent is
 # cloudpickled locally and unpickled on the Agent Engine backend, so a version
-# skew breaks the unpickle (ModuleNotFoundError). Bumped to 1.34.1 with AH-96.
-google-adk==1.34.1
+# skew breaks the unpickle (ModuleNotFoundError). Bumped to 2.0.0 in AH-105 (AH-PRD-13 Foundation).
+# The [mcp] extra is REQUIRED: ADK 2.0 demoted `mcp` from a core dep to an optional
+# extra. The GA specialist connects to its MCP server over SSE
+# (google.adk.tools.mcp_tool.McpToolset → mcp), so without [mcp] the deploy installs
+# fine but the GA specialist ModuleNotFoundErrors at runtime — invisible to CI (mocked)
+# and to the chat-tree smoke test. This is the CHAT tree only; the strategy tree pins
+# 1.34.1 via requirements-strategy.txt (AH-106 decoupling).
+google-adk[mcp]==2.0.0
 google-cloud-discoveryengine
 google-cloud-firestore
 google-cloud-logging

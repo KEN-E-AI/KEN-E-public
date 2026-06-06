@@ -5,7 +5,7 @@ description = "Simple company news chatbot using ADK and Vertex AI Search"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "baml-py>=0.207.1",
-    "google-adk==1.34.1",  # Bumped from 1.27.5 as part of AH-96 spike (discharged SK-10 TODO). Aligned with root and api/ pins.
+    "google-adk[mcp]==2.0.0",  # [mcp] extra is load-bearing: ADK 2.0 demoted `mcp` from a core dep to the `[mcp]` extra; the GA specialist needs it for its live MCP/SSE connection (without it `import mcp` fails only at runtime on Agent Engine). Bumped to 2.0.0 in AH-105 (AH-PRD-13 Foundation). app/adk/requirements.txt MUST match the pyproject pin and uv.lock — version skew breaks Agent Engine deploy with an opaque 400/500 and a ReasoningEngine ModuleNotFoundError that only surfaces in Cloud Logging.
     "google-cloud-aiplatform>=1.140.0",
     "google-cloud-firestore>=2.23.0",
     "neo4j>=5.14.0",

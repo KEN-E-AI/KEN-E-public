@@ -43,6 +43,7 @@ from google.genai.types import Content, FunctionCall, Part
 
 from app.adk.agents.agent_factory import specialist_runtime as sr
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+from app.adk.agents.agent_factory.sub_agent_attacher import AlwaysTrueSubAgentList
 from shared.token_accounting import extract_billable_tokens
 
 # Resolve api/src so kene_api is importable without installing the api package.
@@ -242,6 +243,10 @@ async def _capture_mode_b_events(
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
+    # ADK 2.0: DynamicNodeScheduler gating shim (AH-105 / AH-PRD-13).
+    # Runner._run_node_async checks bool(root.sub_agents) on the pre-clone root;
+    # AlwaysTrueSubAgentList ensures the scheduler activates even when empty.
+    root.sub_agents = AlwaysTrueSubAgentList()
 
     session_service = InMemorySessionService()
     # Pre-seed account_id in session state so the attacher callback finds it
@@ -463,8 +468,10 @@ class TestBillingParity:
         )
         assert total_b == _EXPECTED_TOTAL_BILLABLE, (
             f"[trial={trial}] Mode B total billable = {total_b}, expected {_EXPECTED_TOTAL_BILLABLE}. "
-            "MERGE BLOCKER: inner-Runner events not propagated to outer stream. "
-            "Specialist billable tokens are trapped in the inner Runner and lost."
+            "Mode B billable=0 means specialist events never reached the outer stream. "
+            "AH-105 shim likely reverted: check AlwaysTrueSubAgentList assignment in "
+            "hierarchy.py and the in-place sub_agents[:] = keep update in _reconcile "
+            "(app/adk/agents/agent_factory/sub_agent_attacher.py)."
         )
 
 
@@ -511,6 +518,8 @@ class TestMultiTurnRouting:
             tools=[],
             before_agent_callback=[attacher.attach_specialists_before_agent_callback],
         )
+        # ADK 2.0: DynamicNodeScheduler gating shim (AH-105 / AH-PRD-13).
+        root.sub_agents = AlwaysTrueSubAgentList()
 
         session_service = InMemorySessionService()
         session = await session_service.create_session(

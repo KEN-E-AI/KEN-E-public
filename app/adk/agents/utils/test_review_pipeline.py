@@ -523,7 +523,10 @@ class TestModelFieldsSnapshot:
     pin in review_pipeline.py.
     """
 
-    # Pinned for google-adk 1.27.5.
+    # Pinned for google-adk 2.0.0 (bumped from 1.27.5 in AH-105 / AH-PRD-13).
+    # New fields added in 2.0: mode, parallel_worker, rerun_on_resume,
+    # retry_config, state_schema, timeout, wait_for_output.
+    # All auto-propagate to the worker (no exclusion/override/drop needed).
     _EXPECTED_LLM_AGENT_FIELDS = frozenset(
         {
             "after_agent_callback",
@@ -542,16 +545,23 @@ class TestModelFieldsSnapshot:
             "input_schema",
             "instruction",
             "model",
+            "mode",
             "name",
             "on_model_error_callback",
             "on_tool_error_callback",
             "output_key",
             "output_schema",
+            "parallel_worker",
             "parent_agent",
             "planner",
+            "rerun_on_resume",
+            "retry_config",
+            "state_schema",
             "static_instruction",
             "sub_agents",
+            "timeout",
             "tools",
+            "wait_for_output",
         }
     )
 

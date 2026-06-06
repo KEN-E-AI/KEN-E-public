@@ -6,7 +6,7 @@ of regression that shipped in PR #382: a ModuleNotFoundError that only
 manifested at Agent Engine runtime because CI never exercised the packaged
 import path.
 
-Four checks:
+Five checks:
   1. assemble_deploy_tree() runs without error (packaging integrity).
   2. from agents.agent_factory import build_hierarchy resolves inside the
      temp tree with the source tree stripped from sys.path (import resolution).
@@ -20,8 +20,12 @@ Four checks:
      subprocess so import-order regressions (e.g. an `app.adk.*` import that
      fires before the script's `sys.path.insert` for repo root) fail PR
      checks instead of staging deploys.
+  5. The chat and strategy deploy manifests stay decoupled on their pinned
+     ADK majors (chat → google-adk[mcp]==2.0.0, strategy →
+     google-adk==1.34.1) and the strategy deploy still consumes
+     requirements-strategy.txt (AH-105 / AH-106 decoupling guard).
 
-Exit 0 = all four checks pass.  Non-zero = at least one check failed.
+Exit 0 = all five checks pass.  Non-zero = at least one check failed.
 """
 
 # This script IS safe to use `from __future__ import annotations` — it is never
@@ -260,6 +264,48 @@ def main() -> int:
         )
         return 1
     logger.info("PASS Check 4: deploy_ken_e imports cleanly from app/adk/ cwd")
+
+    # ------------------------------------------------------------------
+    # Check 5: chat/strategy deploy manifests stay decoupled on their pins
+    # ------------------------------------------------------------------
+    # The two deploy trees share app/ source but deploy on different ADK majors:
+    # the chat tree (app/adk/requirements.txt) on google-adk[mcp]==2.0.0, the
+    # strategy tree (app/adk/requirements-strategy.txt) on google-adk==1.34.1.
+    # This static pin check catches accidental re-coupling — e.g. dropping the
+    # [mcp] extra the GA specialist needs, or re-pointing the strategy deploy at
+    # the 2.0 manifest (AH-105 / AH-106).
+    adk_root = repo_root / "app" / "adk"
+    manifest_expectations = {
+        adk_root / "requirements.txt": "google-adk[mcp]==2.0.0",
+        adk_root / "requirements-strategy.txt": "google-adk==1.34.1",
+    }
+    for manifest_path, expected_pin in manifest_expectations.items():
+        pins = [
+            line.strip()
+            for line in manifest_path.read_text().splitlines()
+            if line.strip().startswith("google-adk")
+        ]
+        if pins != [expected_pin]:
+            logger.error(
+                "FAIL Check 5: %s declares google-adk pins %s, expected exactly ['%s']",
+                manifest_path.name,
+                pins,
+                expected_pin,
+            )
+            return 1
+    # The strategy deploy script must consume the strategy manifest, not the chat one.
+    strategy_deploy_src = (adk_root / "deploy_with_sys_version.py").read_text()
+    if "requirements-strategy.txt" not in strategy_deploy_src:
+        logger.error(
+            "FAIL Check 5: deploy_with_sys_version.py no longer references "
+            "requirements-strategy.txt — the strategy tree may have re-coupled to "
+            "the chat manifest (google-adk 2.0)."
+        )
+        return 1
+    logger.info(
+        "PASS Check 5: chat manifest pinned to google-adk[mcp]==2.0.0, "
+        "strategy manifest pinned to google-adk==1.34.1"
+    )
     return 0
 
 

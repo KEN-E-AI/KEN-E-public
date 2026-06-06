@@ -53,7 +53,7 @@ sub_agents reconcile stay in sync without distributed coordination.
 
 import logging
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from google.adk.agents import BaseAgent
 from google.genai import types
@@ -76,6 +76,43 @@ if TYPE_CHECKING:
     from google.adk.agents.callback_context import CallbackContext
 
 logger = logging.getLogger(__name__)
+
+
+class AlwaysTrueSubAgentList(list):
+    """A ``list`` subclass that is always truthy, even when empty.
+
+    ADK 2.0 compatibility shim (AH-105 / AH-PRD-13 Foundation):
+
+    ADK 2.0's ``Runner._run_node_async`` checks ``bool(self.agent.sub_agents)``
+    on the **original** (pre-clone) root agent to decide whether to activate
+    ``DynamicNodeScheduler``.  KEN-E's root is built with an empty ``sub_agents``
+    list (specialists are attached per-turn by
+    ``attach_specialists_before_agent_callback``), so without this shim the
+    scheduler never activates on 2.0 — ``transfer_to_agent`` events are yielded
+    but not dispatched, and specialist LLM events never reach the outer Runner
+    stream (Chat/Billing token counts become zero).
+
+    This subclass is assigned to ``root_agent.sub_agents`` immediately after the
+    root agent is constructed in ``hierarchy.py``.  ``build_node().clone()``
+    creates a fresh regular ``[]`` for each per-turn clone, which ``_reconcile``
+    then populates in-place per turn via slice assignment (``sub_agents[:] =
+    keep``).
+
+    Inert on ADK 1.34.1:
+    * ``_get_transfer_targets()`` iterates ``sub_agents`` — it never gates on
+      ``bool(sub_agents)``.
+    * ``BaseAgent.model_config`` has ``validate_assignment=False``, so assigning
+      a ``list`` subclass is not coerced back to a plain ``list``; the mechanism
+      works on both 1.34.1 and 2.0.
+
+    Verified under ``.venv-adk2`` (google-adk==2.0.0): parity suite 24/24 with
+    the shim; fails without it (Mode B total_billable=0).  See
+    ``docs/spike-ah104-deploy-sandbox-weave.md`` §3.2 / §3.2.1.
+    """
+
+    def __bool__(self) -> bool:
+        return True
+
 
 # Single process-global slot: the (account_id, fingerprint) pair currently
 # reflected in ``root.sub_agents`` — where ``fingerprint`` is the frozenset of
@@ -241,7 +278,10 @@ def _attach_locked(
     new_fingerprint: frozenset[tuple[str, str]] = frozenset(
         (doc_id, _content_hash(cfg)) for doc_id, cfg in visible_configs.items()
     )
-    if _applied_state == (account_id, new_fingerprint):
+    # ADK 2.0: a fresh per-turn clone has empty sub_agents; only skip reconcile
+    # when root_agent.sub_agents is already populated, else the empty clone
+    # never gets specialists even on a fingerprint hit.
+    if _applied_state == (account_id, new_fingerprint) and root_agent.sub_agents:
         return
 
     desired: dict[str, BaseAgent] = {}
@@ -350,7 +390,12 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
         keep.append(new_sub)
         changed = True
 
-    root_agent.sub_agents = keep
+    # ADK 2.0: update IN-PLACE so the scheduler's model_copy() shallow-copy
+    # holders (which share the list object) see the per-turn specialists via
+    # find_agent().  Attribute reassignment would update the root's own
+    # attribute but leave the shallow-copy holders with the original (empty)
+    # list — transfer_to_agent lookups would then fail silently.
+    root_agent.sub_agents[:] = keep
     return changed
 
 
@@ -485,7 +530,10 @@ def attach_specialists_before_agent_callback(
         # This callback is only attached to the root agent (see
         # hierarchy.build_hierarchy), so the agent on the invocation context
         # IS the root.
-        root_agent = callback_context._invocation_context.agent
+        # ADK 2.0: `_invocation_context.agent` now has type `BaseNode | None`
+        # because `BaseAgent` is a subtype of `BaseNode`; cast to `BaseAgent`
+        # because this callback is only wired onto the root (a `BaseAgent`).
+        root_agent = cast(BaseAgent, callback_context._invocation_context.agent)
         attach_account_specialists(root_agent, account_id, session_state=session_state)
     except Exception as exc:  # pragma: no cover — defensive
         logger.exception(
@@ -518,7 +566,8 @@ def attach_specialists_before_agent_callback(
     # block raised before the assignment.
     try:
         _state_account_id: str | None = callback_context.state.get("account_id")
-        root_agent = callback_context._invocation_context.agent
+        # ADK 2.0: cast from BaseNode | None to BaseAgent (callback only wired on root).
+        root_agent = cast(BaseAgent, callback_context._invocation_context.agent)
         sub_agents: list[Any] = getattr(root_agent, "sub_agents", None) or []
 
         specialists_state: list[dict[str, Any]] = []

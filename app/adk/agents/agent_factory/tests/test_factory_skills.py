@@ -328,7 +328,10 @@ class TestAC2aAllSkillsFail:
             get_skill_build_metadata,
         )
 
-        assert get_skill_build_metadata(agent).get("skill_load_total_failure") is True
+        assert (
+            get_skill_build_metadata(agent, "acc_m").get("skill_load_total_failure")
+            is True
+        )
 
     def test_no_failure_marker_when_skills_load_ok(
         self, monkeypatch: pytest.MonkeyPatch
@@ -345,7 +348,9 @@ class TestAC2aAllSkillsFail:
             get_skill_build_metadata,
         )
 
-        assert not get_skill_build_metadata(agent).get("skill_load_total_failure")
+        assert not get_skill_build_metadata(agent, "acc_nm").get(
+            "skill_load_total_failure"
+        )
 
     def test_error_log_includes_account_config_and_skill_ids(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -427,7 +432,7 @@ class TestAC3EmptySkillList:
             get_skill_build_metadata,
         )
 
-        assert get_skill_build_metadata(agent) == {}
+        assert get_skill_build_metadata(agent, "acc_nm2") == {}
 
     def test_empty_skill_ids_does_not_import_kene_api(
         self, monkeypatch: pytest.MonkeyPatch
@@ -485,7 +490,7 @@ class TestAccountIdNone:
             get_skill_build_metadata,
         )
 
-        assert not get_skill_build_metadata(agent).get("skill_load_total_failure")
+        assert not get_skill_build_metadata(agent, None).get("skill_load_total_failure")
 
         # A WARNING (not ERROR) should have been emitted
         warn_records = [
@@ -528,7 +533,10 @@ class TestDuplicateSkillNameDegrades:
             get_skill_build_metadata,
         )
 
-        assert get_skill_build_metadata(agent).get("skill_load_total_failure") is True
+        assert (
+            get_skill_build_metadata(agent, "acc_dup").get("skill_load_total_failure")
+            is True
+        )
 
         # ERROR log emitted
         error_msgs = [
@@ -947,7 +955,7 @@ class TestAsyncBridge:
             get_skill_build_metadata,
         )
 
-        metadata = get_skill_build_metadata(agent)
+        metadata = get_skill_build_metadata(agent, "acc_to")
         assert metadata.get("skill_load_timeout") is True
         # Timeout is NOT a total failure — those two markers are exclusive.
         assert "skill_load_total_failure" not in metadata
@@ -1047,7 +1055,7 @@ class TestSkillNameIndex:
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
-        meta = get_skill_build_metadata(agent)
+        meta = get_skill_build_metadata(agent, "acc_idx")
         idx = meta.get("skill_name_index", {})
 
         assert set(idx.keys()) == {"alpha", "beta"}
@@ -1066,7 +1074,7 @@ class TestSkillNameIndex:
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
-        meta = get_skill_build_metadata(agent)
+        meta = get_skill_build_metadata(agent, "acc_f")
         entry = meta["skill_name_index"]["my-skill"]
 
         assert entry["skill_id"] == "id-ms"
@@ -1085,7 +1093,7 @@ class TestSkillNameIndex:
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
-        meta = get_skill_build_metadata(agent)
+        meta = get_skill_build_metadata(agent, "acc_at")
         entry = meta["skill_name_index"]["restricted"]
         assert entry["allowed_tools"] == "Read Write"
 
@@ -1104,7 +1112,7 @@ class TestSkillNameIndex:
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
-        meta = get_skill_build_metadata(agent)
+        meta = get_skill_build_metadata(agent, "acc_p")
         idx = meta.get("skill_name_index", {})
 
         assert "ok-skill" in idx
@@ -1125,7 +1133,7 @@ class TestSkillNameIndex:
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
-        meta = get_skill_build_metadata(agent)
+        meta = get_skill_build_metadata(agent, "acc_tf")
         # skill_name_index absent or empty on total failure
         assert not meta.get("skill_name_index")
 
@@ -1148,4 +1156,4 @@ class TestSkillNameIndex:
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
-        assert "skill_name_index" not in get_skill_build_metadata(agent)
+        assert "skill_name_index" not in get_skill_build_metadata(agent, "acc_ei")

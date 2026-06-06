@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import importlib.metadata
 import logging
 import os
 import shutil
@@ -248,8 +249,46 @@ def _resolve_existing_engine_id(project_number: str) -> str | None:
     return response.payload.data.decode("UTF-8").strip() or None
 
 
+# The chat tree is pinned to this google-adk major (app/adk/requirements.txt).
+# The deploy cloudpickles locally, so the build env must match the deploy pin —
+# a 1.34.1 venv would bake a 1.x pickle that fails to unpickle on a 2.0 backend.
+CHAT_ADK_VERSION_PREFIX = "2."
+
+
+def _require_local_adk_version(expected_prefix: str) -> None:
+    """Abort unless the locally-installed google-adk matches ``expected_prefix``.
+
+    Symmetric with the strategy tree's guard (deploy_with_sys_version.py): the
+    agent is cloudpickled locally and unpickled on the Agent Engine backend, so
+    the build env's ADK major must match the manifest pin. Run the chat deploy
+    from the repo's default 2.0 venv.
+    """
+    try:
+        installed = importlib.metadata.version("google-adk")
+    except importlib.metadata.PackageNotFoundError:
+        logger.error("❌ google-adk is not installed in this environment")
+        sys.exit(1)
+    if not installed.startswith(expected_prefix):
+        logger.error(
+            "❌ ADK build-env mismatch: the chat tree must be built from a "
+            "google-adk==%sx venv, but this environment has google-adk==%s.\n"
+            "   Run the chat deploy from the repo's default (2.0) venv.",
+            expected_prefix,
+            installed,
+        )
+        sys.exit(1)
+    logger.info(
+        "✅ Local google-adk==%s matches the chat tree pin (%sx)",
+        installed,
+        expected_prefix,
+    )
+
+
 def deploy_ken_e() -> str | None:
     """Deploy the KEN-E chat agent to Agent Engine."""
+
+    # Guard: the chat tree must be built from a 2.0 venv (cloudpickle skew).
+    _require_local_adk_version(CHAT_ADK_VERSION_PREFIX)
 
     # Save current directory
     original_dir = os.getcwd()

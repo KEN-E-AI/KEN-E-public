@@ -39,9 +39,48 @@ from app.adk.agents.agent_factory.config_loader import (
     MergedAgentConfig,
 )
 from app.adk.agents.agent_factory.sub_agent_attacher import (
+    AlwaysTrueSubAgentList,
     attach_account_specialists,
     attach_specialists_before_agent_callback,
 )
+
+# ---------------------------------------------------------------------------
+# AlwaysTrueSubAgentList — ADK 2.0 scheduler shim (AH-105 / AH-PRD-13)
+# ---------------------------------------------------------------------------
+
+
+class TestAlwaysTrueSubAgentList:
+    """Guard the AlwaysTrueSubAgentList invariant — the load-bearing mechanism
+    of the ADK 2.0 DynamicNodeScheduler fix.
+
+    If __bool__ is ever removed or overridden, Runner._run_node_async will
+    see an empty list as falsy, deactivate DynamicNodeScheduler, and yield
+    transfer_to_agent events without dispatching them — silently zeroing
+    Billing/Chat token counts.
+    """
+
+    def test_empty_list_is_truthy(self) -> None:
+        assert bool(AlwaysTrueSubAgentList()) is True
+
+    def test_populated_list_is_truthy(self) -> None:
+        assert bool(AlwaysTrueSubAgentList([1, 2, 3])) is True
+
+    def test_still_behaves_as_list(self) -> None:
+        lst: AlwaysTrueSubAgentList = AlwaysTrueSubAgentList()
+        lst.append("x")
+        assert lst == ["x"]
+        assert len(lst) == 1
+
+    def test_slice_assign_preserves_truthiness(self) -> None:
+        """In-place slice assignment (used by _reconcile) must not break __bool__."""
+        lst: AlwaysTrueSubAgentList = AlwaysTrueSubAgentList(["a", "b"])
+        lst[:] = []
+        assert lst == []
+        assert bool(lst) is True  # still truthy after being emptied via slice
+
+    def test_is_subclass_of_list(self) -> None:
+        assert isinstance(AlwaysTrueSubAgentList(), list)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

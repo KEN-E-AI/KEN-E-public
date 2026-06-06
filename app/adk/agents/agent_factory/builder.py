@@ -216,7 +216,7 @@ async def _build_skill_toolset_async(
     # constants in skill_spans.py.  RuntimeError propagates to the caller —
     # a rename is a build-time programmer error, not a degrade-open scenario.
     # The module-level flag amortises this to a single introspection per process.
-    assert_skill_tool_names_match(toolset)
+    await assert_skill_tool_names_match(toolset)
     return toolset, skill_name_index
 
 
@@ -509,11 +509,14 @@ def build_agent(
     #     allowed_tools} for all successfully loaded skills.  Consumed by
     #     SK-27 (skill_spans.py) to resolve span attrs and seed
     #     state["skills_allowed_tools"] at turn start.
+    # Keyed by (account_id, agent.name): specialists are cached per account but
+    # share a name, so account_id is required to keep the sidecar isolated —
+    # see skill_metadata module docstring.
     if skill_load_total_failure:
-        record_skill_build_metadata(agent, skill_load_total_failure=True)
+        record_skill_build_metadata(agent, account_id, skill_load_total_failure=True)
     if skill_load_timeout:
-        record_skill_build_metadata(agent, skill_load_timeout=True)
+        record_skill_build_metadata(agent, account_id, skill_load_timeout=True)
     if skill_name_index:
-        record_skill_build_metadata(agent, skill_name_index=skill_name_index)
+        record_skill_build_metadata(agent, account_id, skill_name_index=skill_name_index)
 
     return agent

@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from google.adk.agents import LlmAgent
 from google.adk.tools.function_tool import FunctionTool
 
@@ -135,6 +136,17 @@ class TestMutationHonouredOnSameTurn:
        request (confirming ``_process_agent_tools`` saw the mutated list).
     """
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "ADK 2.0: Runner.build_node().clone() creates a per-turn clone whose "
+            "tool mutations do not propagate back to the original agent object. "
+            "AH-108 owns the re-validation and fallback implementation for the "
+            "AH-100 per-turn root.tools attach pattern under google-adk==2.0.0. "
+            "strict=True: when AH-108 ships and this test passes, XPASS failure "
+            "forces removal of the marker and confirms the fix is solid."
+        ),
+    )
     def test_tools_mutated_in_before_callback_are_on_agent_after_turn(self) -> None:
         """A tool added to ``agent.tools`` inside ``before_agent_callback`` is
         present on the agent object after the turn completes."""

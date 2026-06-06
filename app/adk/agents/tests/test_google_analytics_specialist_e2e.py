@@ -267,6 +267,7 @@ async def _run_ga_specialist_for_session(
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
+    root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
     session_service = InMemorySessionService()
     session = await session_service.create_session(
@@ -1172,6 +1173,7 @@ class TestBackwardCompatRegression:
             tools=[],
             before_agent_callback=[attacher.attach_specialists_before_agent_callback],
         )
+        root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
         ga_config = _make_ga_config()
         session_service = InMemorySessionService()
@@ -2395,6 +2397,7 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
+    root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
     account_id = "acct_e2e_happy_path"
     ga_credentials: dict[str, Any] = {"access_token": "tok_e2e", "tenant_id": "tenant_e2e"}
@@ -2963,6 +2966,7 @@ async def test_ga_specialist_e2e_weave_trace_structure(trial: int) -> None:
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
+    root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
     account_id = f"acct_weave_trace_{trial}"
     ga_credentials: dict[str, Any] = {"access_token": f"tok_weave_{trial}", "tenant_id": "tenant_weave"}

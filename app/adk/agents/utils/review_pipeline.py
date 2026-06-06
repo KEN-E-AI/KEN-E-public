@@ -66,7 +66,7 @@ class ReviewIteration:
 _MAX_ITERATIONS_LIMIT = 10
 _VALID_PREFIX_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
-# Field-propagation policy is pinned against google-adk 1.27.5; see
+# Field-propagation policy is pinned against google-adk 2.0.0; see
 # TestModelFieldsSnapshot in test_review_pipeline.py — that test fails on ADK
 # upgrades and forces re-categorization of any new LlmAgent fields into one of
 # the four buckets below.

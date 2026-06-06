@@ -50,26 +50,45 @@ logger = get_structured_logger(__name__)
 
 _SKILL_TOOL_NAMES = frozenset({"list_skills", "load_skill", "load_skill_resource"})
 
+# Tools we KNOW newer ADK ships beyond the three spanned names and deliberately
+# do not instrument (no ``tool.name == "..."`` branch).  ``run_skill_script`` was
+# added in ADK 2.0.  Keeping this allowlist explicit means a *different* new tool
+# (one we have not vetted) trips the WARN below instead of slipping through the
+# span callbacks untraced.
+_KNOWN_EXTRA_TOOL_NAMES = frozenset({"run_skill_script"})
+
 # Set to True after the first successful assert_skill_tool_names_match call.
 # Module-level boolean writes are idempotent under CPython's GIL; concurrent
 # builds may both run the check, but correctness is not affected.
 _skill_tool_names_verified: bool = False
 
 
-def assert_skill_tool_names_match(toolset: Any) -> None:
+async def assert_skill_tool_names_match(toolset: Any) -> None:
     """Verify that the constructed SkillToolset exposes the three expected tool names.
 
     Call once per process after a successful SkillToolset construction.  The
     module-level flag short-circuits subsequent calls to O(1).
 
+    Uses ``await toolset.get_tools()`` (ADK 2.0 async API) to resolve the tool
+    list.  The check is a subset: all three names in ``_SKILL_TOOL_NAMES`` must
+    be present.  Extra tools are allowed, but only those in
+    ``_KNOWN_EXTRA_TOOL_NAMES`` (e.g. ``run_skill_script`` added in 2.0) pass
+    silently — any *other* unexpected tool logs a WARNING so a new, un-spanned
+    skill tool surfaces in logs instead of slipping through the span callbacks.
+
     Outcomes:
-      - Match → sets ``_skill_tool_names_verified = True`` and returns.
-      - Mismatch → raises ``RuntimeError`` naming both the expected and actual
-        sets so the operator knows exactly which constants and branches to update
-        (``app/adk/tracking/skill_spans.py`` and any callers).
-      - Introspection failure (``toolset.tools`` missing / wrong shape) → logs
-        ERROR and returns without raising; flag stays ``False`` so the next build
-        retries.  Matches the degrade-open contract already applied to the
+      - Expected names present, no unknown extras → sets
+        ``_skill_tool_names_verified = True`` and returns.
+      - Expected names present + an unknown extra tool (not in
+        ``_KNOWN_EXTRA_TOOL_NAMES``) → logs WARNING naming it, then still sets
+        the flag (forward-compatible: a new ADK tool must not break runtime).
+      - Any expected name missing → raises ``RuntimeError`` naming both the
+        expected and actual sets so the operator knows exactly which constants
+        and branches to update (``app/adk/tracking/skill_spans.py`` and any
+        callers).
+      - Introspection failure (``get_tools()`` missing / raises) → logs ERROR
+        and returns without raising; flag stays ``False`` so the next build
+        retries.  Matches the degrade-open contract applied to the
         before/after callbacks in this module.
 
     Args:
@@ -81,27 +100,44 @@ def assert_skill_tool_names_match(toolset: Any) -> None:
     if _skill_tool_names_verified:
         return
     try:
-        actual = frozenset(t.name for t in toolset.tools)
+        tools = await toolset.get_tools()
+        actual = frozenset(t.name for t in tools)
     except Exception as exc:
         logger.error(
             "skill_tool_names_check_failed",
             extra={
                 "reason": (
-                    f"{type(exc).__name__}: Could not introspect toolset.tools — "
+                    f"{type(exc).__name__}: Could not introspect toolset via get_tools() — "
                     "SkillToolset API may have changed. "
-                    "Expected: " + str(sorted(_SKILL_TOOL_NAMES))
+                    "Expected (subset): " + str(sorted(_SKILL_TOOL_NAMES))
                 )
             },
             exc_info=True,
         )
         return
-    if actual != _SKILL_TOOL_NAMES:
+    if not _SKILL_TOOL_NAMES.issubset(actual):
+        missing = sorted(_SKILL_TOOL_NAMES - actual)
         raise RuntimeError(
-            "ADK SkillToolset tool names do not match the hardcoded constants. "
+            "ADK SkillToolset is missing expected tool names. "
             "Update _SKILL_TOOL_NAMES in app/adk/tracking/skill_spans.py and all "
             "tool.name == '...' branches in the same file.\n"
-            f"  expected: {sorted(_SKILL_TOOL_NAMES)}\n"
-            f"  actual:   {sorted(actual)}"
+            f"  expected (subset): {sorted(_SKILL_TOOL_NAMES)}\n"
+            f"  actual:            {sorted(actual)}\n"
+            f"  missing:           {missing}"
+        )
+    unexpected = actual - _SKILL_TOOL_NAMES - _KNOWN_EXTRA_TOOL_NAMES
+    if unexpected:
+        logger.warning(
+            "skill_toolset_unexpected_tools",
+            extra={
+                "unexpected": sorted(unexpected),
+                "reason": (
+                    "SkillToolset exposes tool name(s) with no span branch in "
+                    "skill_spans.py and not in _KNOWN_EXTRA_TOOL_NAMES — they "
+                    "execute untraced. Add a span branch (and allowlist them) or "
+                    "confirm they should stay un-spanned."
+                ),
+            },
         )
     _skill_tool_names_verified = True
 
@@ -127,6 +163,22 @@ _skill_ctx_registry: contextvars.ContextVar[dict[str, dict[str, Any]] | None] = 
 )
 
 
+def _account_id_from_context(context: Any) -> str | None:
+    """Best-effort read of the session ``account_id`` from a callback/tool context.
+
+    The skill-metadata sidecar is keyed by ``(account_id, agent.name)`` (two
+    accounts can share a specialist ``name``), so the lookup must use the same
+    ``account_id`` the specialist was built with.  Returns ``None`` — a safe miss
+    that yields empty metadata — when it is unavailable.
+    """
+    state = getattr(context, "state", None)
+    if state is not None and hasattr(state, "get"):
+        account_id = state.get("account_id")
+        if isinstance(account_id, str):
+            return account_id
+    return None
+
+
 def _get_skill_name_index(context: Any) -> dict[str, dict]:
     """Return skill_name_index from the agent sidecar, or {}."""
     try:
@@ -140,7 +192,10 @@ def _get_skill_name_index(context: Any) -> dict[str, dict]:
                     get_skill_build_metadata,
                 )
 
-                return get_skill_build_metadata(agent).get("skill_name_index", {})
+                account_id = _account_id_from_context(context)
+                return get_skill_build_metadata(agent, account_id).get(
+                    "skill_name_index", {}
+                )
     except Exception:
         pass
     return {}
@@ -159,7 +214,8 @@ def _get_agent_meta(context: Any) -> dict[str, Any]:
                     get_skill_build_metadata,
                 )
 
-                return get_skill_build_metadata(agent)
+                account_id = _account_id_from_context(context)
+                return get_skill_build_metadata(agent, account_id)
     except Exception:
         pass
     return {}

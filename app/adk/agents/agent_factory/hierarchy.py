@@ -202,6 +202,7 @@ def build_hierarchy(
         available_specialists_provider,
     )
     from app.adk.agents.agent_factory.sub_agent_attacher import (
+        AlwaysTrueSubAgentList,
         attach_specialists_before_agent_callback,
     )
     from app.adk.tools.registry.agent_tool_registry import resolve_agent_tools
@@ -258,5 +259,16 @@ def build_hierarchy(
         ],
     )
     logger.info("Built root agent %r.", "ken_e")
+
+    # ADK 2.0 compatibility: ensure DynamicNodeScheduler is activated.
+    # Runner._run_node_async checks bool(self.agent.sub_agents) on the original
+    # root to decide whether to activate DynamicNodeScheduler. Without the
+    # scheduler, transfer_to_agent events are yielded but not dispatched;
+    # specialist LLM events never reach the outer stream (zero Billing/Chat
+    # token counts). AlwaysTrueSubAgentList.__bool__ returns True even when
+    # empty, so the scheduler is always active. build_node().clone() creates a
+    # fresh regular [] for the per-turn clone, which _reconcile then populates
+    # in-place per turn.
+    root_agent.sub_agents = AlwaysTrueSubAgentList()
 
     return root_agent

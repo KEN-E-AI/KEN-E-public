@@ -15,6 +15,7 @@ Usage:
 """
 
 import argparse
+import importlib.metadata
 import logging
 import os
 import shutil
@@ -38,6 +39,45 @@ try:
 except ImportError:
     logger.error("❌ Could not import shared secrets utility")
     sys.exit(1)
+
+# Strategy tree is pinned to this google-adk major.minor (see
+# requirements-strategy.txt). The deploy cloudpickles locally, so the build env
+# must match the deploy pin.
+STRATEGY_ADK_VERSION_PREFIX = "1.34"
+
+
+def _require_local_adk_version(expected_prefix: str) -> None:
+    """Abort unless the locally-installed google-adk matches ``expected_prefix``.
+
+    Both deploy trees cloudpickle the agent locally and the Agent Engine backend
+    unpickles it, so the locally-installed ADK version is baked into the
+    artifact. The strategy tree is pinned to 1.34.1 via requirements-strategy.txt;
+    building it from the repo's default 2.0 venv would produce a 2.0 pickle that
+    fails to unpickle on a 1.34.1 backend — surfacing only as a post-deploy
+    ModuleNotFoundError in Cloud Logging. This guard makes that mistake loud.
+    """
+    try:
+        installed = importlib.metadata.version("google-adk")
+    except importlib.metadata.PackageNotFoundError:
+        logger.error("❌ google-adk is not installed in this environment")
+        sys.exit(1)
+    if not installed.startswith(expected_prefix):
+        logger.error(
+            "❌ ADK build-env mismatch: the strategy tree must be built from a "
+            "google-adk==%s.x venv, but this environment has google-adk==%s.\n"
+            "   The repo's default venv is on 2.0 (the chat tree). Build the "
+            "strategy tree from a dedicated 1.34.1 venv — see the header of "
+            "app/adk/requirements-strategy.txt.",
+            expected_prefix,
+            installed,
+        )
+        sys.exit(1)
+    logger.info(
+        "✅ Local google-adk==%s matches the strategy tree pin (%s.x)",
+        installed,
+        expected_prefix,
+    )
+
 
 # Default Configuration
 PYTHON_VERSION = "3.13"
@@ -162,6 +202,9 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
 # Parse command-line arguments
 args = parse_args()
 
+# Guard: the strategy tree must be built from a 1.34.1 venv (cloudpickle skew).
+_require_local_adk_version(STRATEGY_ADK_VERSION_PREFIX)
+
 # Get configuration for target environment
 env_config = ENV_CONFIG[args.env]
 PROJECT_ID = env_config["project_id"]
@@ -241,10 +284,20 @@ with tempfile.TemporaryDirectory() as temp_dir:
         )
         logger.info("Copied app/utils package")
 
-    # Copy requirements.txt
-    if Path("requirements.txt").exists():
-        shutil.copy2("requirements.txt", temp_path / "requirements.txt")
-        logger.info("Copied requirements.txt")
+    # Copy the strategy-tree manifest (google-adk==1.34.1) as requirements.txt —
+    # Agent Engine requires that filename. The chat tree uses
+    # app/adk/requirements.txt (google-adk[mcp]==2.0.0); the two trees deploy on
+    # different ADK majors, so they MUST stay on separate manifests (AH-105 /
+    # AH-106 decoupling). Resolved by script location, not CWD.
+    strategy_reqs = Path(__file__).parent / "requirements-strategy.txt"
+    if strategy_reqs.exists():
+        shutil.copy2(strategy_reqs, temp_path / "requirements.txt")
+        logger.info(
+            "Copied requirements-strategy.txt → requirements.txt (google-adk==1.34.1)"
+        )
+    else:
+        logger.error("❌ requirements-strategy.txt not found at %s", strategy_reqs)
+        sys.exit(1)
 
     # Process environment-specific .env file (resolve sm:// references)
     # Use .env.{environment} file, fallback to .env
