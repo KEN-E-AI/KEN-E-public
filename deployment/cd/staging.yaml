@@ -114,6 +114,47 @@ steps:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
   # ---------------------------------------------------------------------------
+  # Decide whether to run the (expensive) chat-sidebar load test this build.
+  #
+  # The chat-sidebar gate polls GET /api/v1/chat/conversations against the live
+  # staging API, each poll running a Firestore query on the (default) database.
+  # Running it on EVERY merge to main was the dominant driver of staging
+  # Firestore read-ops billing.  Gate it to commits that actually touch the
+  # /conversations request path — the router, the chat service, AND the
+  # firestore/redis_client/dependencies modules it reads through (the
+  # user_context cache + Firestore query the gate exists to protect) — plus
+  # the seed + load-test harness and this pipeline.  Every other merge (ADK,
+  # docs, other components) skips the seed + load-test + p95 steps.
+  #
+  # Writes "true"/"false" to /workspace/run_chat_loadtest.flag; the three gated
+  # steps below early-exit 0 when it is not "true".  Fails OPEN (runs) if the
+  # parent commit can't be resolved, so a shallow-clone edge case never silently
+  # drops the gate — worst case is the pre-existing every-merge behaviour.
+  # ---------------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/gcloud
+    id: decide-chat-loadtest
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -uo pipefail
+        PATTERN='^(api/src/kene_api/routers/chat\.py|api/src/kene_api/chat/|api/src/kene_api/models/chat\.py|api/src/kene_api/(firestore|redis_client|dependencies)\.py|api/scripts/seed_chat_load_test_data\.py|tests/load_test/|deployment/cd/staging\.yaml)'
+        RUN=true
+        # Push triggers check out a shallow clone; fetch the parent so we can diff.
+        git fetch --deepen=1 origin "${COMMIT_SHA}" >/dev/null 2>&1 \
+          || git fetch --unshallow >/dev/null 2>&1 || true
+        if git rev-parse -q --verify "${COMMIT_SHA}^" >/dev/null 2>&1; then
+          CHANGED="$(git diff --name-only "${COMMIT_SHA}^" "${COMMIT_SHA}")"
+          echo "Changed files vs parent:"; echo "$$CHANGED"
+          if echo "$$CHANGED" | grep -Eq "$$PATTERN"; then RUN=true; else RUN=false; fi
+        else
+          echo "WARN: parent of ${COMMIT_SHA} unavailable — failing open (will run)."
+        fi
+        echo "$$RUN" > /workspace/run_chat_loadtest.flag
+        echo "chat-sidebar load test will run: $$RUN"
+
+  # ---------------------------------------------------------------------------
   # API build + deploy chain — must be declared BEFORE chat-sidebar-load-test
   # because Cloud Build requires waitFor references to point at earlier steps.
   #
@@ -193,12 +234,16 @@ steps:
   # Seed Firestore with chat sessions for the sidebar load test
   - name: "python:3.11-slim"
     id: seed-chat-loadtest
-    waitFor: ['validate-loadtest-vars']
+    waitFor: ['validate-loadtest-vars', 'decide-chat-loadtest']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         set -euo pipefail
+        if [ "$(cat /workspace/run_chat_loadtest.flag 2>/dev/null)" != "true" ]; then
+          echo "seed-chat-loadtest: commit does not touch chat/load-test paths — skipping seed."
+          exit 0
+        fi
         uv run python api/scripts/seed_chat_load_test_data.py
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
@@ -219,6 +264,10 @@ steps:
       - "-c"
       - |
         set -euo pipefail
+        if [ "$(cat /workspace/run_chat_loadtest.flag 2>/dev/null)" != "true" ]; then
+          echo "chat-sidebar-load-test: commit does not touch chat/load-test paths — skipping."
+          exit 0
+        fi
         # `uv pip install --system` installs into the container's system Python
         # without mutating pyproject.toml / uv.lock in the shared workspace —
         # `uv add` would, and later steps share that workspace volume.
@@ -228,6 +277,13 @@ steps:
         # request failures.  The dedicated chat-sidebar-p95-check step is the
         # gate; it reads the stats CSV and applies a tolerated failure_ratio
         # + p95 threshold.
+        #
+        # Sizing: -u 100 / -t 2m / -r 10 (reduced from -u 1000 / -t 6m / -r 33).
+        # Each poll runs a live Firestore query against staging's (default) DB,
+        # so 1000 VUs for 6 min drove ~1M document reads per deploy.  1000 VUs on
+        # the 1-vCPU staging service mostly exercised Cloud Run autoscale tail
+        # (see the p90-gate note below) rather than query behaviour; 100 VUs keeps
+        # a real concurrency signal for the p90 gate at a fraction of the reads.
         #
         # The FIREBASE_* / CHAT_LOADTEST_UID / API_BASE_URL assignments below
         # MUST stay on the lines immediately preceding `locust` with no
@@ -242,7 +298,7 @@ steps:
         locust -f tests/load_test/chat_sidebar_polling.py \
           --headless \
           --exit-code-on-error 0 \
-          -t 6m -u 1000 -r 33 \
+          -t 2m -u 100 -r 10 \
           --csv=tests/load_test/.results/chat_sidebar \
           --html=tests/load_test/.results/chat_sidebar_report.html
     env:
@@ -257,6 +313,10 @@ steps:
       - "-c"
       - |
         set -euo pipefail
+        if [ "$(cat /workspace/run_chat_loadtest.flag 2>/dev/null)" != "true" ]; then
+          echo "chat-sidebar-p95-check: load test skipped — nothing to gate."
+          exit 0
+        fi
         # Staging gate — intentionally looser than the CH-PRD-02 100 ms product
         # target.  Staging runs on a small (1 vCPU / 1 GiB) Cloud Run service
         # with min_instances=1, maxScale=20, containerConcurrency=80; 1000
@@ -266,6 +326,10 @@ steps:
         # instead, which sits below the scale-up tail and is consistent
         # across runs (5.4s yesterday, 7.6s the day before, well under 15s).
         # The 1 % failure ratio still tolerates Cloud Run scale-up 502s.
+        #
+        # NOTE: the load step now runs 100 VUs / 2 min (was 1000 / 6 min) to cap
+        # staging Firestore read-ops cost.  The p90 gate stays valid (it sits
+        # below the scale-up tail); it just sees a smaller scale-up burst now.
         #
         # WATCH: if p90 starts creeping back toward the gate, check
         # rate(redis_set_json_failures_total{key_prefix="user_context"}) on
