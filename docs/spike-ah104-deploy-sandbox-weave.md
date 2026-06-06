@@ -6,19 +6,22 @@
 **Probe scripts:** `docs/spike-adk2/probe-{8,9,10}-*.py` (live/static) + `spike_deploy.py`  
 **Date authored:** 2026-06-03  
 **Run environment:** scripts authored; live probes require ADC `ken@ken-e.ai` + `ken-e-dev` access  
-**Status:** ✅ **PARTIAL GO** — AC #2 (Chat/Billing parity) and AC #3 (sandbox-on-2.0) VERIFIED; AC #1/#4 (live deploy + session/trace) require manual run with `ken-e-dev` ADC (see §2)
+**Status:** ✅ **PARTIAL GO** — AC #2 (Chat/Billing parity) and AC #3 (sandbox import-path + pool contract) VERIFIED by AH-104 automated tests; AC #1 (live deploy + probe turn), AC #4 (session/trace round-trip), and live sandbox code-exec require an operator run of the AH-111 runbook (see `docs/runs/AH-111-adk2-deploy-smoke.md` — Probe 8/10/11 are ready; §6 evidence rows not yet populated)
 
 ---
 
 ## §1 — Verdict
 
-✅ **PARTIAL GO.**
+✅ **PARTIAL GO.** Static + parity unknowns resolved by AH-104; the live-deploy and live
+sandbox unknowns are de-risked (probes ready) and gated on an operator run of the AH-111
+runbook (`docs/runs/AH-111-adk2-deploy-smoke.md`).
 
 | Unknown | Probe | Status |
 |---|---|---|
 | Chat/Billing parity on ADK 2.0: `transfer_to_agent` token propagation | `test_chat_billing_parity.py` (TC-6) | ✅ **GO — MERGE BLOCKER resolved**: 24/24 pass; `total_billable=1430` verified for both Mode A (pre-attached) and Mode B (per-turn attach via `AlwaysTrueSubAgentList`) |
 | Sandbox on ADK 2.0: `AgentEngineSandboxCodeExecutor` import path + `SandboxPool` constructor contract | Probe 9 (TC-2) | ✅ **GO** — all A1–A4 + B1–B4 assertions pass; import path unchanged from 1.x |
-| Live-deploy session/trace shape on a real 2.0 engine | Probes 8 + 10 (TC-3, TC-4) | ⏳ **Manual run required** — Test Team VM lacks `storage.buckets.get` on `gs://ken-e-dev-adk-staging` and `aiplatform.reasoningEngines.get` on `ken-e-dev` (cross-project IAM); see §2 for how to run manually and record evidence |
+| Live-deploy session/trace shape on a real 2.0 engine | Probes 8 + 10 (TC-3, TC-4) | ⏳ **Operator run required** — Probe 8 + 10 scripts ready; the agent VM is blocked by cross-project IAM (see `docs/runs/AH-111-adk2-deploy-smoke.md` §0), so the live run is operator-executed |
+| Live sandbox code-execution on ADK 2.0 (`AgentEngineSandboxCodeExecutor.execute_code`) | Probe 11 (AH-111) | ⏳ **Operator run required** — Probe 11 ready; live round-trip pending operator execution (see `docs/runs/AH-111-adk2-deploy-smoke.md` §3.4) |
 
 **AC #2 (Chat/Billing parity) — VERIFIED (with the AH-105 shim applied locally):**
 `test_chat_billing_parity.py` run under `.venv-adk2` passes 24/24 including all 10
@@ -29,20 +32,23 @@ zero-token-propagation MERGE BLOCKER confirmed in TC-6. This is the primary gate
 spike-only and is recorded as the implementation+CI-verification requirement for AH-105 in
 **§3.2.1**.
 
-**AC #3 (Sandbox on ADK 2.0) — VERIFIED:** Probe 9 static verification confirms the
-`AgentEngineSandboxCodeExecutor` import path is unchanged from 1.x and `SandboxPool`
-constructor contract is preserved under ADK 2.0. See §3.3.
+**AC #3 (Sandbox on ADK 2.0) — import path + pool contract VERIFIED:** Probe 9 static
+verification confirms the `AgentEngineSandboxCodeExecutor` import path is unchanged from 1.x
+and the `SandboxPool` constructor contract is preserved under ADK 2.0. See §3.3. The live
+code-exec round-trip (`execute_code`) is exercised by AH-111 Probe 11 and is **pending
+operator execution** (see `docs/runs/AH-111-adk2-deploy-smoke.md` §3.4).
 
-**Live probes 8 and 10 require full `ken-e-dev` GCP credentials** with
-`storage.objectAdmin` on `gs://ken-e-dev-adk-staging` and
-`aiplatform.reasoningEngines.create` / `.get` on the `ken-e-dev` project.
-These permissions are not available to the automated Test Team VM.
-See §2 for the manual run procedure and §3 for what to record.
+**AC #1 and AC #4 live probes — operator run required:** Probes 8 and 10 (live deploy +
+session/trace round-trip) need full `ken-e-dev` / `ken-e-staging` ADC; the automated agent VM
+is blocked by cross-project IAM (see `docs/runs/AH-111-adk2-deploy-smoke.md` §0). The probe
+scripts are ready, but the live run is operator-executed via the AH-111 runbook, which records
+its results in the §6 evidence table.
 
-**Routing consequence:** AH-105 (chat-tree pin bump) is unblocked by AC #2 (MERGE BLOCKER
-verified). AC #1/#4 live probes should be run manually before or alongside AH-111 (the full
-deploy + runbook verification issue). If either live probe exits 1 (NO-GO), the findings
-section §3 will capture the exact failure for AH-105 to address.
+**Overall verdict: PARTIAL GO.** AC #2 (MERGE BLOCKER) and AC #3 (sandbox import-path + pool
+contract) are verified, which unblocks AH-105 (chat-tree pin bump). The live-deploy,
+session/trace, and live-sandbox ACs are de-risked and gated on the operator-run AH-111
+runbook; once its §6 rows are populated PASS, this verdict flips to full GO. If any live probe
+exits 1 (NO-GO), §3 captures the failure for AH-105 to address.
 
 ---
 
@@ -134,6 +140,8 @@ and `"does not have"` to catch GCS `Forbidden` errors regardless of message form
   asserts non-empty text in the response.
 
 **If the deploy fails:** check `gcloud logging read 'resource.type=aiplatform.googleapis.com/ReasoningEngine' --project ken-e-dev` for the backend error — as documented in AH-PRD-13 §9 risk, transitive dep conflicts surface in Cloud Logging, not local stderr. Capture the error here and set verdict NO-GO for AH-105 until resolved.
+
+**AH-111 live results (operator-run, pending):** to be recorded in `docs/runs/AH-111-adk2-deploy-smoke.md` §3.1 (Probe 8 dev result) and §5 (staging).
 
 ---
 
@@ -260,10 +268,9 @@ parallel job that installs `google-adk==2.0.0` in a separate venv and runs
 - **Leg A — import + pool contract (A1–A4):** `AgentEngineSandboxCodeExecutor` imports cleanly from `google.adk.code_executors.agent_engine_sandbox_code_executor` (path unchanged from 1.x). `SandboxPool.get_or_create(account_id, config_id)` returns a `LeasedSandboxExecutor`; pool is empty before `execute_code` (lazy `_construct`); same-key calls return the same pool entry; two distinct keys produce distinct entries. All match `test_sandbox_pool_runtime_rebuild.py` invariants.
 - **Leg B — `AgentEngineSandboxCodeExecutor` constructor (B1–B4):** Constructor accepts `sandbox_resource_name` in the format `reasoningEngines/{id}/sandboxEnvironments/{id}` (ADK 2.0 validates the format at construction; the prior multi-segment `sandboxes/` format was rejected). `execute_code` method is present on the instance. Pool releases the sandbox correctly.
 
-**Unknown deferred to AH-111:** Live code-execution through a sandbox-attached specialist
-requires a provisioned sandbox resource in `ken-e-dev`. AH-104's scope is the import-path
-and pool-contract unknowns (both resolved above). Live code-execution smoke is AH-111's
-job (the full deploy + runbook verification).
+**AH-111 live results (operator-run, pending):** the live `execute_code` round-trip is
+exercised by AH-111 Probe 11; results will be recorded in
+`docs/runs/AH-111-adk2-deploy-smoke.md` §3.4 (Probe 11 result) once the runbook is executed.
 
 **Carry-forward:** SK-PRD-02's `SandboxPool` was designed for ADK 1.x; the pool's
 synchronous `_construct` / `lease()` contract is ADK-version-agnostic (it wraps
@@ -292,6 +299,8 @@ to verify events are present.
 - **Either outcome is acceptable** — AH-PRD-13 §9 explicitly classifies weave-autopatch
   fragility as "record, don't block."
 
+**AH-111 live results (operator-run, pending):** to be recorded in `docs/runs/AH-111-adk2-deploy-smoke.md` §3.3 (Probe 10 dev result) and §5 (staging).
+
 **Weave autopatch carry-forward (from AH-99 + AH-PRD-13 §9):** The `google.genai`
 LLM-call span has historically been absent when ADK's model client patches the genai
 library through environment-based routing (no explicit `Client(vertexai=True, ...)`).
@@ -307,8 +316,9 @@ non-blocking for AH-105.
 | Chat/Billing parity on ADK 2.0 (`transfer_to_agent` + `AlwaysTrueSubAgentList`) | ✅ **VERIFIED** | TC-6: 24/24 pass under `.venv-adk2`; `total_billable=1430` Mode A = Mode B; MERGE BLOCKER resolved |
 | `AgentEngineSandboxCodeExecutor` import path on ADK 2.0 | ✅ Unchanged | TC-2 Leg B: import succeeds, `execute_code` present |
 | `SandboxPool` constructor contract on ADK 2.0 | ✅ Preserved | TC-2 Leg A: `get_or_create` returns wrapper, pool empty before `execute_code`, same-key reuse confirmed |
-| Live-deploy session/trace shape on a real 2.0 engine | ⏳ Manual run required | Probe 8 + Probe 10 (scripts ready; IAM blocks automated run) |
-| Weave autopatch for `google.genai` on ADK 2.0 | ⏳ Manual run required | Probe 10 Weave leg (non-blocking; carry-forward per AH-PRD-13 §9) |
+| Live-deploy session/trace shape on a real 2.0 engine | ⏳ Operator run required (AH-111) | Probe 8 + Probe 10 scripts ready; pending operator run — see `docs/runs/AH-111-adk2-deploy-smoke.md` §3.1/§3.3 + §6 |
+| Weave autopatch for `google.genai` on ADK 2.0 | ⏳ Operator run required (AH-111) | Probe 10 Weave leg — to be recorded in `docs/runs/AH-111-adk2-deploy-smoke.md` §3.3 (non-blocking per AH-PRD-13 §9) |
+| Live sandbox code-execution on ADK 2.0 | ⏳ Operator run required (AH-111) | Probe 11 — pending operator run; see `docs/runs/AH-111-adk2-deploy-smoke.md` §3.4 |
 
 ---
 
