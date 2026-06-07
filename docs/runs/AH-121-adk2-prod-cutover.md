@@ -129,8 +129,10 @@ grep "google-adk" pyproject.toml api/pyproject.toml app/adk/pyproject.toml app/a
 #     with the LOCKED aiplatform's AdkApp wrapper (vertexai.agent_engines.templates.adk),
 #     but the unpinned container installed a newer aiplatform where that module moved →
 #     `ModuleNotFoundError` at engine boot → the opaque "400 ...failed to be updated".
-grep "google-cloud-aiplatform" app/adk/requirements.txt      # expect a pinned ==<version>
+grep "google-cloud-aiplatform" app/adk/requirements.txt      # expect: [agent_engines]==<ver>, NOT [adk]
 grep -A2 'name = "google-cloud-aiplatform"' app/adk/uv.lock | grep version
+#     The [adk] extra pins google-adk<2.0.0 → pip ResolutionImpossible against the chat
+#     tree's google-adk[mcp]==2.0.0 → "400 Build failed" (PR #888). Use [agent_engines] only.
 #     the two versions MUST match (verify_deploy_tree.py asserts this; see check below)
 
 # 2) Chat deploy venv declares the deps ADK 2.0 dropped as transitives
@@ -143,7 +145,7 @@ uv run --no-sync python deployment/ci/scripts/verify_deploy_tree.py
 | Invariant | Expected | Result |
 |---|---|---|
 | `google-adk==2.0.0` in all 4 manifests | yes | ✅ `google-adk[mcp]==2.0.0` in `pyproject.toml`, `api/pyproject.toml`, `app/adk/pyproject.toml`, `app/adk/requirements.txt` |
-| `aiplatform` pin in `requirements.txt` == locked `aiplatform` in `uv.lock` | match | _paste_ (must be pinned — unpinned skew was the AH-121 staging-deploy failure; the fix (PR #887) pins it `==1.154.0` and adds `verify_deploy_tree.py` Check 6 to assert the match) |
+| `aiplatform` pin == `uv.lock` **and** no `[adk]` extra in `requirements.txt` | `==1.154.0`, `[agent_engines]` only | _paste_ (two AH-121 staging-deploy traps, both opaque 400s: (1) unpinned → newer aiplatform in the container → `templates.adk` unpickle fail at boot [fixed PR #887]; (2) the `[adk]` extra pins `google-adk<2.0.0` → backend container build `ResolutionImpossible` [fixed PR #888]. `verify_deploy_tree.py` Check 6 now asserts BOTH: pin==uv.lock and `[adk]` absent) |
 | chat deploy venv deps present (`aiplatform[agent-engines]`, `secret-manager`) | yes | ✅ both present in `app/adk/pyproject.toml` |
 | deploy-tree cloudpickle smoke | exit 0 | ✅ `verify_deploy_tree.py` exit 0 — 5 checks on `main` HEAD (agents dir, build_hierarchy import, cloudpickle round-trip, deploy_ken_e import, ADK-major manifest pins); becomes 6 after PR #887 (adds the aiplatform pin==uv.lock check) |
 | chat-status-dots OIDC: prod `CHAT_INTERNAL_OIDC_AUDIENCE` == `https://kene-api-prod-395770269870.us-central1.run.app` | match | _paste_ (operator-verified at deploy time — runtime env, not in repo) |

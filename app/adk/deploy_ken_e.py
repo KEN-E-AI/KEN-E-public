@@ -265,13 +265,20 @@ def _resolve_existing_engine_id(project_number: str) -> str | None:
 #     but the GA specialist ModuleNotFoundErrors at runtime (invisible to CI, which
 #     mocks MCP). This is the CHAT tree only; the strategy tree pins google-adk==1.34.1
 #     via requirements-strategy.txt (AH-106 decoupling).
-#   * google-cloud-aiplatform[adk,agent_engines]==<uv.lock version> — must be PINNED
-#     to the exact aiplatform that app/adk/uv.lock resolves. deploy_ken_e cloudpickles
-#     the agent with the LOCKED aiplatform's AdkApp wrapper (module path
-#     vertexai.agent_engines.templates.adk); an unpinned manifest installs a newer
-#     aiplatform in the container where that module has moved, so the engine fails to
-#     unpickle at boot → opaque "400 The Reasoning Engine failed to be updated"
-#     (the AH-121 staging-deploy failure). Check 6 asserts manifest == uv.lock.
+#   * google-cloud-aiplatform[agent_engines]==<uv.lock version> — must be PINNED to the
+#     exact aiplatform that app/adk/uv.lock resolves, with the SAME extras as
+#     pyproject.toml ([agent_engines] ONLY — NOT [adk]). Two AH-121 traps:
+#       1) Pin (not float): deploy_ken_e cloudpickles the agent with the LOCKED
+#          aiplatform's AdkApp wrapper (module path vertexai.agent_engines.templates.adk);
+#          an unpinned manifest installs a NEWER aiplatform in the container where that
+#          module has moved, so the engine fails to unpickle at boot → opaque
+#          "400 The Reasoning Engine failed to be updated".
+#       2) NO [adk] extra: aiplatform 1.154.0's [adk] extra depends on google-adk<2.0.0,
+#          which conflicts with the chat tree's google-adk[mcp]==2.0.0 → the backend
+#          container build fails with pip ResolutionImpossible → "400 Build failed".
+#          The [adk] extra is also redundant — we pin google-adk[mcp]==2.0.0 directly,
+#          and the templates.adk module ships in the wheel regardless of extras.
+#     Check 6 asserts manifest pin == uv.lock AND that the [adk] extra is absent.
 CHAT_ADK_VERSION_PREFIX = "2."
 
 

@@ -25,13 +25,18 @@ Six checks:
      google-adk==1.34.1) and the strategy deploy still consumes
      requirements-strategy.txt (AH-105 / AH-106 decoupling guard).
   6. The chat manifest's google-cloud-aiplatform pin matches the version
-     app/adk/uv.lock resolves (AH-121 guard): deploy_ken_e cloudpickles the
-     agent with the LOCKED aiplatform's AdkApp wrapper
-     (vertexai.agent_engines.templates.adk); an unpinned/skewed manifest installs
-     a newer aiplatform in the container where that module has moved, so the engine
-     fails to unpickle at boot → opaque "400 The Reasoning Engine failed to be
-     updated". This static check would have caught the staging-deploy outage that
-     went red across multiple main commits.
+     app/adk/uv.lock resolves AND carries no [adk] extra (AH-121 guard). Two traps,
+     both surfaced as opaque 400s from the staging deploy:
+       - Pin skew: deploy_ken_e cloudpickles the agent with the LOCKED aiplatform's
+         AdkApp wrapper (vertexai.agent_engines.templates.adk); an unpinned/skewed
+         manifest installs a newer aiplatform in the container where that module has
+         moved → the engine fails to unpickle at boot → "400 ...failed to be updated".
+       - [adk] extra: aiplatform's [adk] extra depends on google-adk<2.0.0, which
+         conflicts with the chat tree's google-adk[mcp]==2.0.0 → the backend container
+         build fails with pip ResolutionImpossible → "400 Build failed". The manifest
+         must use [agent_engines] only (matching pyproject.toml).
+     This static check would have caught the staging-deploy outage that went red
+     across multiple main commits.
 
 Exit 0 = all six checks pass.  Non-zero = at least one check failed.
 """
@@ -158,6 +163,29 @@ def _pinned_aiplatform_version(requirements_path: Path) -> str | None:
         if name == "google-cloud-aiplatform":
             _, sep, version = stripped.partition("==")
             return version.strip() if sep else None
+    return None
+
+
+def _aiplatform_extras(requirements_path: Path) -> set[str] | None:
+    """Return the extras declared on the google-cloud-aiplatform requirement, or None.
+
+    e.g. ``google-cloud-aiplatform[agent_engines]==1.154.0`` -> ``{"agent_engines"}``.
+    Returns None when the entry is absent. The chat tree must NOT carry the ``adk``
+    extra: aiplatform's ``[adk]`` extra depends on ``google-adk<2.0.0``, which conflicts
+    with the chat tree's ``google-adk[mcp]==2.0.0`` (AH-121 backend-build
+    ResolutionImpossible). pyproject.toml uses ``[agent-engines]`` only; the manifest
+    must match.
+    """
+    for line in requirements_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        base = stripped.split("==")[0].strip()
+        if base.split("[")[0].strip() == "google-cloud-aiplatform":
+            if "[" in base and "]" in base:
+                inner = base[base.index("[") + 1 : base.index("]")]
+                return {e.strip() for e in inner.split(",") if e.strip()}
+            return set()
     return None
 
 
@@ -392,9 +420,22 @@ def main() -> int:
             locked,
         )
         return 1
+    extras = _aiplatform_extras(requirements_txt) or set()
+    if "adk" in extras:
+        logger.error(
+            "FAIL Check 6: %s declares the google-cloud-aiplatform [adk] extra. That "
+            "extra depends on google-adk<2.0.0 and conflicts with the chat tree's "
+            "google-adk[mcp]==2.0.0 → the backend container build fails with pip "
+            "ResolutionImpossible (AH-121 '400 Build failed'). Use [agent_engines] only "
+            "(match pyproject.toml); google-adk is pinned directly and the templates.adk "
+            "module ships in the wheel regardless of extras.",
+            requirements_txt.name,
+        )
+        return 1
     logger.info(
-        "PASS Check 6: google-cloud-aiplatform pinned to ==%s, matching uv.lock",
+        "PASS Check 6: google-cloud-aiplatform pinned to ==%s (extras=%s), matching uv.lock",
         pinned,
+        sorted(extras) or "none",
     )
     return 0
 
