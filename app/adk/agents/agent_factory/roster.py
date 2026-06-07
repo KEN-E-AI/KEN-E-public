@@ -8,11 +8,25 @@ it is not wired as a runtime callback, tool_filter predicate, or
 before_agent_callback.  Specialists are constructed with a final tool list bound
 directly to ``tools=``.  See agentic-harness README §2.5 (Tool-assignment &
 routing model) for the full rationale.
+
+AH-115: ``resolve_specialist_roster`` now returns a :class:`RosterResolution`
+dataclass with two separate slots — ``tools`` (MCP toolsets + function tools) and
+``sub_agents`` (task-mode ``LlmAgent`` leaves from the AH-114 registry). Callers
+must pass the two slots to the appropriate ADK attachment points:
+
+* ``tools=roster_result.tools`` → ``build_agent(...)``
+* ``specialist.sub_agents += roster_result.sub_agents`` → inner ``LlmAgent`` worker
+  (before any review-pipeline wrap) in ``_build_specialist``.
+
+The root paths (``hierarchy.py``, ``root_tools_attacher.py``) pass
+``agent_subagents=[]`` and discard the empty ``sub_agents`` slot — their
+agent-subagent wiring is handled separately by AH-116.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from app.adk.agents.agent_factory.mcp import MCPFactoryError
@@ -41,6 +55,31 @@ class RosterCapExceededError(MCPFactoryError):
     The error message always names the specialist and the observed count so
     the operator knows immediately which config to tighten.
     """
+
+
+# ---------------------------------------------------------------------------
+# Result type
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RosterResolution:
+    """Two-slot result from :func:`resolve_specialist_roster` (AH-115).
+
+    Separates the two ADK attachment points:
+
+    * ``tools`` — MCP toolsets + function tools; pass to ``build_agent(tools=...)``.
+    * ``sub_agents`` — task-mode ``LlmAgent`` leaves from the AH-114 registry;
+      attach to the inner specialist ``LlmAgent`` *before* any review-pipeline
+      wrap: ``specialist.sub_agents = list(specialist.sub_agents or []) + sub_agents``.
+
+    Cap arithmetic is unchanged: each entry in either slot counts as one logical
+    tool slot (each ``sub_agents`` entry causes ADK to inject one
+    ``request_task_<name>`` callable).
+    """
+
+    tools: list[Any] = field(default_factory=list)
+    sub_agents: list[Any] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +122,7 @@ def count_specialist_tool_roster(
     *,
     mcp_server_ids: list[str],
     function_tools: list[Any],
-    agent_tools: list[Any] | None = None,
+    agent_subagents: list[Any] | None = None,
     registry: ToolRegistry,
 ) -> int:
     """Return the logical tool count for a specialist before construction.
@@ -91,10 +130,15 @@ def count_specialist_tool_roster(
     The logical count is the canonical cap-enforcement value:
 
         sum(registry entries for each mcp_server_id) + len(function_tools)
+        + len(agent_subagents)
 
     Built-in model capabilities (Gemini code execution, etc.) are not
     parameters of this function and do not contribute to the count — they
     are configured on the agent via ``code_executor=``, not via ``tools=``.
+
+    Each task-mode sub-agent (``agent_subagents`` entry) counts as 1 because ADK
+    auto-injects one ``request_task_<name>`` callable on the parent per sub-agent
+    — semantically one tool slot from the LLM's perspective (AH-115 / D5).
 
     NOTE on default-global function tools (AH-PRD-06 PR-C): the
     ``function_tools`` parameter includes any tools that
@@ -113,21 +157,23 @@ def count_specialist_tool_roster(
             assigned to this specialist.
         function_tools: SDK function tools (e.g. ``create_visualization``)
             to be included in the specialist's roster.
+        agent_subagents: Task-mode ``LlmAgent`` sub-agents (AH-114/AH-115) to
+            be attached to the specialist's ``sub_agents`` list.
         registry: ToolRegistry instance to query for per-server tool counts.
 
     Returns:
         Total logical tool count.
     """
-    agent_tool_count = len(agent_tools or [])
+    agent_subagent_count = len(agent_subagents or [])
     server_count = sum(_tool_count_for_server(sid, registry) for sid in mcp_server_ids)
-    total = server_count + len(function_tools) + agent_tool_count
+    total = server_count + len(function_tools) + agent_subagent_count
     logger.debug(
         "Logical roster count for %r: %d mcp-tool(s) + %d function-tool(s) + "
-        "%d agent-tool(s) = %d",
+        "%d agent-subagent(s) = %d",
         specialist_name,
         server_count,
         len(function_tools),
-        agent_tool_count,
+        agent_subagent_count,
         total,
     )
     return total
@@ -181,19 +227,21 @@ def _filter_function_tools_by_ids(
     return kept
 
 
-def _filter_agent_tools_by_ids(agent_tools: list[Any], tool_ids: set[str]) -> list[Any]:
-    """Return only agent tools whose ``agent.{name}`` ID is in tool_ids (AH-98).
+def _filter_agent_subagents_by_ids(
+    agent_subagents: list[Any], tool_ids: set[str]
+) -> list[Any]:
+    """Return only task-mode sub-agents whose ``agent.{name}`` ID is in tool_ids (AH-115).
 
-    Agent tools are ADK ``AgentTool`` instances; their name is stamped to the
-    catalogue name by ``agent_tool_registry.register_agent_tool``. Anything
-    without a discoverable ``name`` is dropped silently — there's nothing
-    reliable to match against.
+    Task-mode sub-agents are ``LlmAgent(mode='task')`` instances from the AH-114
+    registry; their name is stamped to the catalogue name by
+    ``register_agent_subagent``. Anything without a discoverable ``name`` is
+    dropped silently — there's nothing reliable to match against.
     """
     kept: list[Any] = []
-    for tool in agent_tools:
-        bare_name = getattr(tool, "name", None)
+    for subagent in agent_subagents:
+        bare_name = getattr(subagent, "name", None)
         if isinstance(bare_name, str) and f"agent.{bare_name}" in tool_ids:
-            kept.append(tool)
+            kept.append(subagent)
     return kept
 
 
@@ -203,20 +251,28 @@ def resolve_specialist_roster(
     mcp_toolsets: dict[str, Any],
     function_tools: list[Any],
     mcp_server_ids: list[str],
-    agent_tools: list[Any] | None = None,
+    agent_subagents: list[Any] | None = None,
     tool_ids: list[str] | None = None,
     registry: ToolRegistry | None = None,
-) -> list[Any]:
-    """Validate the logical tool count and return the ordered tools list.
+) -> RosterResolution:
+    """Validate the logical tool count and return a :class:`RosterResolution`.
 
-    This is the canonical entry point for assembling a specialist's
-    ``tools=`` argument.  It performs two actions:
+    This is the canonical entry point for assembling a specialist's tool
+    attachment. It performs two actions:
 
     1. Counts the logical roster via :func:`count_specialist_tool_roster` and
        raises :class:`RosterCapExceededError` if the count exceeds
        :data:`MAX_TOOLS_PER_SPECIALIST`.
-    2. Returns the ordered list ``[*mcp_toolsets.values(), *function_tools]``
-       ready to pass directly to ``build_agent(..., tools=...)``.
+    2. Returns a :class:`RosterResolution` with two slots:
+
+       * ``tools`` — ``[*mcp_toolsets.values(), *function_tools]`` — pass to
+         ``build_agent(..., tools=...)``.
+       * ``sub_agents`` — filtered task-mode ``LlmAgent`` leaves — attach to the
+         inner specialist ``LlmAgent`` before any review-pipeline wrap.
+
+    AH-115 (D2): returning a dataclass instead of a flat list separates the two
+    ADK attachment points (``tools=`` vs ``sub_agents=``) and prevents callers
+    from accidentally mixing them.
 
     Args:
         specialist_name: Human-readable name; used in error / log messages.
@@ -225,6 +281,9 @@ def resolve_specialist_roster(
         function_tools: SDK function tools to append after the MCP toolsets.
         mcp_server_ids: Ordered list of server IDs matching the keys in
             *mcp_toolsets* (used for registry lookup; order is preserved).
+        agent_subagents: Task-mode ``LlmAgent`` sub-agents from the AH-114
+            registry (``resolve_agent_subagents(get_default_registry())``).
+            ``None`` or ``[]`` produces an empty ``RosterResolution.sub_agents``.
         tool_ids: Optional per-agent tool allowlist (AH-PRD-06). ``None``
             preserves legacy behaviour (every tool from every attached
             server). ``[]`` returns an empty roster. ``[…]`` filters: each
@@ -232,12 +291,14 @@ def resolve_specialist_roster(
             ``allowed_tool_names`` arg already plumbed through
             :func:`build_toolset_for_doc`), and function tools are filtered
             to those whose ``function.{name}`` is in the list. Servers with
-            no allowed tools are dropped entirely.
+            no allowed tools are dropped entirely.  Agent sub-agents are
+            included only when their ``agent.{name}`` ID appears in the list.
         registry: ToolRegistry instance.  When ``None`` the default registry
             is loaded via ``get_default_registry()``.
 
     Returns:
-        Ordered list: all McpToolset values followed by all function tools.
+        :class:`RosterResolution` with ``.tools`` (MCP toolsets + function
+        tools) and ``.sub_agents`` (task-mode ``LlmAgent`` leaves).
 
     Raises:
         ValueError: ``mcp_server_ids`` contains empty/blank entries, duplicate
@@ -246,10 +307,10 @@ def resolve_specialist_roster(
             :data:`MAX_TOOLS_PER_SPECIALIST`.
     """
     # Snapshot mutable inputs immediately so the validated count and the
-    # returned list are always consistent (TOCTOU guard).
+    # returned result are always consistent (TOCTOU guard).
     frozen_toolsets: dict[str, Any] = dict(mcp_toolsets)
     frozen_function_tools: list[Any] = list(function_tools)
-    frozen_agent_tools: list[Any] = list(agent_tools or [])
+    frozen_agent_subagents: list[Any] = list(agent_subagents or [])
 
     # AH-PRD-06: apply the per-agent tool allowlist. Within-toolset filtering
     # is the caller's job at construction (``hierarchy.py`` passes
@@ -259,7 +320,8 @@ def resolve_specialist_roster(
     #     seed scripts / tests) can't sneak past the API gate;
     #   * drops toolsets whose servers don't appear in ``tool_ids`` as a
     #     safety net when the caller didn't pre-filter;
-    #   * prunes function tools to those whose ``function.{name}`` is listed.
+    #   * prunes function tools to those whose ``function.{name}`` is listed;
+    #   * prunes agent sub-agents to those whose ``agent.{name}`` is listed.
     if tool_ids is not None:
         # Defensive cap (review item #2): the API layer gates len(tool_ids)
         # to MAX_TOOLS_PER_SPECIALIST, but a direct Firestore write or a
@@ -281,12 +343,18 @@ def resolve_specialist_roster(
         kept_function_tools = _filter_function_tools_by_ids(
             frozen_function_tools, tool_id_set
         )
-        # AH-98: opt-in agent tools are attached only when their ``agent.{name}``
-        # id is listed. The candidate set is the full catalogue (passed in by
-        # the caller), so non-default-global tools like google_search attach
-        # here even though they're excluded from the legacy "all tools" branch.
-        kept_agent_tools = _filter_agent_tools_by_ids(frozen_agent_tools, tool_id_set)
-        return [*kept_toolsets.values(), *kept_function_tools, *kept_agent_tools]
+        # AH-115 (AH-98): opt-in agent sub-agents are attached only when their
+        # ``agent.{name}`` id is listed. The candidate set is the full catalogue
+        # (passed in by the caller), so non-default-global sub-agents like
+        # google_search attach here even though they're excluded from the legacy
+        # "all tools" branch.
+        kept_agent_subagents = _filter_agent_subagents_by_ids(
+            frozen_agent_subagents, tool_id_set
+        )
+        return RosterResolution(
+            tools=[*kept_toolsets.values(), *kept_function_tools],
+            sub_agents=kept_agent_subagents,
+        )
 
     # Validate server IDs: no empty/blank entries, no duplicates, must match
     # the toolsets dict keys so the logical count matches the runtime roster.
@@ -321,22 +389,20 @@ def resolve_specialist_roster(
 
         registry = get_default_registry()
 
-    # AH-98: with no per-agent ``tool_ids`` allowlist, only ``default_global``
-    # agent tools attach (parity with default-global function tools). Opt-in
-    # tools like google_search are excluded here — they require an explicit
-    # ``agent.{name}`` entry in ``tool_ids`` (the branch above). The registry
-    # lookup is guarded so empty-agent-tool callers don't depend on it.
-    # (No annotation here: the ``tool_ids is not None`` branch above already
-    # binds ``kept_agent_tools`` and returns, so re-annotating trips mypy's
-    # no-redef. The list-comprehension below fixes the element type.)
-    kept_agent_tools = []
-    if frozen_agent_tools:
+    # AH-115 (AH-98): with no per-agent ``tool_ids`` allowlist, only
+    # ``default_global`` agent sub-agents attach (parity with default-global
+    # function tools). Opt-in sub-agents like google_search are excluded here —
+    # they require an explicit ``agent.{name}`` entry in ``tool_ids`` (the
+    # branch above). The registry lookup is guarded so empty-agent-subagent
+    # callers don't depend on it.
+    kept_agent_subagents = []
+    if frozen_agent_subagents:
         default_global_agent_names = {
             t.name for t in registry.list_agent_tools() if t.default_global
         }
-        kept_agent_tools = [
+        kept_agent_subagents = [
             t
-            for t in frozen_agent_tools
+            for t in frozen_agent_subagents
             if getattr(t, "name", None) in default_global_agent_names
         ]
 
@@ -344,16 +410,18 @@ def resolve_specialist_roster(
         specialist_name,
         mcp_server_ids=mcp_server_ids,
         function_tools=frozen_function_tools,
-        agent_tools=kept_agent_tools,
+        agent_subagents=kept_agent_subagents,
         registry=registry,
     )
 
     if logical_count > MAX_TOOLS_PER_SPECIALIST:
-        mcp_count = logical_count - len(frozen_function_tools) - len(kept_agent_tools)
+        mcp_count = (
+            logical_count - len(frozen_function_tools) - len(kept_agent_subagents)
+        )
         raise RosterCapExceededError(
             f"Specialist {specialist_name!r} has a logical tool count of {logical_count} "
             f"({len(frozen_function_tools)} function tool(s) + "
-            f"{len(kept_agent_tools)} agent tool(s) + "
+            f"{len(kept_agent_subagents)} agent-subagent(s) + "
             f"{mcp_count} MCP tool(s)), "
             f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap. "
             f"Note: function tools include any default-global entries from "
@@ -364,4 +432,7 @@ def resolve_specialist_roster(
             f"(see README §2.6)."
         )
 
-    return [*frozen_toolsets.values(), *frozen_function_tools, *kept_agent_tools]
+    return RosterResolution(
+        tools=[*frozen_toolsets.values(), *frozen_function_tools],
+        sub_agents=kept_agent_subagents,
+    )

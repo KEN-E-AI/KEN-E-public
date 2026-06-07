@@ -29,3 +29,4 @@ lint:
 	uv run mypy .
 	uv run python api/scripts/lint/check_context_window_registry_coverage.py
 	uv run python api/scripts/lint/check_artifact_register.py
+	uv run python api/scripts/lint/check_no_agent_tool_in_chat_tree.py

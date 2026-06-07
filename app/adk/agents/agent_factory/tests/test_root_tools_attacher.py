@@ -11,6 +11,10 @@ Covers:
   - Firestore error: same degradation policy.
   - No account_id (None): global config used without ValueError.
   - Invalid account_id: warning logged, falls back to global config.
+  - AH-116: agent-as-tool LlmAgent(mode='task') instances land in sub_agents, not tools.
+  - AH-116: coexistence with attach_specialists_before_agent_callback (disjoint name-sets).
+  - AH-116: hot-reload remove drops the agent-as-tool sub_agent from sub_agents.
+  - AH-116: no AgentTool instance in root.tools or root.sub_agents (regression guard).
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from app.adk.agents.agent_factory.root_tools_attacher import (
     attach_root_tools,
     attach_root_tools_before_agent_callback,
 )
-from app.adk.agents.agent_factory.roster import RosterCapExceededError
+from app.adk.agents.agent_factory.roster import RosterCapExceededError, RosterResolution
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -109,7 +113,7 @@ class TestCallbackContract:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ):
             result = attach_root_tools_before_agent_callback(ctx)
 
@@ -144,7 +148,7 @@ class TestSuccessfulResolve:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ):
             attach_root_tools(agent, account_id="acc_test123")
 
@@ -159,7 +163,7 @@ class TestSuccessfulResolve:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ):
             attach_root_tools(agent, account_id="acc_test123")
 
@@ -173,7 +177,7 @@ class TestSuccessfulResolve:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ):
             attach_root_tools(agent, account_id=None)  # Must not raise
 
@@ -188,7 +192,7 @@ class TestSuccessfulResolve:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ):
             # This bad id would raise ValueError inside validate_account_id.
             attach_root_tools(agent, account_id="../../admin")  # Must not raise
@@ -211,7 +215,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ) as mock_resolve:
             attach_root_tools(agent, account_id="acc_fingerprint")
             attach_root_tools(agent, account_id="acc_fingerprint")
@@ -235,7 +239,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_v1
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ):
             attach_root_tools(agent, account_id="acc_change")
 
@@ -245,7 +249,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_v2
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_b]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_b])
         ):
             attach_root_tools(agent, account_id="acc_change")
 
@@ -266,7 +270,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_with
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ):
             attach_root_tools(agent, account_id="acc_drop")
 
@@ -275,7 +279,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_without
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ):
             attach_root_tools(agent, account_id="acc_drop")
 
@@ -298,7 +302,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ):
             attach_root_tools(agent1, account_id="acc_guard")
 
@@ -312,7 +316,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ) as mock_resolve:
             attach_root_tools(agent2, account_id="acc_guard")
             # Resolve ran again (populated-guard bypassed the hash-hit early return).
@@ -337,7 +341,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_empty
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ) as mock_resolve_1:
             attach_root_tools(agent1, account_id="acc_zero")
             mock_resolve_1.assert_called_once()
@@ -350,7 +354,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_empty
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ) as mock_resolve_2:
             attach_root_tools(agent2, account_id="acc_zero")
             # Re-resolve fires (populated-guard) but result is still [].
@@ -379,7 +383,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_v1
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_a]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
         ):
             attach_root_tools(agent, account_id="acc_identity")
 
@@ -396,7 +400,7 @@ class TestFingerprintCache:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg_v2
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[tool_b]
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_b])
         ):
             attach_root_tools(agent, account_id="acc_identity")
 
@@ -461,7 +465,7 @@ class TestFingerprintCache:
             with patch.object(
                 rta, "get_cached_merged_config", return_value=cfg
             ), patch.object(
-                rta, "resolve_specialist_roster", return_value=resolved
+                rta, "resolve_specialist_roster", return_value=RosterResolution(tools=resolved)
             ):
                 attach_root_tools(agent, account_id=account_id)
 
@@ -558,7 +562,7 @@ class TestErrorDegradation:
         with patch.object(
             rta, "get_cached_merged_config", return_value=cfg
         ), patch.object(
-            rta, "resolve_specialist_roster", return_value=[]
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
         ), patch.object(
             rta, "block_lock_for", side_effect=_recording_lock_for
         ):
@@ -570,3 +574,326 @@ class TestErrorDegradation:
             f"Expected lock key None for no-account turn; got {lock_keys_used[0]!r}. "
             "Using a string key risks collision with a valid account ID."
         )
+
+
+# ---------------------------------------------------------------------------
+# AH-116: agent-as-tool partition — LlmAgent instances land in sub_agents
+# ---------------------------------------------------------------------------
+
+
+def _make_task_mode_agent(name: str) -> LlmAgent:
+    """Build a minimal task-mode LlmAgent for use as an agent-as-tool stub."""
+    return LlmAgent(
+        name=name,
+        model="gemini-2.0-flash",
+        instruction=f"You are the {name} sub-agent.",
+        mode="task",
+    )
+
+
+class TestAgentAsToolPartition:
+    """AH-116: agent-as-tool LlmAgent(mode='task') instances from
+    resolve_agent_subagents must land in root.sub_agents, NOT root.tools.
+
+    The partition is driven by isinstance(item, LlmAgent) inside _attach_locked.
+    These tests verify the partition semantics and the disjoint-name-sets
+    coexistence contract with attach_specialists_before_agent_callback.
+    """
+
+    def test_task_mode_agent_lands_in_sub_agents_not_tools(self) -> None:
+        """A task-mode LlmAgent returned from resolve_specialist_roster is
+        routed to root.sub_agents — NOT to root.tools."""
+        agent = _make_root_agent(tools=[])
+        gs_sub = _make_task_mode_agent("google_search")
+        cfg = _make_config(tool_ids=["agent.google_search"])
+
+        # resolve_specialist_roster returns a RosterResolution with the LlmAgent
+        # in sub_agents; _attach_locked must route it to root.sub_agents, not tools.
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution(sub_agents=[gs_sub])
+        ):
+            attach_root_tools(agent, account_id="acc_partition")
+
+        # The sub_agent is in sub_agents, not tools.
+        gs_in_sub = next(
+            (s for s in agent.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_in_sub is not None, (
+            "Expected task-mode LlmAgent 'google_search' in root.sub_agents."
+        )
+        assert not any(
+            isinstance(t, LlmAgent) for t in agent.tools
+        ), "No LlmAgent should be in root.tools — it is not a valid tools= entry."
+
+    def test_regular_tools_stay_in_tools(self) -> None:
+        """Non-LlmAgent items from resolve_specialist_roster stay in root.tools."""
+        agent = _make_root_agent(tools=[])
+        regular_tool = _make_tool("some_mcp_tool")
+        cfg = _make_config(tool_ids=["ga4.some_mcp_tool"])
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[regular_tool])
+        ), patch.object(
+            rta, "resolve_agent_subagents", return_value=[]
+        ):
+            attach_root_tools(agent, account_id="acc_regular")
+
+        assert regular_tool in agent.tools
+        assert not any(s is regular_tool for s in agent.sub_agents)
+
+    def test_coexistence_specialist_and_agent_tool_disjoint_name_sets(self) -> None:
+        """A turn with both specialists (set by attach_specialists_*) and
+        agent-as-tool sub_agents (set by AH-116) yields both in root.sub_agents
+        with disjoint name-sets — neither callback drops the other's entries.
+
+        Simulate by pre-populating root.sub_agents with a 'fake_specialist'
+        (not in owned_names), then calling attach_root_tools.  After the call
+        the specialist must still be present alongside the new agent-as-tool entry.
+        """
+        agent = _make_root_agent(tools=[])
+        # Pre-populate a specialist (not in the agent-as-tool registry).
+        fake_specialist = LlmAgent(
+            name="fake_specialist",
+            model="gemini-2.0-flash",
+            instruction="I am a specialist.",
+        )
+        fake_specialist.parent_agent = agent
+        agent.sub_agents = [fake_specialist]
+
+        gs_sub = _make_task_mode_agent("google_search")
+        cfg = _make_config(tool_ids=["agent.google_search"])
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution(sub_agents=[gs_sub])
+        ):
+            attach_root_tools(agent, account_id="acc_coexist")
+
+        sub_names = [s.name for s in agent.sub_agents]
+        assert "fake_specialist" in sub_names, (
+            "Specialist added by attach_specialists_* must not be dropped by AH-116 reconcile."
+        )
+        assert "google_search" in sub_names, (
+            "Agent-as-tool sub_agent must be present alongside the specialist."
+        )
+
+    def test_hot_reload_remove_drops_agent_sub_not_specialists(self) -> None:
+        """Clearing tool_ids removes the agent-as-tool sub_agent from
+        root.sub_agents on the next turn but leaves specialists untouched.
+        """
+        agent = _make_root_agent(tools=[])
+        # Pre-populate: specialist + agent-as-tool entry.
+        fake_specialist = LlmAgent(
+            name="fake_specialist",
+            model="gemini-2.0-flash",
+            instruction="I am a specialist.",
+        )
+        gs_entry = _make_task_mode_agent("google_search")
+        fake_specialist.parent_agent = agent
+        gs_entry.parent_agent = agent
+        agent.sub_agents = [fake_specialist, gs_entry]
+        # Seed the applied hash so the guard passes (non-empty sub_agents).
+        rta._applied_hash = None  # force re-resolve
+
+        cfg_empty = _make_config(tool_ids=[])
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_empty
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        ), patch.object(
+            rta, "resolve_agent_subagents", return_value=[]
+        ):
+            attach_root_tools(agent, account_id="acc_hotreload_remove")
+
+        sub_names = [s.name for s in agent.sub_agents]
+        assert "fake_specialist" in sub_names, (
+            "Specialist must not be removed when tool_ids is cleared."
+        )
+        assert "google_search" not in sub_names, (
+            "Agent-as-tool sub_agent must be removed when it is no longer in tool_ids."
+        )
+
+    def test_no_agent_tool_instance_in_tools_or_sub_agents(self) -> None:
+        """Regression guard (AH-116 AC #4): no AgentTool instance may exist in
+        root.tools or root.sub_agents after the reconcile.
+
+        This is the focused per-module variant of TestNoAgentToolInGate in
+        test_chat_billing_parity.py; it provides a sharper failure signal
+        during the AH-116 TDD loop without requiring the full billing-parity
+        harness to run.
+        """
+        agent = _make_root_agent(tools=[])
+        gs_sub = _make_task_mode_agent("google_search")
+        cfg = _make_config(tool_ids=["agent.google_search"])
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution(sub_agents=[gs_sub])
+        ):
+            attach_root_tools(agent, account_id="acc_no_agent_tool")
+
+        all_items = list(agent.tools) + list(agent.sub_agents)
+        for item in all_items:
+            assert type(item).__name__ != "AgentTool", (
+                f"AgentTool found in root surface after AH-116 reconcile: {item!r}. "
+                "AH-116 must route agent-as-tool entries as task-mode LlmAgents."
+            )
+
+    def test_task_mode_agent_injects_dispatchable_tool(self) -> None:
+        """AH-117: routing a task-mode sub-agent to root.sub_agents must ALSO
+        inject a ``_TaskAgentTool`` (named after the sub-agent) into root.tools.
+
+        ADK creates that tool only in ``model_post_init``; the per-turn root is
+        a clone reconciled post-construction, so without the explicit injection
+        ``canonical_tools`` / ``_extract_task_delegation_fcs`` never see the
+        delegation and a real LLM can't emit ``request_task_google_search`` — the
+        search sub-agent's tokens go uncounted. This fails before the AH-117 fix.
+        """
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        agent = _make_root_agent(tools=[])
+        gs_sub = _make_task_mode_agent("google_search")
+        cfg = _make_config(tool_ids=["agent.google_search"])
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta,
+            "resolve_specialist_roster",
+            return_value=RosterResolution(sub_agents=[gs_sub]),
+        ):
+            attach_root_tools(agent, account_id="acc_dispatch")
+
+        task_tools = [t for t in agent.tools if isinstance(t, _TaskAgentTool)]
+        assert [t.name for t in task_tools] == ["google_search"], (
+            "Expected exactly one _TaskAgentTool('google_search') in root.tools "
+            f"after attach; got {[getattr(t, 'name', None) for t in agent.tools]}. "
+            "Without it the LLM cannot dispatch request_task_google_search."
+        )
+        # The executable sub-agent must remain reachable via find_agent.
+        assert any(
+            getattr(s, "name", None) == "google_search" for s in agent.sub_agents
+        )
+
+    def test_hot_reload_remove_drops_task_tool(self) -> None:
+        """AH-117: clearing tool_ids removes the ``_TaskAgentTool`` from
+        root.tools, not just the sub-agent from root.sub_agents."""
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        agent = _make_root_agent(tools=[])
+        gs_entry = _make_task_mode_agent("google_search")
+        gs_entry.parent_agent = agent
+        agent.sub_agents = [gs_entry]
+        # Seed a matching task tool as a prior turn's reconcile would have.
+        agent.tools.append(_TaskAgentTool(gs_entry))
+        rta._applied_hash = None  # force re-resolve
+
+        cfg_empty = _make_config(tool_ids=[])
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_empty
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        ), patch.object(
+            rta, "resolve_agent_subagents", return_value=[]
+        ):
+            attach_root_tools(agent, account_id="acc_hotreload_tool_remove")
+
+        assert not any(isinstance(t, _TaskAgentTool) for t in agent.tools), (
+            "Expected the _TaskAgentTool removed from root.tools after tool_ids "
+            "was cleared."
+        )
+        assert not any(
+            getattr(s, "name", None) == "google_search" for s in agent.sub_agents
+        )
+
+# ---------------------------------------------------------------------------
+# AH-116: _reconcile_agent_subagents direct unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileAgentSubagents:
+    """Direct unit tests for _reconcile_agent_subagents, covering branches
+    not easily reached via the full attach_root_tools path."""
+
+    def test_noop_when_desired_already_present_by_identity(self) -> None:
+        """If the desired instance is already in sub_agents by identity, no
+        mutation occurs and changed == False."""
+        from app.adk.agents.agent_factory.root_tools_attacher import (
+            _reconcile_agent_subagents,
+        )
+
+        root = _make_root_agent()
+        gs = _make_task_mode_agent("google_search")
+        gs.parent_agent = root
+        root.sub_agents = [gs]
+
+        changed = _reconcile_agent_subagents(root, {"google_search": gs}, {"google_search"})
+
+        assert changed is False
+        assert list(root.sub_agents) == [gs]
+
+    def test_replaces_stale_instance_with_fresh_one(self) -> None:
+        """When the same name maps to a different object identity (fresh factory
+        call), the stale instance is dropped and the fresh one is attached.
+        This exercises the 'replace with fresh instance' branch."""
+        from app.adk.agents.agent_factory.root_tools_attacher import (
+            _reconcile_agent_subagents,
+        )
+
+        root = _make_root_agent()
+        stale_gs = _make_task_mode_agent("google_search")
+        stale_gs.parent_agent = root
+        root.sub_agents = [stale_gs]
+
+        fresh_gs = _make_task_mode_agent("google_search")
+        assert fresh_gs is not stale_gs
+
+        changed = _reconcile_agent_subagents(root, {"google_search": fresh_gs}, {"google_search"})
+
+        assert changed is True
+        gs_sub = next((s for s in root.sub_agents if s.name == "google_search"), None)
+        assert gs_sub is fresh_gs, "Fresh instance must replace the stale one."
+        assert gs_sub is not stale_gs
+        assert getattr(stale_gs, "parent_agent", None) is not root
+        assert getattr(fresh_gs, "parent_agent", None) is root
+
+    def test_removes_entry_when_desired_is_empty(self) -> None:
+        """An owned entry absent from desired_by_name is dropped."""
+        from app.adk.agents.agent_factory.root_tools_attacher import (
+            _reconcile_agent_subagents,
+        )
+
+        root = _make_root_agent()
+        gs = _make_task_mode_agent("google_search")
+        gs.parent_agent = root
+        root.sub_agents = [gs]
+
+        changed = _reconcile_agent_subagents(root, {}, {"google_search"})
+
+        assert changed is True
+        assert not any(s.name == "google_search" for s in root.sub_agents)
+        assert getattr(gs, "parent_agent", None) is not root
+
+    def test_non_owned_entries_pass_through_untouched(self) -> None:
+        """Sub_agents whose names are NOT in owned_names are never touched."""
+        from app.adk.agents.agent_factory.root_tools_attacher import (
+            _reconcile_agent_subagents,
+        )
+
+        root = _make_root_agent()
+        specialist = LlmAgent(name="some_specialist", model="gemini-2.0-flash", instruction="s")
+        specialist.parent_agent = root
+        root.sub_agents = [specialist]
+
+        changed = _reconcile_agent_subagents(root, {}, {"google_search"})
+
+        assert changed is False
+        assert specialist in list(root.sub_agents)

@@ -395,7 +395,7 @@ def _build_specialist(
         per_server_allowed_tools,
         resolve_specialist_roster,
     )
-    from app.adk.tools.registry.agent_tool_registry import resolve_agent_tools
+    from app.adk.tools.registry.agent_tool_registry import resolve_agent_subagents
     from app.adk.tools.registry.function_tool_registry import (
         resolve_default_global_tools,
     )
@@ -586,11 +586,13 @@ def _build_specialist(
     # is non-None; included verbatim otherwise.
     default_global_function_tools = resolve_default_global_tools(get_default_registry())
 
-    # AH-98: resolve the full catalogue of agent-as-a-tool instances (e.g.
-    # ``google_search``). The roster resolver attaches them opt-in — only when
-    # the spec's ``tool_ids`` lists ``agent.{name}`` — except for any tagged
+    # AH-115 (AH-98): resolve the full catalogue of task-mode sub-agent instances
+    # (e.g. ``google_search``). The roster resolver attaches them opt-in — only
+    # when the spec's ``tool_ids`` lists ``agent.{name}`` — except for any tagged
     # ``default_global``, which attach like default-global function tools.
-    agent_tools = resolve_agent_tools(get_default_registry())
+    # ``resolve_agent_subagents`` calls each registered factory to mint a fresh,
+    # parentless ``LlmAgent(mode='task')`` instance per build (AH-114 contract).
+    agent_subagents = resolve_agent_subagents(get_default_registry())
 
     # AH-PRD-02 §2.5: enforce the ≤30-tool logical cap and apply the
     # ``tool_ids`` filter to the assembled tool list. Raises
@@ -598,12 +600,12 @@ def _build_specialist(
     # / ``run``) when a specialist would exceed the cap — the deploy-time
     # path raised at deploy; here it raises on first dispatch.
     try:
-        tools = resolve_specialist_roster(
+        roster = resolve_specialist_roster(
             name,
             mcp_toolsets=toolsets,
             function_tools=default_global_function_tools,
             mcp_server_ids=list(toolsets.keys()),
-            agent_tools=agent_tools,
+            agent_subagents=agent_subagents,
             tool_ids=config.tool_ids,
         )
     except RosterCapExceededError:
@@ -613,6 +615,8 @@ def _build_specialist(
             MAX_TOOLS_PER_SPECIALIST,
         )
         raise
+    tools = roster.tools
+    resolved_subagents = roster.sub_agents
 
     # AH-28: attach ga_oauth_after_tool_callback to any specialist whose MCP
     # roster includes a server with auth_type=="ga_oauth".  The callback detects
@@ -780,6 +784,19 @@ def _build_specialist(
     if not criteria:
         # Single-pass path: the raw LlmAgent already carries
         # weave_after_agent_callback (from build_agent); insert ours before it.
+        # AH-115/AH-117: attach task-mode sub-agent leaves on the single-pass
+        # path — the specialist IS the returned agent, so attaching here is
+        # sufficient. ``attach_task_subagent`` also injects the ``_TaskAgentTool``
+        # into ``specialist.tools`` (model_post_init already ran without these
+        # sub-agents, so the tool would otherwise be missing and the LLM could
+        # never dispatch ``request_task_<name>``) and sets the parent pointer.
+        if resolved_subagents:
+            from app.adk.agents.agent_factory.sub_agent_attacher import (
+                attach_task_subagent,
+            )
+
+            for _sub in resolved_subagents:
+                attach_task_subagent(specialist, _sub)
         _cb = _make_specialist_after_agent_callback(
             _specialist_name=name,
             _criteria="",
@@ -830,6 +847,26 @@ def _build_specialist(
         output_key_prefix=f"{name}_review",
         reviewer_model=reviewer_model,
     )
+
+    # AH-115/AH-117 (review-pipeline path): ``build_review_pipeline`` creates a
+    # new ``LlmAgent`` worker from the specialist's field set, explicitly
+    # excluding ``sub_agents`` (``_EXCLUDED_WORKER_FIELDS`` in review_pipeline.py
+    # — this is intentional ADK design; sub_agents is a structural field managed
+    # by the agent tree). Re-attach the task-mode children directly to the worker
+    # (``pipeline.sub_agents[0]``) via ``attach_task_subagent``, which also
+    # injects the ``_TaskAgentTool`` into the worker's ``tools`` (the worker's
+    # model_post_init ran without these sub-agents) so the worker's LLM can
+    # actually dispatch ``request_task_<name>``. The outer LoopAgent is a
+    # control-flow shell that does not issue model calls and must not carry
+    # these sub-agents (AH-115 D3).
+    if resolved_subagents:
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            attach_task_subagent,
+        )
+
+        worker = pipeline.sub_agents[0]
+        for _sub in resolved_subagents:
+            attach_task_subagent(worker, _sub)
 
     # Rename the LoopAgent to the specialist's doc_id so ADK's
     # transfer_to_agent (which calls root.find_agent(name)) locates the

@@ -1,33 +1,23 @@
 """Concurrency smoke test for the numerical analyst agent-as-a-tool (AH-149).
 
-The `numerical_analyst` AgentTool is registered once at import time — one
-object shared across all turns. Each concurrent turn drives it with a distinct
-numeric input; this test verifies that N concurrent ``run_async`` calls on the
-shared singleton produce distinct, input-matched results with no cross-talk.
-
-The ``asyncio.Barrier`` is load-bearing: every concurrent call must reach it
-before any is released, so ``max_in_flight == N`` can only be observed if all N
-ran simultaneously. A serialized implementation would block at the barrier —
-surfaced by the ``wait_for`` timeout.
-
-Follows the pattern established by ``test_google_search_concurrency.py``.
+AH-114 (registry migration): the ``numerical_analyst`` catalogue entry now stores
+a task-mode ``LlmAgent`` instead of an ``AgentTool``. The ``AgentTool.run_async``
+concurrency contract tested here no longer applies — task-mode dispatch uses
+ADK's ``request_task_<name>`` / ``complete_task`` / ``ctx.run_node`` fan-out.
+The parallel-search re-validation (covering ``numerical_analyst`` on the specialist
+path) is in scope for AH-119 (Re-validate AH-98 parallel-search AC #9 under
+``ctx.run_node``), which will rewrite this test against the task-mode model.
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
 
 import pytest
-from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
-
-import app.adk.tools.agent_tools.numerical_analyst as na_mod
-from app.adk.tools.registry.agent_tool_registry import get_agent_tool
 
 # ── fakes ────────────────────────────────────────────────────────────────
 
@@ -44,7 +34,6 @@ class _FakeState:
 
 
 def _make_tool_context(user_id: str) -> Any:
-    """A stand-in ToolContext, distinct per call."""
     invocation_context = SimpleNamespace(
         app_name="test_app",
         user_id=user_id,
@@ -59,8 +48,6 @@ def _make_tool_context(user_id: str) -> Any:
 
 
 class _OverlapTracker:
-    """Records peak number of simultaneously in-flight leaf runs."""
-
     def __init__(self, parties: int) -> None:
         self.barrier = asyncio.Barrier(parties)
         self.in_flight = 0
@@ -78,8 +65,6 @@ class _OverlapTracker:
 
 
 def _fake_runner_factory(tracker: _OverlapTracker, created: list[Any]) -> type:
-    """Build a Runner stand-in that overlaps and echoes each call's request."""
-
     class _FakeRunner:
         def __init__(self, *, agent: Any, **_: Any) -> None:
             self.agent = agent
@@ -96,7 +81,6 @@ def _fake_runner_factory(tracker: _OverlapTracker, created: list[Any]) -> type:
         ) -> AsyncIterator[SimpleNamespace]:
             request_text = new_message.parts[0].text
             await tracker.enter()
-            # All concurrent calls must reach this barrier before any proceeds.
             await tracker.barrier.wait()
             try:
                 yield SimpleNamespace(
@@ -119,42 +103,18 @@ def _fake_runner_factory(tracker: _OverlapTracker, created: list[Any]) -> type:
 # ── tests ─────────────────────────────────────────────────────────────────
 
 
-@pytest.fixture()
-def numerical_analyst_tool() -> AgentTool:
-    importlib.reload(na_mod)
-    tool = get_agent_tool("numerical_analyst")
-    assert isinstance(tool, AgentTool)
-    return tool
-
-
+@pytest.mark.skip(
+    reason=(
+        "AH-114: registry stores task-mode LlmAgent instead of AgentTool. "
+        "AgentTool.run_async concurrency is replaced by ctx.run_node fan-out "
+        "in the task-mode model. AH-119 re-validates parallel-search AC #9 "
+        "under the new ADK 2.0 concurrency model (ctx.run_node / asyncio.gather)."
+    )
+)
 @pytest.mark.asyncio
-async def test_shared_singleton_runs_concurrent_calls_without_cross_talk(
-    numerical_analyst_tool: AgentTool,
-) -> None:
+async def test_shared_singleton_runs_concurrent_calls_without_cross_talk() -> None:
     """N concurrent calls on the shared singleton return distinct input-matched results."""
-    n = 3
-    tracker = _OverlapTracker(parties=n)
-    created_runners: list[Any] = []
-    fake_runner = _fake_runner_factory(tracker, created_runners)
-    requests = [f"compute {i}" for i in range(n)]
-
-    with patch("google.adk.runners.Runner", fake_runner):
-        results = await asyncio.wait_for(
-            asyncio.gather(
-                *[
-                    numerical_analyst_tool.run_async(
-                        args={"request": req},
-                        tool_context=_make_tool_context(user_id=f"u{i}"),
-                    )
-                    for i, req in enumerate(requests)
-                ]
-            ),
-            timeout=10,
-        )
-
-    # All N calls were in-flight simultaneously — genuinely concurrent.
-    assert tracker.max_in_flight == n
-    # Each call returned its own input — no state bleed through the shared tool.
-    assert sorted(results) == [f"echo:{req}" for req in requests]
-    # One shared AgentTool fanned out into N isolated leaf runs.
-    assert len(created_runners) == n
+    # AH-119 rewrites this test to drive ctx.run_node fan-out concurrency.
+    # The old AgentTool.run_async body is removed — LlmAgent has no run_async method.
+    # See the helpers above (_OverlapTracker, _fake_runner_factory) which AH-119 may reuse.
+    pytest.fail("AH-119: implement concurrent ctx.run_node fan-out test here")

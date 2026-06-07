@@ -1,4 +1,8 @@
-"""Tests for the numerical analyst agent tool (AH-149).
+"""Tests for the numerical analyst agent tool (AH-149 / AH-114).
+
+AH-114: the module-bottom side effect now registers a task-mode ``LlmAgent``
+(via ``register_agent_subagent``) instead of an ``AgentTool``. Tests updated
+to assert the task-mode contract; ``create_numerical_analyst_agent`` is unchanged.
 
 Importing the module is the production registration path (the side effect
 hierarchy.py relies on), so these tests exercise it directly rather than
@@ -9,16 +13,16 @@ from __future__ import annotations
 
 import importlib
 
-from google.adk.agents import Agent
+from google.adk.agents import Agent, LlmAgent
 from google.adk.code_executors import BuiltInCodeExecutor
-from google.adk.tools.agent_tool import AgentTool
 
-# Importing the module registers the AgentTool as a side effect.
+# Importing the module registers the task-mode subagent as a side effect.
 import app.adk.tools.agent_tools.numerical_analyst as na
-from app.adk.tools.registry.agent_tool_registry import get_agent_tool
+from app.adk.tools.registry.agent_tool_registry import get_agent_subagent
 
 
 def test_create_numerical_analyst_agent_returns_leaf_agent() -> None:
+    """create_numerical_analyst_agent is unchanged per AH-114 scope boundary."""
     agent = na.create_numerical_analyst_agent()
     assert isinstance(agent, Agent)
     assert agent.name == "numerical_analyst_agent"
@@ -41,22 +45,30 @@ def test_numerical_analyst_agent_has_no_other_tools() -> None:
     )
 
 
-def test_import_registers_agent_tool_under_catalogue_name() -> None:
-    # The process-global registry can be cleared by other test modules' teardown
-    # (it's a shared singleton). Reload re-runs the module's registration side
-    # effect deterministically — this is exactly the import-time path
-    # hierarchy.py depends on in production.
-    importlib.reload(na)
-    tool = get_agent_tool("numerical_analyst")
-    assert isinstance(tool, AgentTool)
-    # Stamped to the catalogue name so the roster filter (agent.numerical_analyst)
-    # matches, even though the wrapped agent is named numerical_analyst_agent.
-    assert tool.name == "numerical_analyst"
-    assert tool.agent.name == "numerical_analyst_agent"
+def test_create_numerical_analyst_subagent_returns_task_mode_llm_agent() -> None:
+    """AH-114: new task-mode constructor for the ADK 2.0 chat tree."""
+    agent = na.create_numerical_analyst_subagent()
+    assert isinstance(agent, LlmAgent)
+    assert agent.name == "numerical_analyst"
+    assert agent.mode == "task"
 
 
-def test_registered_agent_tool_agent_has_code_executor() -> None:
+def test_numerical_analyst_subagent_has_code_executor() -> None:
+    """mode='task' is orthogonal to code_executor — the leaf's executor is unaffected."""
+    agent = na.create_numerical_analyst_subagent()
+    assert isinstance(agent.code_executor, BuiltInCodeExecutor)
+
+
+def test_import_registers_agent_subagent_under_catalogue_name() -> None:
+    """The import-time side effect registers a task-mode LlmAgent — not an AgentTool.
+
+    AH-114: registry no longer stores AgentTool instances. The catalogue name
+    maps to a task-mode LlmAgent with code_executor so the roster resolver (AH-115)
+    can attach it to sub_agents= and benefit from native event propagation.
+    """
     importlib.reload(na)
-    tool = get_agent_tool("numerical_analyst")
-    assert tool is not None
-    assert isinstance(tool.agent.code_executor, BuiltInCodeExecutor)
+    agent = get_agent_subagent("numerical_analyst")
+    assert isinstance(agent, LlmAgent)
+    assert agent.name == "numerical_analyst"
+    assert agent.mode == "task"
+    assert isinstance(agent.code_executor, BuiltInCodeExecutor)

@@ -1,10 +1,8 @@
-"""Per-turn root-agent tool reconciler (AH-100).
+"""Per-turn root-agent tool and sub-agent reconciler (AH-100 + AH-116).
 
 Extends the per-turn specialist sync pattern established by
 :mod:`app.adk.agents.agent_factory.sub_agent_attacher` to the root agent's
-``tools`` list. Whereas ``sub_agent_attacher`` keeps ``root.sub_agents`` in
-sync with the current visible-specialist set, this module keeps ``root.tools``
-in sync with the current ``ken_e_chatbot.tool_ids`` Firestore config.
+``tools`` list **and** agent-as-tool ``sub_agents``.
 
 Before AH-100, AH-98 wired ``build_hierarchy()`` to resolve ``ken_e_chatbot.
 tool_ids`` **once at deploy time** via ``resolve_specialist_roster``. That
@@ -14,6 +12,31 @@ afterwards has no effect until the next ``make backend``. This module adds a
 the 60 s ``get_cached_merged_config`` TTL) and replaces ``root.tools`` when the
 resolved list differs — the same hot-reload horizon admins expect for
 ``instruction`` and specialist edits.
+
+AH-116 (ADK 2.0 agent-as-tool migration):
+    On ADK 2.0, ``AgentTool.run_async`` discards inner sub-agent events
+    (GitHub ``google/adk-python#3984``, OPEN) — so agent-as-tool entries
+    wrapped as ``AgentTool`` lose their ``usage_metadata`` and trace steps.
+    AH-114 migrated the registry so ``resolve_agent_subagents`` returns
+    ``LlmAgent(mode='task')`` instances instead of ``AgentTool`` instances.
+
+    AH-116 wires that into this per-turn reconciler:
+
+    * After ``resolve_specialist_roster(...)`` returns, the resolved list is
+      partitioned on ``isinstance(item, LlmAgent)``.  ``LlmAgent`` items
+      (agent-as-tool entries) are reconciled into ``root.sub_agents`` via
+      ``_reconcile_agent_subagents``; non-LlmAgent items continue to flow
+      into ``root.tools`` via the existing ``[:]`` slice.
+    * The reconcile is *name-scoped*: ``_reconcile_agent_subagents`` only
+      touches names that the registry exposes as agent-as-tool catalogue
+      entries — specialists pinned by ``attach_specialists_before_agent_callback``
+      are passed through untouched.  The two callbacks are therefore
+      complementary and may coexist in the same ``sub_agents`` list without
+      interfering with each other.
+    * The populated-guard (hash-hit early-return) is extended: it now requires
+      ``root.tools`` to be non-empty OR at least one agent-as-tool sub_agent
+      to be present, so a fresh per-turn ADK 2.0 clone (which starts with
+      ``tools=[]`` AND empty sub_agents) still triggers a re-resolve.
 
 ADK behaviour confirmation (google-adk==1.27.5 — AH-100 Task 1 spike):
     ``base_agent.run_async`` fires ``_handle_before_agent_callback`` *before*
@@ -32,21 +55,21 @@ ADK 2.0 re-validation (google-adk==2.0.0 — AH-108 Task 1 probe):
     ``_process_agent_tools`` on the same turn — the LLM request carries the
     injected tool declarations (Path 1 confirmed, probe PASSES).
     The clone is discarded after the turn; mutations do NOT propagate back to
-    the original agent object, which is why the post-turn ``agent.tools``
-    assertion in the legacy xfail test fails.
+    the original agent object.
     Two consistency cleanups apply (mirroring ``sub_agent_attacher.py``,
     AH-104 / AH-105):
     (a) In-place slice assignment ``root.tools[:] = resolved_tools`` so the
         list object identity is preserved (``sub_agent_attacher.py:398``).
     (b) Populated-guard: the hash-hit early-return also requires
-        ``root.tools`` to be non-empty so a fresh per-turn clone (which
-        starts with ``tools=[]``) still gets its tools resolved even when the
-        config hash has not changed (``sub_agent_attacher.py:284``).
+        ``root.tools`` to be non-empty (or agent-as-tool sub_agents present)
+        so a fresh per-turn clone (which starts with empty lists) still gets
+        its surface resolved even when the config hash has not changed
+        (``sub_agent_attacher.py:284``).
 
 Per-process safety note (cf. ``sub_agent_attacher.py:48-51``):
     Agent Engine deploys one root instance per worker process. Mutating
-    ``root.tools`` is therefore process-local. Because there is exactly one
-    ``root.tools`` slot per process, the applied-config hash is a single
+    ``root.tools`` and ``root.sub_agents`` is therefore process-local. Because
+    there is exactly one slot per process, the applied-config hash is a single
     process-global slot (``_applied_hash``) keyed to that live slot — NOT a
     per-account map, which would serve one account stale tools left in the
     shared slot by another account on the same worker (see ``_applied_hash``
@@ -61,7 +84,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from google.adk.agents import BaseAgent
+from google.adk.agents import BaseAgent, LlmAgent
 
 from app.adk.agents.agent_factory.config_loader import FirestoreConnectionError
 from app.adk.agents.agent_factory.roster import (
@@ -70,12 +93,11 @@ from app.adk.agents.agent_factory.roster import (
 )
 from app.adk.agents.agent_factory.specialist_runtime import block_lock_for
 from app.adk.agents.utils.config_cache import get_cached_merged_config
-from app.adk.tools.registry.agent_tool_registry import resolve_agent_tools
+from app.adk.tools.registry.agent_tool_registry import resolve_agent_subagents
 from app.adk.tools.registry.tool_registry import get_default_registry
 from shared.account_id_utils import validate_account_id
 
 if TYPE_CHECKING:
-    from google.adk.agents import LlmAgent
     from google.adk.agents.callback_context import CallbackContext
     from google.genai import types
 
@@ -124,6 +146,86 @@ def _hash_config(config: Any) -> str:
     private symbol from a sibling module.
     """
     return hashlib.sha256(config.model_dump_json().encode()).hexdigest()
+
+
+def _agent_subagent_names_present(root: LlmAgent, owned_names: set[str]) -> bool:
+    """True iff ``root.sub_agents`` contains at least one agent-as-tool entry.
+
+    Used by the populated-guard so a fresh per-turn ADK 2.0 clone with empty
+    ``tools`` AND empty agent-as-tool sub_agents triggers a re-resolve even
+    when the config hash has not changed (mirrors the ``root.tools`` leg of
+    the guard at ``_attach_locked:240``).
+    """
+    return any(getattr(sub, "name", None) in owned_names for sub in root.sub_agents)
+
+
+def _reconcile_agent_subagents(
+    root: LlmAgent,
+    desired_by_name: dict[str, LlmAgent],
+    owned_names: set[str],
+) -> bool:
+    """Reconcile ``root.sub_agents`` for agent-as-tool entries only.
+
+    Mirrors :func:`app.adk.agents.agent_factory.sub_agent_attacher._reconcile`
+    but only operates on entries whose name is in *owned_names* (the set of
+    names the registry exposes as agent-tool catalogue entries). Sub-agents
+    managed by ``attach_specialists_before_agent_callback`` (i.e. names NOT in
+    *owned_names*) are passed through untouched, preserving two-callback
+    coexistence.
+
+    Args:
+        root: The root agent whose ``sub_agents`` list is reconciled in-place.
+        desired_by_name: Mapping of ``{name: LlmAgent}`` that should be present
+            under *owned_names* after the reconcile.
+        owned_names: Set of bare agent-tool catalogue names (e.g.
+            ``{"google_search", "numerical_analyst"}``).  Only entries in this
+            set are touched; others are left alone.
+
+    Returns:
+        ``True`` if ``root.sub_agents`` was mutated; ``False`` if the reconcile
+        pass was a no-op (every desired entry was already present with the same
+        identity).
+    """
+    from app.adk.agents.agent_factory.sub_agent_attacher import (
+        _clear_parent,
+        _set_parent,
+    )
+
+    remaining_desired = dict(desired_by_name)  # copy so we can consume
+    existing = list(root.sub_agents)
+    changed = False
+    keep: list[Any] = []
+
+    for sub in existing:
+        sub_name = getattr(sub, "name", None)
+        if sub_name is None or sub_name not in owned_names:
+            # Not an agent-as-tool entry — preserve untouched.
+            keep.append(sub)
+            continue
+        wanted = remaining_desired.get(sub_name)
+        if wanted is sub:
+            # Same name, same instance — already correct.
+            keep.append(sub)
+            remaining_desired.pop(sub_name)  # consumed
+        elif wanted is None:
+            # No longer desired — drop and clear parent pointer.
+            _clear_parent(sub, root)
+            changed = True
+        else:
+            # Fresh instance (factory mints a new one each call) — drop old,
+            # the new instance is added below via remaining_desired.
+            _clear_parent(sub, root)
+            changed = True
+
+    for new_sub in remaining_desired.values():
+        _set_parent(new_sub, root)
+        keep.append(new_sub)
+        changed = True
+
+    if changed:
+        root.sub_agents[:] = keep
+
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -218,47 +320,49 @@ def _attach_locked(
         )
         return
 
-    # 2. Applied-hash check: skip the full resolve when ``root.tools`` already
-    #    reflects this exact config. Single global slot (see ``_applied_hash``):
-    #    an account switch changes ``content_hash`` and forces a re-resolve, so
-    #    one account never serves another's tools from the shared slot.
-    #
-    #    ADK 2.0 populated-guard: on ADK 2.0, Runner clones the root agent
-    #    per turn; the clone's ``tools`` list starts empty (the original root
-    #    retains ``tools=[]`` because callback mutations on the clone never
-    #    propagate back). Without the ``and root.tools`` check, a hash hit
-    #    would early-return and leave the clone's tool list empty, causing the
-    #    LLM to see zero tools on every turn after the first. Requiring
-    #    ``root.tools`` to be non-empty forces re-resolve on any empty clone —
-    #    which, on ADK 2.0, is every turn. The resolve path is cheap (Firestore
-    #    fetch is TTL-cached; resolver reads from in-memory registry), so the
-    #    per-turn re-resolve is the accepted trade-off. Accounts whose config
-    #    legitimately resolves to zero tools also re-resolve on every turn by
-    #    the same reasoning — correct and acceptable (mirrors sub_agent_attacher
-    #    §284, which has an identical guard for the same reason).
-    content_hash = _hash_config(config)
-    if _applied_hash == content_hash and root.tools:
-        return  # No-op: root.tools already reflects this config version.
+    # 2. Collect agent_tool_names from the in-memory registry (cheap — no I/O).
+    #    Used by the populated-guard and the name-scoped reconcile below.
+    _registry = get_default_registry()
+    agent_tool_names: set[str] = {t.name for t in _registry.list_agent_tools()}
 
-    # 3. Resolve the tool list via the shared roster resolver.
+    # 3. Applied-hash check: skip the full resolve when both ``root.tools`` and
+    #    agent-as-tool sub_agents already reflect this exact config version.
+    #    Single global slot (see ``_applied_hash``): an account switch changes
+    #    ``content_hash`` and forces a re-resolve so one account never serves
+    #    another's surface from the shared slot.
+    #
+    #    ADK 2.0 populated-guard (extended from AH-108 to cover sub_agents):
+    #    On ADK 2.0, Runner clones the root agent per turn; the clone starts
+    #    with ``tools=[]`` AND empty ``sub_agents``. Without the guard a hash
+    #    hit would early-return and leave the clone with an empty surface.
+    #    Requiring ``root.tools`` to be non-empty OR an agent-as-tool sub_agent
+    #    to be present forces a re-resolve on any freshly-cloned turn.
+    content_hash = _hash_config(config)
+    if _applied_hash == content_hash and (
+        root.tools or _agent_subagent_names_present(root, agent_tool_names)
+    ):
+        return  # No-op: root surface already reflects this config version.
+
+    # 4. Resolve the tool list via the shared roster resolver.
     #    Uses the same call AH-98's build_hierarchy performs so the ≤30-tool
     #    cap, agent-tool opt-in semantics, and registry resolution are identical
     #    at deploy-time and at runtime.
+    #    AH-116: resolve_agent_subagents returns task-mode LlmAgent instances
+    #    (not AgentTool); the partition below routes them to sub_agents.
     try:
-        _registry = get_default_registry()
-        resolved_tools = resolve_specialist_roster(
+        _roster = resolve_specialist_roster(
             "ken_e",
             mcp_toolsets={},
             function_tools=[],
             mcp_server_ids=[],
-            agent_tools=resolve_agent_tools(_registry),
+            agent_subagents=resolve_agent_subagents(_registry),
             tool_ids=getattr(config, "tool_ids", None),
             registry=_registry,
         )
     except RosterCapExceededError as exc:
         logger.error(
             "[ATTACH-ROOT-TOOLS] RosterCapExceededError for root config "
-            "(account=%r): %s — root.tools unchanged; applied hash NOT updated.",
+            "(account=%r): %s — root surface unchanged; applied hash NOT updated.",
             account_id,
             exc,
         )
@@ -267,35 +371,67 @@ def _attach_locked(
     except Exception as exc:
         logger.error(
             "[ATTACH-ROOT-TOOLS] Unexpected error resolving root tools "
-            "(account=%r): %s — root.tools unchanged; applied hash NOT updated.",
+            "(account=%r): %s — root surface unchanged; applied hash NOT updated.",
             account_id,
             exc,
             exc_info=True,
         )
         return
 
-    # 4. Replace root.tools only when the resolved list differs from the current.
-    #    Identity comparison (``is``) detects the fingerprint-miss case where the
-    #    same tool objects are re-resolved; equality (``==``) would be unreliable
-    #    for ADK tool objects without a defined __eq__.  We compare the tool
-    #    *list* by identity of each element rather than by list identity, because
-    #    the resolver always produces a fresh list even on a cache hit.
-    current_tools: list[Any] = list(root.tools)
-    if _tools_equal(current_tools, resolved_tools):
-        # Lists are semantically the same — record the applied hash so the next
-        # turn for this config skips straight to the hash-hit branch.
-        _applied_hash = content_hash
-        return
+    # 5. AH-116 + AH-115: RosterResolution already separates non-agent tools
+    #    from task-mode LlmAgent sub_agents — no partition needed.
+    #    LlmAgent items live in sub_agents so ADK 2.0 auto-injects
+    #    request_task_<name> on the LLM call; non-LlmAgent items are regular
+    #    tools (MCP toolsets, function tools) that continue to live in root.tools.
+    resolved_non_agent: list[Any] = list(_roster.tools)
+    agent_subs_desired: dict[str, LlmAgent] = {
+        sub.name: sub
+        for sub in _roster.sub_agents
+        if sub.name is not None
+    }
 
-    root.tools[:] = resolved_tools
-    _applied_hash = content_hash
-    logger.debug(
-        "[ATTACH-ROOT-TOOLS] root.tools reconciled (account=%r): "
-        "%d → %d tool(s).",
-        account_id,
-        len(current_tools),
-        len(resolved_tools),
+    # 6. Reconcile agent-as-tool sub_agents (name-scoped; specialists untouched).
+    #    This sets parent pointers and keeps root.sub_agents in sync; it does NOT
+    #    touch root.tools (step 7 owns the full tools list).
+    _reconcile_agent_subagents(root, agent_subs_desired, agent_tool_names)
+
+    # 7. Rebuild root.tools = resolved non-agent tools + a ``_TaskAgentTool`` for
+    #    every task-mode sub-agent now present in root.sub_agents (AH-117).
+    #    ADK injects these delegation tools ONLY in ``LlmAgent.model_post_init``,
+    #    which never re-runs on the per-turn clone, so attaching a task-mode
+    #    sub-agent post-construction leaves the parent with no dispatchable tool:
+    #    ``canonical_tools`` / ``_extract_task_delegation_fcs`` read it from
+    #    ``root.tools`` alone, so without this the LLM never sees
+    #    ``request_task_<name>`` and the delegation (plus its billing) never
+    #    fires. We wrap whatever instance the reconcile placed in
+    #    ``root.sub_agents`` so the tool and the executable sub-agent stay
+    #    consistent. Identity comparison (``is``) detects the fingerprint-miss
+    #    case; equality (``==``) would be unreliable for ADK tool objects without
+    #    a defined __eq__.
+    from app.adk.agents.agent_factory.sub_agent_attacher import (
+        _make_task_agent_tool,
     )
+
+    desired_tools: list[Any] = list(resolved_non_agent)
+    for sub in root.sub_agents:
+        if getattr(sub, "name", None) in agent_subs_desired:
+            task_tool = _make_task_agent_tool(sub)
+            if task_tool is not None:
+                desired_tools.append(task_tool)
+
+    current_tools: list[Any] = list(root.tools)
+    if not _tools_equal(current_tools, desired_tools):
+        root.tools[:] = desired_tools
+        logger.debug(
+            "[ATTACH-ROOT-TOOLS] root.tools reconciled (account=%r): "
+            "%d → %d tool(s) (incl. %d task-mode delegation tool(s)).",
+            account_id,
+            len(current_tools),
+            len(desired_tools),
+            len(desired_tools) - len(resolved_non_agent),
+        )
+
+    _applied_hash = content_hash
 
 
 def _tools_equal(a: list[Any], b: list[Any]) -> bool:

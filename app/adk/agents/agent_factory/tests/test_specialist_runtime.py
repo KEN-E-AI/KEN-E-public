@@ -4483,3 +4483,367 @@ class TestBuildSpecialistAfterAgentCallback:
 
         assert len(calls) == 1
         assert calls[0]["final_state"] == {}
+
+
+# ---------------------------------------------------------------------------
+# TestAgentSubagentAttachment — AH-115 task-mode sub_agent attachment
+#
+# Verifies that a specialist whose ``tool_ids`` includes ``agent.google_search``
+# is built with a ``mode='task'`` ``LlmAgent`` child on ``.sub_agents`` — NOT an
+# ``AgentTool`` — so inner events propagate to the outer stream on ADK 2.0
+# (AH-PRD-15 §7.1 specialist half, §7.4).
+# ---------------------------------------------------------------------------
+
+
+def _make_task_mode_subagent(name: str = "google_search") -> Any:
+    """Return a minimal real (not Mock) ``LlmAgent(mode='task')`` for tests.
+
+    Skips the build if ``task_mode_supported()`` is False (ADK < 2.0) so the
+    1.34.x strategy-supervisor deploy tree stays unaffected.
+    """
+    from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+    if not task_mode_supported():
+        pytest.skip("task-mode sub-agents require ADK 2.0+")
+    from google.adk.agents import LlmAgent
+
+    return LlmAgent(name=name, model="gemini-2.5-flash", mode="task")
+
+
+class TestAgentSubagentAttachment:
+    """AH-115: specialist resolver attaches task-mode sub-agents to the inner
+    ``LlmAgent`` worker (before any review-pipeline wrap).
+
+    Uses the ``_patch_specialist_runtime_externals`` helper plus an additional
+    patch on ``resolve_agent_subagents`` so the tests are hermetic.
+    """
+
+    def test_tool_ids_includes_agent_name_attaches_to_sub_agents(self) -> None:
+        """(a) single-pass: ``agent.google_search`` in tool_ids → task-mode child on .sub_agents."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=["agent.google_search"])
+        call_count = {"n": 0}
+
+        def _fresh_subagent(_registry: Any) -> list[Any]:
+            call_count["n"] += 1
+            return [_make_task_mode_subagent("google_search")]
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                side_effect=_fresh_subagent,
+            ):
+                result = sr._build_specialist(config, "search_spec", None)
+
+        # The specialist (single-pass, no criteria) carries the task-mode child.
+        assert len(result.sub_agents) == 1
+        assert result.sub_agents[0].name == "google_search"
+        from google.adk.agents import LlmAgent
+
+        assert isinstance(result.sub_agents[0], LlmAgent)
+        assert result.sub_agents[0].mode == "task"
+
+    def test_tool_ids_includes_agent_name_no_agent_tool_in_tools(self) -> None:
+        """(b) ``.tools`` must contain no ``AgentTool`` instances — only MCP/function tools."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        try:
+            from google.adk.tools.agent_tool import AgentTool
+        except ImportError:
+            AgentTool = None  # type: ignore[assignment,misc]
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=["agent.google_search"])
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        captured_tools: list[Any] = []
+
+        def _capture_build(cfg: Any, *, name: str, tools: list[Any] | None = None, **kw: Any) -> Any:
+            captured_tools.extend(tools or [])
+            m = MagicMock(name=f"llmagent_{name}")
+            m.name = name
+            return m
+
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                return_value=[_make_task_mode_subagent("google_search")],
+            ), _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_capture_build,
+            ):
+                sr._build_specialist(config, "no_agent_tool_spec", None)
+
+        if AgentTool is not None:
+            assert not any(
+                isinstance(t, AgentTool) for t in captured_tools
+            ), "build_agent must not receive AgentTool instances (use sub_agents= path)"
+
+    def test_tool_ids_omits_agent_name_no_sub_agents_added(self) -> None:
+        """(e) When tool_ids omits ``agent.google_search``, no sub_agents are added."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(
+            mcp_servers=[], tool_ids=["function.create_visualization"]
+        )
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                return_value=[_make_task_mode_subagent("google_search")],
+            ):
+                result = sr._build_specialist(config, "no_search_spec", None)
+
+        # google_search not in tool_ids → not in sub_agents.
+        assert not any(
+            getattr(s, "name", None) == "google_search"
+            for s in list(result.sub_agents or [])
+        )
+
+    def test_review_pipeline_worker_carries_sub_agents(self) -> None:
+        """(a) review-pipeline path: the inner worker LlmAgent carries the task-mode child."""
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Search specialist",
+            model="gemini-2.5-pro",
+            description="GA specialist with search",
+            mcp_servers=[],
+            tool_ids=["agent.google_search"],
+            default_acceptance_criteria="Cite at least 2 sources.",
+        )
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+
+        def _real_specialist(cfg: Any, *, name: str, tools: Any = None, **kw: Any) -> Any:
+            return LlmAgent(name=name, model="gemini-2.5-pro")
+
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                return_value=[_make_task_mode_subagent("google_search")],
+            ), _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_real_specialist,
+            ):
+                result = sr._build_specialist(config, "loop_search_spec", None)
+
+        # review-pipeline path → result is a LoopAgent; worker is sub_agents[0].
+        from google.adk.agents import LoopAgent
+
+        assert isinstance(result, LoopAgent), (
+            f"With criteria set, expected LoopAgent wrapper; got {type(result).__name__}"
+        )
+        worker = result.sub_agents[0]
+        assert isinstance(worker, LlmAgent)
+        # Worker carries the task-mode google_search child (AH-115 D3).
+        worker_search_children = [
+            s for s in list(worker.sub_agents or []) if getattr(s, "name", None) == "google_search"
+        ]
+        assert len(worker_search_children) == 1, (
+            "Worker LlmAgent must carry the google_search task-mode child; "
+            f"found sub_agents={[getattr(s, 'name', None) for s in (worker.sub_agents or [])]}"
+        )
+        assert worker_search_children[0].mode == "task"
+
+    def test_single_pass_injects_dispatchable_task_tool(self) -> None:
+        """AH-117 (single-pass): the specialist must carry a ``_TaskAgentTool``
+        ('google_search') in ``.tools`` — not just the sub-agent in
+        ``.sub_agents`` — so the specialist's LLM can actually dispatch
+        ``request_task_google_search``. ADK injects that tool only in
+        ``model_post_init`` (which ran before the attach), so this fails before
+        the AH-117 fix. Also pins the parent pointer (#2)."""
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=["agent.google_search"])
+
+        def _real_specialist(cfg: Any, *, name: str, tools: Any = None, **kw: Any) -> Any:
+            return LlmAgent(name=name, model="gemini-2.5-pro", tools=list(tools or []))
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                return_value=[_make_task_mode_subagent("google_search")],
+            ), _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_real_specialist,
+            ):
+                result = sr._build_specialist(config, "search_spec", None)
+
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        task_tools = [t for t in result.tools if isinstance(t, _TaskAgentTool)]
+        assert [t.name for t in task_tools] == ["google_search"], (
+            "single-pass specialist must carry _TaskAgentTool('google_search') in "
+            f".tools; got {[getattr(t, 'name', None) for t in result.tools]}"
+        )
+        assert result.sub_agents[0].parent_agent is result, (
+            "AH-117/#2: attached task-mode sub-agent must have parent_agent set."
+        )
+
+    def test_review_pipeline_worker_injects_dispatchable_task_tool(self) -> None:
+        """AH-117 (review path): the inner worker must carry the ``_TaskAgentTool``
+        in ``.tools`` so its LLM can dispatch the task delegation."""
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Search specialist",
+            model="gemini-2.5-pro",
+            description="GA specialist with search",
+            mcp_servers=[],
+            tool_ids=["agent.google_search"],
+            default_acceptance_criteria="Cite at least 2 sources.",
+        )
+
+        def _real_specialist(cfg: Any, *, name: str, tools: Any = None, **kw: Any) -> Any:
+            return LlmAgent(name=name, model="gemini-2.5-pro", tools=list(tools or []))
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                return_value=[_make_task_mode_subagent("google_search")],
+            ), _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_real_specialist,
+            ):
+                result = sr._build_specialist(config, "loop_search_spec", None)
+
+        worker = result.sub_agents[0]
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        task_tools = [t for t in worker.tools if isinstance(t, _TaskAgentTool)]
+        assert [t.name for t in task_tools] == ["google_search"], (
+            "review-pipeline worker must carry _TaskAgentTool('google_search') in "
+            f".tools; got {[getattr(t, 'name', None) for t in worker.tools]}"
+        )
+        assert worker.sub_agents[0].parent_agent is worker, (
+            "AH-117/#2: worker's attached task-mode sub-agent must have parent set."
+        )
+
+    def test_distinct_instances_per_build(self) -> None:
+        """(c) two _build_specialist calls receive distinct task-mode child instances (no re-parent)."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config_a = _make_specialist_config(mcp_servers=[], tool_ids=["agent.google_search"])
+        config_b = _make_specialist_config(mcp_servers=[], tool_ids=["agent.google_search"])
+
+        # Factory mints a fresh LlmAgent on every resolve call — simulates AH-114 behaviour.
+        def _mint(_registry: Any) -> list[Any]:
+            return [_make_task_mode_subagent("google_search")]
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                side_effect=_mint,
+            ):
+                result_a = sr._build_specialist(config_a, "spec_a", None)
+                result_b = sr._build_specialist(config_b, "spec_b", None)
+
+        child_a = result_a.sub_agents[0]
+        child_b = result_b.sub_agents[0]
+        # Fresh instances — different objects (no shared parent issue).
+        assert child_a is not child_b, (
+            "Each _build_specialist call must receive a freshly minted task-mode "
+            "sub-agent instance; got the same object twice."
+        )
+
+    def test_e2e_agent_config_with_google_search_tool_id(self) -> None:
+        """E2E: a MergedAgentConfig with tool_ids=['agent.google_search'] produces a
+        specialist whose .sub_agents contains one LlmAgent(name='google_search', mode='task')
+        and whose reachable tools list contains no AgentTool.
+
+        Skips cleanly on ADK < 2.0 (task_mode_supported() == False).
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode sub-agents require ADK 2.0+")
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Google Analytics specialist.",
+            model="gemini-2.5-pro",
+            description="GA specialist",
+            mcp_servers=[],
+            tool_ids=["agent.google_search"],
+        )
+
+        def _real_specialist(cfg: Any, *, name: str, tools: Any = None, **kw: Any) -> Any:
+            return LlmAgent(name=name, model="gemini-2.5-pro")
+
+        stack, _btf, _ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.tools.registry.agent_tool_registry.resolve_agent_subagents",
+                return_value=[LlmAgent(name="google_search", model="gemini-2.5-flash", mode="task")],
+            ), _patch(
+                "app.adk.agents.agent_factory.builder.build_agent",
+                side_effect=_real_specialist,
+            ):
+                specialist = sr._build_specialist(config, "google_analytics_specialist", None)
+
+        # AC #1 (specialist path): task-mode child present.
+        assert isinstance(specialist, LlmAgent), f"Expected LlmAgent (no criteria); got {type(specialist).__name__}"
+        assert len(specialist.sub_agents) == 1
+        assert specialist.sub_agents[0].name == "google_search"
+        assert specialist.sub_agents[0].mode == "task"
+
+        # AC #4 (partial, structural): no *legacy* AgentTool in the reachable
+        # tool list. AH-117: the specialist now carries a ``_TaskAgentTool`` (an
+        # AgentTool *subclass*) as the dispatch marker — that is the desired ADK
+        # 2.0 mechanism, NOT the AH-75 defect. So the guard is by exact class
+        # name (matching TestNoAgentToolInGate): the legacy plain ``AgentTool``
+        # wrapper must be absent, while ``_TaskAgentTool`` is expected.
+        reachable_tools = list(specialist.tools or [])
+        for child in specialist.sub_agents or []:
+            reachable_tools.extend(child.tools or [])
+
+        assert not any(type(t).__name__ == "AgentTool" for t in reachable_tools), (
+            "No legacy AgentTool wrapper should appear in the reachable tool list "
+            f"on ADK 2.0; got {[type(t).__name__ for t in reachable_tools]}"
+        )
+
+        # AH-117: the dispatchable ``_TaskAgentTool('google_search')`` MUST be on
+        # the specialist's own tools so its LLM can emit request_task_google_search.
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        specialist_task_tools = [
+            t for t in (specialist.tools or []) if isinstance(t, _TaskAgentTool)
+        ]
+        assert [t.name for t in specialist_task_tools] == ["google_search"], (
+            "Expected _TaskAgentTool('google_search') on the specialist's tools; "
+            f"got {[getattr(t, 'name', None) for t in (specialist.tools or [])]}"
+        )

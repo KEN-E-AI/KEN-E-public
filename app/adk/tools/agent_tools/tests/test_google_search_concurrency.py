@@ -1,87 +1,59 @@
-"""Concurrency smoke test for the Google web search agent-as-a-tool (AH-98, AC #9).
+"""Concurrency test for Google web search via ctx.run_node fan-out (AH-119).
 
-AC #9 requires that an agent assigned ``agent.google_search`` which emits two or
-more ``google_search`` calls in a single model turn executes them *concurrently*.
+AH-PRD-15 §7 AC #3: AH-98's parallel-search AC #9 passes under ctx.run_node
+concurrency (not AgentTool.run_async / asyncio.gather from 1.x).
 
-ADK 1.27.5 already dispatches one turn's function calls in parallel
-(``handle_function_call_list_async`` → ``asyncio.gather`` over
-``asyncio.create_task``). The part that is *ours* — and the risk the design note
-flagged — is that a single shared ``AgentTool`` instance is reused across those
-concurrent invocations: ``register_agent_tool`` stores one object and every
-agent's roster references that same one. Each call gets its own
-``InvocationContext`` (a fresh ``Runner`` + session inside ``run_async``), so it
-should be safe, but the strategy path only ever called it sequentially.
+ADK 1.x dispatched one turn's function calls in parallel via
+``handle_function_call_list_async`` → ``asyncio.gather`` over
+``asyncio.create_task``. AH-114 migrated the google_search registry entry
+from an ``AgentTool`` to a task-mode ``LlmAgent(mode='task')``; the ADK 2.0
+parallel fan-out pathway is ``_ParallelWorker._run_impl`` →
+``asyncio.create_task(ctx.run_node(...))`` + ``asyncio.wait``.
 
 Two facets are pinned here:
 
-* ``test_shared_singleton_runs_concurrent_calls_without_cross_talk`` drives the
-  *real registered singleton* with N concurrent ``run_async`` calls and proves
-  (a) they genuinely overlap — peak in-flight == N, enforced by an
-  ``asyncio.Barrier`` that would dead-stall a serialized implementation — and
-  (b) each call's result tracks its own input, i.e. no state bleed through the
-  shared object.
-* ``test_adk_dispatches_one_turns_calls_in_parallel`` pins the ADK framework
-  assumption the design relies on: the per-turn dispatcher fans calls out with
-  ``asyncio.create_task`` + ``asyncio.gather``. A future ADK bump that serialized
-  tool execution (regressing parallel ``google_search``) trips this.
+* ``test_task_mode_subagent_runs_concurrent_ctx_run_node_calls_without_cross_talk``
+  drives N concurrent ``ctx.run_node(<task-mode stub>, ...)`` calls via
+  ``asyncio.gather``, using a stub task-mode ``LlmAgent`` registered through
+  ``register_agent_subagent`` whose leaf work blocks on an ``asyncio.Barrier``
+  until all N enter; asserts ``tracker.max_in_flight == N`` (genuine overlap)
+  and a non-empty event yield per call (no events dropped relative to the
+  AH-98 1.x parallel baseline).
 
-The leaf agent's runtime is stubbed (ADK's ``Runner`` is patched) so the test
-never touches the network / Gemini — it exercises the shared-instance + dispatch
-plumbing, not the search backend.
+* ``test_adk_parallel_fanout_uses_create_task_over_ctx_run_node`` pins the
+  ADK 2.0 parallel fan-out site at
+  ``google/adk/workflow/_parallel_worker.py`` (``asyncio.create_task`` +
+  ``ctx.run_node`` + ``asyncio.wait``). A future ADK bump that serialises
+  parallel dispatch trips this loudly.
+
+Design references: AH-PRD-15 §7 AC #3, §2 (re-validate AH-98
+parallel-search), §8 (Test Plan), §9 (mechanism-swap risk).
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib
 import inspect
-from collections.abc import AsyncIterator
-from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
 
 import pytest
-from google.adk.tools.agent_tool import AgentTool
+from google.adk.agents import LlmAgent
+from google.adk.agents.context import Context
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.agents.run_config import RunConfig
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_response import LlmResponse
+from google.adk.models.registry import LLMRegistry
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.genai import types
 
-# Importing the module registers the AgentTool as a side effect.
-import app.adk.tools.agent_tools.google_search as gs_mod
-from app.adk.tools.registry.agent_tool_registry import get_agent_tool
+from app.adk.tools.registry.agent_tool_registry import (
+    clear_agent_tool_registry,
+    get_agent_subagent,
+    register_agent_subagent,
+)
 
-# ── fakes ───────────────────────────────────────────────────────────────────
-
-
-class _FakeState:
-    """Minimal ToolContext.state — ``to_dict`` + ``update`` are all run_async uses."""
-
-    def __init__(self) -> None:
-        self._d: dict[str, Any] = {}
-
-    def to_dict(self) -> dict[str, Any]:
-        return dict(self._d)
-
-    def update(self, other: dict[str, Any]) -> None:
-        self._d.update(other)
-
-
-def _make_tool_context(user_id: str) -> Any:
-    """A stand-in ToolContext, distinct per call.
-
-    A separate object (and ``_invocation_context``) per invocation mirrors the
-    real per-call isolation that makes reusing one shared ``AgentTool`` safe —
-    the property under test.
-    """
-    invocation_context = SimpleNamespace(
-        app_name="test_app",
-        user_id=user_id,
-        credential_service=None,
-        plugin_manager=SimpleNamespace(plugins=[]),
-    )
-    return SimpleNamespace(
-        actions=SimpleNamespace(skip_summarization=False),
-        state=_FakeState(),
-        _invocation_context=invocation_context,
-    )
+# ── fakes ────────────────────────────────────────────────────────────────────
 
 
 class _OverlapTracker:
@@ -89,7 +61,7 @@ class _OverlapTracker:
 
     The ``Barrier`` is load-bearing: every concurrent run must reach it before
     *any* is released, so ``max_in_flight`` can only reach N if all N ran at
-    once. A serialized implementation blocks the first run at the barrier
+    once. A serialised implementation blocks the first run at the barrier
     forever — surfaced by the ``wait_for`` timeout in the test.
     """
 
@@ -109,99 +81,261 @@ class _OverlapTracker:
             self.in_flight -= 1
 
 
-def _fake_runner_factory(tracker: _OverlapTracker, created: list[Any]) -> type:
-    """Build a Runner stand-in that overlaps and echoes each call's request."""
+# ── module-level fake LLM ─────────────────────────────────────────────────────
 
-    class _FakeRunner:
-        def __init__(self, *, agent: Any, **_: Any) -> None:
-            self.agent = agent
-            self.session_service = SimpleNamespace(create_session=self._create_session)
-            created.append(self)
+# Set per-test by the tracker fixture; read inside _ConcurrentSearchFakeLlm.
+_active_tracker: _OverlapTracker | None = None
 
-        async def _create_session(
-            self, *, app_name: str, user_id: str, state: dict[str, Any]
-        ) -> SimpleNamespace:
-            return SimpleNamespace(id="sess", user_id=user_id)
 
-        async def run_async(
-            self, *, user_id: str, session_id: str, new_message: Any
-        ) -> AsyncIterator[SimpleNamespace]:
-            request_text = new_message.parts[0].text
-            await tracker.enter()
-            # Block until every concurrent call is in-flight: proves overlap.
-            await tracker.barrier.wait()
-            try:
-                yield SimpleNamespace(
-                    actions=SimpleNamespace(state_delta=None),
-                    grounding_metadata=None,
-                    content=types.Content(
-                        role="model",
-                        parts=[types.Part(text=f"echo:{request_text}")],
-                    ),
+class _ConcurrentSearchFakeLlm(BaseLlm):
+    """Fake LLM that blocks on the active _OverlapTracker barrier.
+
+    All N concurrent ``ctx.run_node`` calls block here until every party is
+    in-flight, proving genuine concurrency without a network or Gemini call.
+    A serialised implementation would deadlock at the barrier.
+
+    Model pattern ``"^fake-concurrent-search$"`` is intentionally disjoint
+    from any production model name — test files are never imported by
+    production code.
+    """
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return [r"^fake-concurrent-search$"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self, llm_request: object, stream: bool = False
+    ):
+        tracker = _active_tracker
+        assert tracker is not None, (
+            "_active_tracker is None — set it before calling the fake LLM."
+        )
+        await tracker.enter()
+        # All N parties must reach this barrier before any is released.
+        # A serialised caller never reaches N parties → asyncio.wait_for timeout.
+        await tracker.barrier.wait()
+        try:
+            yield LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(text="ok")],
                 )
-            finally:
-                await tracker.leave()
-
-        async def close(self) -> None:
-            pass
-
-    return _FakeRunner
+            )
+        finally:
+            await tracker.leave()
 
 
-# ── tests ─────────────────────────────────────────────────────────────────
+# Register once per process; idempotent.
+LLMRegistry.register(_ConcurrentSearchFakeLlm)
 
 
-@pytest.fixture()
-def google_search_tool() -> AgentTool:
-    # Reload re-runs the registration side effect deterministically — adjacent
-    # suites can clear the shared registry in teardown.
-    importlib.reload(gs_mod)
-    tool = get_agent_tool("google_search")
-    assert isinstance(tool, AgentTool)
-    return tool
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _create_test_search_subagent() -> LlmAgent:
+    """Factory for a task-mode google_search stub backed by the fake LLM.
+
+    Minting a fresh instance per call is required by the ADK 2.0 single-parent
+    guard: the same ``LlmAgent`` instance cannot be attached to more than one
+    parent, so each ``get_agent_subagent`` call (and each
+    ``register_agent_subagent`` validation) must receive a distinct object.
+    """
+    return LlmAgent(
+        name="google_search",
+        mode="task",
+        model="fake-concurrent-search",
+    )
+
+
+async def _consume_event_queue(
+    ic: InvocationContext,
+    sentinel: object,
+    svc: InMemorySessionService,
+    session: Any,
+) -> list[Any]:
+    """Drain ``ic._event_queue`` as Runner._consume_event_queue does.
+
+    Non-partial events carry an ``asyncio.Event`` signal that
+    ``InvocationContext._enqueue_event`` blocks on. We set it after appending
+    the event to the session so each producer unblocks and the node can proceed
+    to the next step. Without this consumer the producers would deadlock on
+    the first non-partial event.
+    """
+    collected: list[Any] = []
+    while True:
+        item, processed_signal = await ic._event_queue.get()
+        if item is sentinel:
+            return collected
+        collected.append(item)
+        await svc.append_event(session=session, event=item)
+        if processed_signal is not None:
+            processed_signal.set()
+
+
+def _make_test_context(
+    svc: InMemorySessionService, session: Any
+) -> tuple[InvocationContext, Context]:
+    """Build a minimal InvocationContext + Context for standalone ctx.run_node.
+
+    ``node=None`` gives ``_node_rerun_on_resume=True`` (the required guard for
+    ctx.run_node). ``_event_queue`` is initialised here so the NodeRunner's
+    ``_enqueue_event`` path does not raise RuntimeError.
+    """
+    ic = InvocationContext(
+        invocation_id="test-concurrent-search",
+        session=session,
+        session_service=svc,
+        run_config=RunConfig(),
+    )
+    ic._event_queue = asyncio.Queue()
+    ctx = Context(invocation_context=ic, node=None)
+    return ic, ctx
+
+
+# ── fixtures ─────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def reset_registry() -> Any:
+    """Clear the agent tool registry before and after each test.
+
+    Prevents leaking the real ``google_search`` registration (loaded by the
+    production import-time side effect in ``google_search.py``) or a prior
+    test's stub into adjacent tests.
+    """
+    clear_agent_tool_registry()
+    yield
+    clear_agent_tool_registry()
+
+
+# ── tests ─────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_shared_singleton_runs_concurrent_calls_without_cross_talk(
-    google_search_tool: AgentTool,
-) -> None:
+async def test_task_mode_subagent_runs_concurrent_ctx_run_node_calls_without_cross_talk() -> (
+    None
+):
+    """AH-PRD-15 §7 AC #3 — parallel-search AC #9 under ctx.run_node.
+
+    Behavioural half: N concurrent ``ctx.run_node(<task-mode stub>, ...)`` calls
+    via ``asyncio.gather`` must genuinely overlap — they cannot be serialised.
+
+    The ``asyncio.Barrier(parties=N)`` is the load-bearing proof:
+    * Concurrent (correct): all N enter the barrier simultaneously → released.
+    * Serialised (regression): only 1-of-N enters the barrier → blocked
+      forever → ``asyncio.wait_for`` raises ``TimeoutError`` in < 10 s.
+
+    Also verifies:
+    * The parent ctx event queue receives ≥ N events (one per concurrent run)
+      — no events dropped relative to the AH-98 1.x parallel baseline.
+    * All N ``ctx.run_node`` calls complete without exception or deadlock.
+
+    No ``AgentTool`` is imported or used — consistent with AH-120's
+    no-``AgentTool``-in-chat-tree CI guard.
+    """
+    global _active_tracker
     n = 3
     tracker = _OverlapTracker(parties=n)
-    created_runners: list[Any] = []
-    fake_runner = _fake_runner_factory(tracker, created_runners)
-    requests = [f"q{i}" for i in range(n)]
+    _active_tracker = tracker
+    consumer_task: asyncio.Task[list[Any]] | None = None
 
-    # One shared AgentTool object, N concurrent run_async calls — exactly how a
-    # single model turn emitting N google_search calls drives it.
-    with patch("google.adk.runners.Runner", fake_runner):
+    try:
+        # Register the stub factory so get_agent_subagent can mint fresh
+        # parentless instances (ADK 2.0 "already has a parent" guard).
+        register_agent_subagent("google_search", _create_test_search_subagent)
+
+        svc = InMemorySessionService()
+        session = await svc.create_session(
+            app_name="test_concurrent_search", user_id="u1"
+        )
+        ic, ctx = _make_test_context(svc, session)
+
+        sentinel = object()
+        # Background consumer unblocks _enqueue_event's processed.wait() so
+        # each NodeRunner step can proceed after emitting its event.
+        consumer_task = asyncio.create_task(
+            _consume_event_queue(ic, sentinel, svc, session)
+        )
+
+        # Mint N fresh sub-agent instances — one per concurrent run.
+        # get_agent_subagent calls the factory so each agent is a distinct,
+        # parentless LlmAgent (required by the ADK 2.0 single-parent guard).
+        agents = [get_agent_subagent("google_search") for _ in range(n)]
+        assert all(a is not None for a in agents), (
+            "get_agent_subagent returned None; is the stub factory registered?"
+        )
+
+        # Fan out N concurrent ctx.run_node calls — the same _ParallelWorker
+        # pattern: asyncio.create_task(ctx.run_node(...)) + asyncio.wait.
+        # use_sub_branch=True isolates each run's branch in the shared session.
         results = await asyncio.wait_for(
             asyncio.gather(
                 *[
-                    google_search_tool.run_async(
-                        args={"request": req},
-                        tool_context=_make_tool_context(user_id=f"u{i}"),
+                    ctx.run_node(
+                        agent,
+                        node_input={"request": f"q{i}"},
+                        use_sub_branch=True,
                     )
-                    for i, req in enumerate(requests)
+                    for i, agent in enumerate(agents)
                 ]
             ),
             timeout=10,
         )
 
-    # All N calls were in-flight at once → genuinely concurrent, not serialized.
-    assert tracker.max_in_flight == n
-    # Each call returned its own input → no state bleed through the shared tool.
-    assert sorted(results) == [f"echo:{req}" for req in requests]
-    # The one shared AgentTool fanned out into N isolated leaf runs.
-    assert len(created_runners) == n
+        # All N calls were in-flight at once → genuine concurrency, not serialised.
+        assert tracker.max_in_flight == n, (
+            f"Expected {n} concurrent in-flight calls, got {tracker.max_in_flight}. "
+            "A value < N means ctx.run_node calls were serialised — the barrier "
+            "would deadlock if not for the timeout guard above."
+        )
+
+        # Drain and collect events from the shared queue.
+        await ic._event_queue.put((sentinel, None))
+        events = await consumer_task
+
+        # Each concurrent run emits at least one event (one LLM response) — no
+        # events were dropped relative to the AH-98 1.x parallel baseline.
+        assert len(events) >= n, (
+            f"Expected ≥ {n} events (one per concurrent run), got {len(events)}. "
+            "Events were dropped from the outer-stream event queue."
+        )
+
+        # All N ctx.run_node calls completed (no exception, no deadlock).
+        assert len(results) == n
+    finally:
+        _active_tracker = None
+        # Cancel the consumer if it is still running (e.g. on TimeoutError from
+        # wait_for) so it does not leak as a pending task.
+        if consumer_task is not None and not consumer_task.done():
+            consumer_task.cancel()
+            await asyncio.gather(consumer_task, return_exceptions=True)
 
 
-def test_adk_dispatches_one_turns_calls_in_parallel() -> None:
-    # AC #9's framework half: ADK fans a single turn's function calls out
-    # concurrently. Pinned by source so an ADK upgrade that serialized tool
-    # execution fails here loudly; behaviour is verified end-to-end against
-    # google-adk==1.27.5 in the design note.
-    from google.adk.flows.llm_flows import functions
+def test_adk_parallel_fanout_uses_create_task_over_ctx_run_node() -> None:
+    """AH-PRD-15 §7 AC #3 — framework half: pin the ADK 2.0 parallel fan-out.
 
-    source = inspect.getsource(functions.handle_function_call_list_async)
-    assert "asyncio.create_task" in source
-    assert "asyncio.gather" in source
+    Pins ``_ParallelWorker._run_impl``
+    (``google/adk/workflow/_parallel_worker.py``) so a future ADK bump that
+    serialises parallel dispatch — by removing ``asyncio.create_task``,
+    ``ctx.run_node``, or ``asyncio.wait`` — fails loudly here before any
+    billing/tracing regression reaches production.
+
+    Three substring checks are tolerant of minor refactors (renamed helpers,
+    split loop body) that preserve the underlying concurrency semantics.
+    Validated against ``google-adk==2.0.0``; re-validate on each ADK bump.
+    """
+    from google.adk.workflow._parallel_worker import _ParallelWorker
+
+    source = inspect.getsource(_ParallelWorker._run_impl)
+    assert "asyncio.create_task" in source, (
+        "ADK _ParallelWorker._run_impl no longer uses asyncio.create_task. "
+        "Verify the parallel fan-out is still concurrent (AH-PRD-15 §9)."
+    )
+    assert "ctx.run_node" in source, (
+        "ADK _ParallelWorker._run_impl no longer calls ctx.run_node. "
+        "Verify the dispatch mechanism is still task-mode compatible (AH-PRD-15 §9)."
+    )
+    assert "asyncio.wait" in source, (
+        "ADK _ParallelWorker._run_impl no longer uses asyncio.wait. "
+        "Verify the parallel fan-out is still concurrent (AH-PRD-15 §9)."
+    )

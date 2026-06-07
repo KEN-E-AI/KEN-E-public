@@ -255,7 +255,7 @@ class TestCountSpecialistToolRoster:
             "spec",
             mcp_server_ids=["srv"],
             function_tools=[MagicMock()],
-            agent_tools=[MagicMock(), MagicMock()],
+            agent_subagents=[MagicMock(), MagicMock()],
             registry=registry,
         )
 
@@ -315,7 +315,7 @@ class TestResolveSpecialistRoster:
             registry=registry,
         )
 
-        assert result == [ts_x, ts_y, ft_1, ft_2]
+        assert result.tools == [ts_x, ts_y, ft_1, ft_2]
 
     def test_mcp_toolset_dict_insertion_order_preserved(self) -> None:
         registry = _registry_for(("alpha", 1), ("beta", 1), ("gamma", 1))
@@ -332,8 +332,8 @@ class TestResolveSpecialistRoster:
             registry=registry,
         )
 
-        assert result[:3] == [ts_alpha, ts_beta, ts_gamma]
-        assert result[3] is ft
+        assert result.tools[:3] == [ts_alpha, ts_beta, ts_gamma]
+        assert result.tools[3] is ft
 
     def test_empty_tools_and_empty_mcp_server_ids_returns_empty_list(self) -> None:
         registry = _registry_for()
@@ -346,7 +346,8 @@ class TestResolveSpecialistRoster:
             registry=registry,
         )
 
-        assert result == []
+        assert result.tools == []
+        assert result.sub_agents == []
 
     def test_registry_none_calls_get_default_registry(self) -> None:
         fake_default_registry = _registry_for()
@@ -365,7 +366,8 @@ class TestResolveSpecialistRoster:
             )
 
         mock_get_default.assert_called_once()
-        assert result == []
+        assert result.tools == []
+        assert result.sub_agents == []
 
     def test_registry_none_import_get_default_registry_path(self) -> None:
         """roster.py defers the import inside the function body, so the patch
@@ -386,7 +388,7 @@ class TestResolveSpecialistRoster:
                 registry=None,
             )
 
-        assert result == [ts]
+        assert result.tools == [ts]
 
     def test_exactly_at_cap_does_not_raise(self) -> None:
         registry = _registry_for(("capped_mcp", 30))
@@ -400,7 +402,7 @@ class TestResolveSpecialistRoster:
             registry=registry,
         )
 
-        assert ts in result
+        assert ts in result.tools
 
     def test_one_over_cap_raises(self) -> None:
         registry = _registry_for(("over_mcp", 31))
@@ -532,7 +534,7 @@ class TestResolveSpecialistRoster:
         # Mutate the source dict after the call — returned list must be unaffected.
         toolsets["srv"] = MagicMock(name="replacement_toolset")
 
-        assert result == [ts]
+        assert result.tools == [ts]
 
     def test_mutation_of_function_tools_after_call_does_not_affect_result(self) -> None:
         registry = _registry_for(("srv", 1))
@@ -550,8 +552,8 @@ class TestResolveSpecialistRoster:
         # Mutate the source list after the call.
         function_tools.append(MagicMock(name="injected_ft"))
 
-        assert ft in result
-        assert len(result) == 2  # 1 toolset + 1 original function tool
+        assert ft in result.tools
+        assert len(result.tools) == 2  # 1 toolset + 1 original function tool
 
 
 class TestResolveSpecialistRosterWithToolIds:
@@ -568,7 +570,7 @@ class TestResolveSpecialistRosterWithToolIds:
             tool_ids=None,
             registry=registry,
         )
-        assert result == [ts]
+        assert result.tools == [ts]
 
     def test_tool_ids_empty_returns_empty_roster(self) -> None:
         registry = _registry_for(("server_x", 2))
@@ -581,7 +583,7 @@ class TestResolveSpecialistRosterWithToolIds:
             tool_ids=[],
             registry=registry,
         )
-        assert result == []
+        assert result.tools == []
 
     def test_tool_ids_filters_to_listed_server_tools(self) -> None:
         # Within-toolset filtering happens at construction (hierarchy.py
@@ -599,7 +601,7 @@ class TestResolveSpecialistRosterWithToolIds:
             tool_ids=["server_x.tool_one"],
             registry=registry,
         )
-        assert result == [ts]
+        assert result.tools == [ts]
 
     def test_tool_ids_drops_toolset_with_no_allowed_tools(self) -> None:
         registry = _registry_for(("server_x", 1), ("server_y", 1))
@@ -616,7 +618,7 @@ class TestResolveSpecialistRosterWithToolIds:
         # server_y has no entries in tool_ids and is dropped entirely (the
         # resolver's belt-and-suspenders drop — hierarchy.py wouldn't have
         # included it in the first place).
-        assert result == [ts_x]
+        assert result.tools == [ts_x]
 
     def test_tool_ids_filters_function_tools_by_name(self) -> None:
         registry = _registry_for()
@@ -632,7 +634,7 @@ class TestResolveSpecialistRosterWithToolIds:
             tool_ids=["function.create_visualization"],
             registry=registry,
         )
-        assert result == [ft_a]
+        assert result.tools == [ft_a]
 
     def test_tool_ids_combined_mcp_and_function_filtering(self) -> None:
         registry = _registry_for(("server_x", 1))
@@ -650,7 +652,7 @@ class TestResolveSpecialistRosterWithToolIds:
             ],
             registry=registry,
         )
-        assert ts_x in result and ft in result
+        assert ts_x in result.tools and ft in result.tools
 
     def test_tool_ids_skips_validation_block(self) -> None:
         """When ``tool_ids`` is set, the legacy ``mcp_server_ids must match
@@ -670,7 +672,7 @@ class TestResolveSpecialistRosterWithToolIds:
             tool_ids=["server_x.tool_one"],
             registry=registry,
         )
-        assert result == [ts_x]
+        assert result.tools == [ts_x]
 
     def test_defensive_cap_check_when_tool_ids_over_limit(self) -> None:
         """A non-router caller (migration / seeder / test) that supplies
@@ -719,11 +721,12 @@ class TestResolveSpecialistRosterWithAgentTools:
             mcp_toolsets={},
             function_tools=[],
             mcp_server_ids=[],
-            agent_tools=[gs],
+            agent_subagents=[gs],
             tool_ids=["agent.google_search"],
             registry=registry,
         )
-        assert result == [gs]
+        assert result.sub_agents == [gs]
+        assert result.tools == []
 
     def test_tool_ids_none_excludes_non_default_global_agent_tool(self) -> None:
         # google_search ships opt-in (default_global=False) -> not attached when
@@ -737,11 +740,11 @@ class TestResolveSpecialistRosterWithAgentTools:
             mcp_toolsets={},
             function_tools=[],
             mcp_server_ids=[],
-            agent_tools=[gs],
+            agent_subagents=[gs],
             tool_ids=None,
             registry=registry,
         )
-        assert result == []
+        assert result.sub_agents == []
 
     def test_tool_ids_none_includes_default_global_agent_tool(self) -> None:
         registry = _FakeRegistry(
@@ -753,11 +756,11 @@ class TestResolveSpecialistRosterWithAgentTools:
             mcp_toolsets={},
             function_tools=[],
             mcp_server_ids=[],
-            agent_tools=[at],
+            agent_subagents=[at],
             tool_ids=None,
             registry=registry,
         )
-        assert result == [at]
+        assert result.sub_agents == [at]
 
     def test_tool_ids_empty_excludes_agent_tool(self) -> None:
         registry = _FakeRegistry([])
@@ -767,11 +770,11 @@ class TestResolveSpecialistRosterWithAgentTools:
             mcp_toolsets={},
             function_tools=[],
             mcp_server_ids=[],
-            agent_tools=[gs],
+            agent_subagents=[gs],
             tool_ids=[],
             registry=registry,
         )
-        assert result == []
+        assert result.sub_agents == []
 
     def test_agent_tool_not_listed_is_excluded(self) -> None:
         registry = _FakeRegistry([])
@@ -781,11 +784,11 @@ class TestResolveSpecialistRosterWithAgentTools:
             mcp_toolsets={},
             function_tools=[],
             mcp_server_ids=[],
-            agent_tools=[gs],
+            agent_subagents=[gs],
             tool_ids=["function.create_visualization"],
             registry=registry,
         )
-        assert result == []
+        assert result.sub_agents == []
 
     def test_ordering_mcp_then_function_then_agent(self) -> None:
         registry = _registry_for(("srv", 1))
@@ -798,7 +801,7 @@ class TestResolveSpecialistRosterWithAgentTools:
             mcp_toolsets={"srv": ts},
             function_tools=[ft],
             mcp_server_ids=["srv"],
-            agent_tools=[at],
+            agent_subagents=[at],
             tool_ids=[
                 "srv.tool_one",
                 "function.create_visualization",
@@ -806,10 +809,11 @@ class TestResolveSpecialistRosterWithAgentTools:
             ],
             registry=registry,
         )
-        assert result == [ts, ft, at]
+        assert result.tools == [ts, ft]
+        assert result.sub_agents == [at]
 
     def test_no_agent_tools_arg_is_backward_compatible(self) -> None:
-        # Existing callers that don't pass agent_tools keep working unchanged.
+        # Existing callers that don't pass agent_subagents keep working unchanged.
         registry = _registry_for(("srv", 1))
         ts = MagicMock(name="ts")
         result = resolve_specialist_roster(
@@ -820,7 +824,95 @@ class TestResolveSpecialistRosterWithAgentTools:
             tool_ids=None,
             registry=registry,
         )
-        assert result == [ts]
+        assert result.tools == [ts]
+
+    def test_agent_subagents_in_sub_agents_not_tools(self) -> None:
+        registry = _FakeRegistry([])
+        gs = _agent_tool("google_search")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_subagents=[gs],
+            tool_ids=["agent.google_search"],
+            registry=registry,
+        )
+        assert result.sub_agents == [gs]
+        assert result.tools == []
+
+    def test_without_tool_ids_only_default_global_agent_subagents_pass(self) -> None:
+        # Variant 1: default_global=False → sub_agents empty
+        registry_no_global = _FakeRegistry(
+            [], agent_tool_defs=[_fake_agent_tool_def("auto_tool", default_global=False)]
+        )
+        at = _agent_tool("auto_tool")
+        result_no_global = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_subagents=[at],
+            tool_ids=None,
+            registry=registry_no_global,
+        )
+        assert result_no_global.sub_agents == []
+
+        # Variant 2: default_global=True → sub_agents contains the agent
+        registry_global = _FakeRegistry(
+            [], agent_tool_defs=[_fake_agent_tool_def("auto_tool", default_global=True)]
+        )
+        result_global = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_subagents=[at],
+            tool_ids=None,
+            registry=registry_global,
+        )
+        assert result_global.sub_agents == [at]
+
+    def test_cap_exceeded_with_agent_subagents(self) -> None:
+        # 28 MCP tools + 2 agent_subagents = 30 logical slots → passes
+        sub1 = _agent_tool("sub_one")
+        sub2 = _agent_tool("sub_two")
+        result = resolve_specialist_roster(
+            "cap_spec",
+            mcp_toolsets={"big_srv": MagicMock()},
+            function_tools=[],
+            mcp_server_ids=["big_srv"],
+            agent_subagents=[sub1, sub2],
+            tool_ids=None,
+            registry=_FakeRegistry(
+                [_fake_tool("big_srv") for _ in range(28)],
+                agent_tool_defs=[
+                    _fake_agent_tool_def("sub_one", default_global=True),
+                    _fake_agent_tool_def("sub_two", default_global=True),
+                ],
+            ),
+        )
+        assert len(result.sub_agents) == 2
+
+        # Adding a 3rd agent_subagent (31 logical) → RosterCapExceededError
+        sub3 = _agent_tool("sub_three")
+        with pytest.raises(RosterCapExceededError):
+            resolve_specialist_roster(
+                "cap_spec",
+                mcp_toolsets={"big_srv": MagicMock()},
+                function_tools=[],
+                mcp_server_ids=["big_srv"],
+                agent_subagents=[sub1, sub2, sub3],
+                tool_ids=None,
+                registry=_FakeRegistry(
+                    [_fake_tool("big_srv") for _ in range(28)],
+                    agent_tool_defs=[
+                        _fake_agent_tool_def("sub_one", default_global=True),
+                        _fake_agent_tool_def("sub_two", default_global=True),
+                        _fake_agent_tool_def("sub_three", default_global=True),
+                    ],
+                ),
+            )
 
 
 if __name__ == "__main__":

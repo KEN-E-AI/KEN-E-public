@@ -58,6 +58,19 @@ from typing import TYPE_CHECKING, Any, cast
 from google.adk.agents import BaseAgent
 from google.genai import types
 
+# AH-117: ADK 2.0's task-delegation primitive. A chat-mode parent can only
+# dispatch to a ``mode='task'`` sub-agent when a ``_TaskAgentTool`` for it is
+# present in ``parent.tools`` — ADK creates that tool ONLY inside
+# ``LlmAgent.model_post_init`` (llm_agent.py), and ``canonical_tools`` /
+# ``_extract_task_delegation_fcs`` read it from ``parent.tools`` alone. Any path
+# that attaches a task-mode sub-agent AFTER construction must therefore inject
+# the tool itself (see :func:`attach_task_subagent`). Guarded import: the
+# strategy deploy tree is frozen at ADK 1.34.x where this symbol is absent.
+try:
+    from google.adk.tools.agent_tool import _TaskAgentTool
+except ImportError:  # pragma: no cover - ADK 1.34.x strategy deploy tree
+    _TaskAgentTool = None  # type: ignore[assignment,misc]
+
 from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
     MergedAgentConfig,
@@ -434,6 +447,85 @@ def _has_sub_agents_attr(obj: Any) -> bool:
     """True iff *obj* exposes a mutable ``sub_agents`` list-like attribute."""
     sub_agents = getattr(obj, "sub_agents", None)
     return isinstance(sub_agents, list)
+
+
+# ---------------------------------------------------------------------------
+# AH-117: post-construction task-mode sub-agent attachment
+#
+# ADK injects the ``_TaskAgentTool`` (the marker that makes a chat-mode parent
+# able to dispatch ``request_task_<name>`` to a ``mode='task'`` sub-agent) ONLY
+# in ``LlmAgent.model_post_init``. ``canonical_tools`` and
+# ``_extract_task_delegation_fcs`` then read it from ``parent.tools`` — never
+# from ``sub_agents``. So appending a task-mode sub-agent to ``sub_agents``
+# after construction (which every production attach site does) leaves the parent
+# with no dispatchable tool: the real LLM never sees ``request_task_<name>`` and
+# the delegation — plus its inner ``usage_metadata`` — never fires. These
+# helpers replicate model_post_init's injection so the production paths actually
+# work, and set the parent pointer consistently on every path.
+# ---------------------------------------------------------------------------
+
+
+def _make_task_agent_tool(sub: BaseAgent) -> Any | None:
+    """Return a ``_TaskAgentTool`` wrapping *sub*, or ``None`` on ADK < 2.0.
+
+    ``_TaskAgentTool(sub).name == sub.name`` (it inherits ``AgentTool``'s
+    ``name=agent.name``), which is the key ``_extract_task_delegation_fcs``
+    matches the delegation function-call against.
+    """
+    if _TaskAgentTool is None:
+        return None  # type: ignore[unreachable]  # ADK 1.34.x: symbol absent
+    return _TaskAgentTool(sub)
+
+
+def _remove_task_tool(parent: BaseAgent, sub_name: str) -> None:
+    """Drop the ``_TaskAgentTool`` named *sub_name* from ``parent.tools`` in place."""
+    if _TaskAgentTool is None:
+        return  # type: ignore[unreachable]  # ADK 1.34.x: symbol absent
+    tools = getattr(parent, "tools", None)
+    if not isinstance(tools, list):
+        return
+    tools[:] = [
+        t
+        for t in tools
+        if not (
+            isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == sub_name
+        )
+    ]
+
+
+def attach_task_subagent(parent: BaseAgent, sub: BaseAgent) -> None:
+    """Attach task-mode *sub* to *parent* the way ``model_post_init`` would.
+
+    Appends *sub* to ``parent.sub_agents`` (in place when it is a list, so the
+    ``AlwaysTrueSubAgentList`` shim and any shallow-copy holders are preserved),
+    sets ``sub.parent_agent``, and appends the matching ``_TaskAgentTool`` to
+    ``parent.tools`` so the parent's LLM can actually dispatch to it.
+    """
+    subs = getattr(parent, "sub_agents", None)
+    if isinstance(subs, list):
+        subs.append(sub)
+    else:  # pragma: no cover - parents always carry a list in practice
+        parent.sub_agents = [*list(subs or []), sub]
+    _set_parent(sub, parent)
+    tool = _make_task_agent_tool(sub)
+    tools = getattr(parent, "tools", None)
+    if tool is not None and isinstance(tools, list):
+        tools.append(tool)
+
+
+def detach_task_subagent(parent: BaseAgent, sub_name: str) -> None:
+    """Reverse of :func:`attach_task_subagent` for the entry named *sub_name*.
+
+    Clears the parent pointer, removes the sub-agent from ``parent.sub_agents``
+    (in place), and removes its ``_TaskAgentTool`` from ``parent.tools``.
+    """
+    subs = getattr(parent, "sub_agents", None)
+    if isinstance(subs, list):
+        for sub in list(subs):
+            if getattr(sub, "name", None) == sub_name:
+                _clear_parent(sub, parent)
+        subs[:] = [s for s in subs if getattr(s, "name", None) != sub_name]
+    _remove_task_tool(parent, sub_name)
 
 
 # ---------------------------------------------------------------------------

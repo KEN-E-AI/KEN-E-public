@@ -53,6 +53,7 @@ from app.adk.agents.agent_factory.model_routing import (
 from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
+    RosterResolution,
     count_specialist_tool_roster,
     resolve_specialist_roster,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "McpToolsetPool",
     "MergedAgentConfig",
     "RosterCapExceededError",
+    "RosterResolution",
     "SandboxPool",
     "apply_model_location_env",
     "assemble_available_specialists_block",

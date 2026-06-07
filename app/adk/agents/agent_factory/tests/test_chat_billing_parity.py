@@ -16,6 +16,15 @@ MERGE BLOCKER STATUS (AH-110 / AH-PRD-13 §7 AC #3):
     regression guard (TestNoAgentToolInGate), and ports the AH-99 probe assertions
     into the CI test suite.
 
+AH-117 MERGE BLOCKER (AH-PRD-15 §7 AC #1):
+  `TestAgentGoogleSearchTaskModeParity` (bottom of this file) is the integration-level
+  merge gate for the agent.google_search task-mode migration (AH-114/115/116). On ADK
+  2.0, a turn invoking agent.google_search via the migrated task-mode path must yield
+  the search sub-agent's usage_metadata to the outer stream so extract_billable_tokens
+  + SessionTurnAccumulator count its gemini-2.5-flash tokens — on both the specialist
+  (AH-115) and root/coordinator (AH-116) assignment paths. Shipping 2.0 to prod without
+  this gate is a billing regression on every web-search turn.
+
 AH-129 MERGE BLOCKER (AH-PRD-14 §7 AC-6):
   `TestMultiTaskChatBillingParity` (bottom of this file) is the integration-level
   merge gate for the multi-task / fan-out accumulator work shipped in AH-123
@@ -54,6 +63,7 @@ xfail markers are dropped and the test must pass.
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 from collections.abc import AsyncIterator
@@ -727,6 +737,12 @@ class TestMultiTurnRouting:
 class TestNoAgentToolInGate:
     """Regression guard: no AgentTool must be present in the parity-gate topology.
 
+    AH-114 (registry migration): the agent_tool_registry no longer produces
+    AgentTool instances — it stores task-mode LlmAgent instances instead. This
+    guard now enforces post-migration state across the entire chat tree: any
+    future change that re-introduces AgentTool (e.g. a premature AH-PRD-15
+    consumer migration that lands AgentTool on a specialist) will be caught here.
+
     If this test fails after a future refactor, stop and read AH-PRD-15 before
     proceeding — the AgentTool cutover is a separate gated migration (prod
     cutover gate), not a parity-gate concern.
@@ -995,4 +1011,532 @@ class TestMultiTaskChatBillingParity:
             f"context_tokens divergence: accumulator="
             f"{getattr(acc_delta['current_context_tokens'], 'value', acc_delta['current_context_tokens'])} "
             f"_build_turn_delta={turn_delta.current_context_tokens}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestAgentGoogleSearchTaskModeParity — AH-117 / AH-PRD-15 §7 AC #1 MERGE BLOCKER.
+#
+# Integration-level gate: when a 2.0 turn invokes agent.google_search via the
+# migrated task-mode path (AH-114/115/116), the search sub-agent's usage_metadata
+# reaches the outer Runner stream and the production billing pipeline —
+# extract_billable_tokens + SessionTurnAccumulator — counts its tokens correctly.
+# Verified on both the specialist assignment path (AH-115) and the root/coordinator
+# assignment path (AH-116). This is the billing half of the AH-PRD-15 cutover gate.
+#
+# The google_search sub-agent is registered through the real AH-114 registry API
+# (register_agent_subagent) with a stub BaseLlm emitting the canonical CH-10 fixture
+# (prompt=1250 / candidates=380 / cached=200 → total_billable=1430). Assertions run
+# against the real extract_billable_tokens + SessionTurnAccumulator — no mocks at
+# the accumulator/extractor boundary. The structural guard (assertion a) ensures the
+# test does not pass vacuously if the task-mode dispatch fails silently.
+# ---------------------------------------------------------------------------
+
+
+class _GoogleSearchTaskModeStubLlm(BaseLlm):
+    """Task-mode google_search sub-agent stub (AH-117 merge gate).
+
+    Advertises model='gemini-2.5-flash' to match the production
+    create_google_search_subagent() so reviewers can see the model identity in
+    captured events. Emits the canonical CH-10 fixture usage_metadata on one call
+    with turn_complete=True — the task-mode sub-agent runs once per task delegation.
+    """
+
+    model: str = "gemini-2.5-flash"
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        # Use a synthetic name distinct from the real "gemini-2.5-flash" to avoid
+        # shadowing the production Gemini class in LLMRegistry if this stub were
+        # ever inadvertently registered via LLMRegistry.register(). The model: str
+        # field stays "gemini-2.5-flash" for human readability in captured events;
+        # supported_models() is only consulted by LLMRegistry.resolve(), which is
+        # bypassed when the stub is passed as a pre-instantiated object to LlmAgent().
+        return ["test-stub-google-search-task-mode"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self,
+        llm_request: Any,
+        stream: bool = False,
+    ) -> AsyncIterator[LlmResponse]:
+        usage = genai_types.GenerateContentResponseUsageMetadata(
+            prompt_token_count=_CANONICAL_PROMPT_TOKEN_COUNT,
+            candidates_token_count=_CANONICAL_CANDIDATES_TOKEN_COUNT,
+            cached_content_token_count=_CANONICAL_CACHED_TOKEN_COUNT,
+        )
+        content = Content(
+            role="model",
+            parts=[Part.from_text(text="Google search results for your query.")],
+        )
+        yield LlmResponse(content=content, usage_metadata=usage, turn_complete=True)
+
+
+class _SearchCallerStubLlm(BaseLlm):
+    """Stateless stub for an agent (specialist or root) that calls agent.google_search.
+
+    ADK 2.0 exposes task-mode sub-agents as ``_TaskAgentTool`` with the sub-agent's
+    name as the tool name (``google_search``, not ``request_task_google_search``).
+
+    Turn 1 (no function_response in contents): emits ``FunctionCall(name='google_search')``
+    so ADK dispatches the task-mode google_search sub-agent via ``ctx.run_node``.
+    Turn 2 (function_response present — sub-agent has completed): emits final text with
+    canonical CH-10 tokens so the caller contributes its own usage_metadata alongside
+    the sub-agent's.
+    """
+
+    model: str = "search_caller_stub"
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return ["search_caller_stub"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self,
+        llm_request: Any,
+        stream: bool = False,
+    ) -> AsyncIterator[LlmResponse]:
+        # Detect turn 2: a function_response part in the conversation means the
+        # task-mode google_search sub-agent has already run and returned its result.
+        has_function_response = any(
+            getattr(part, "function_response", None) is not None
+            for content in (getattr(llm_request, "contents", None) or [])
+            for part in (getattr(content, "parts", None) or [])
+        )
+        if has_function_response:
+            usage = genai_types.GenerateContentResponseUsageMetadata(
+                prompt_token_count=_CANONICAL_PROMPT_TOKEN_COUNT,
+                candidates_token_count=_CANONICAL_CANDIDATES_TOKEN_COUNT,
+                cached_content_token_count=_CANONICAL_CACHED_TOKEN_COUNT,
+            )
+            content = Content(
+                role="model",
+                parts=[Part.from_text(text="Search complete, here is the summary.")],
+            )
+            yield LlmResponse(content=content, usage_metadata=usage, turn_complete=True)
+        else:
+            # ADK 2.0: task-mode sub-agents are exposed as _TaskAgentTool with the
+            # sub-agent's name as the tool name (not request_task_<name>).
+            func_call = FunctionCall(
+                name="google_search", args={"query": "test query"}
+            )
+            content = Content(role="model", parts=[Part(function_call=func_call)])
+            yield LlmResponse(content=content, turn_complete=False)
+
+
+class _RouterToGoogleSearchSpecialistStubLlm(BaseLlm):
+    """Root LLM that routes to 'google_search_specialist' via transfer_to_agent."""
+
+    model: str = "router_to_gs_specialist_stub"
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return ["router_to_gs_specialist_stub"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self,
+        llm_request: Any,
+        stream: bool = False,
+    ) -> AsyncIterator[LlmResponse]:
+        func_call = FunctionCall(
+            name="transfer_to_agent", args={"agent_name": "google_search_specialist"}
+        )
+        content = Content(role="model", parts=[Part(function_call=func_call)])
+        yield LlmResponse(content=content, turn_complete=False)
+
+
+def _make_google_search_task_mode_subagent() -> LlmAgent:
+    """Build a fresh task-mode google_search sub-agent backed by the stub LLM.
+
+    Returns a new parentless LlmAgent(mode='task') on every call — required by
+    register_agent_subagent (factory contract): ADK 2.0 rejects reparenting a
+    sub-agent, so each resolve must mint a fresh instance (AH-114 module docstring).
+    """
+    return LlmAgent(
+        name="google_search",
+        model=_GoogleSearchTaskModeStubLlm(),
+        mode="task",
+        description="Expert web researcher that searches Google for public information",
+        instruction="Search for relevant public information. Focus on official sources.",
+    )
+
+
+@pytest.fixture()
+def register_task_mode_google_search() -> Any:
+    """Register stub google_search task-mode sub-agent; restore production on teardown.
+
+    Teardown calls clear_agent_tool_registry() and reloads ALL production
+    agent-tool producer modules (google_search AND numerical_analyst) to
+    re-execute their import-time register_agent_subagent side-effects, restoring
+    the process-global registry to its production state for adjacent test suites
+    in the same session. Reloading only google_search would leave
+    numerical_analyst cleared — an order-dependent cross-test leak, since its
+    import-time registration does not re-run after clear_agent_tool_registry().
+    """
+    import app.adk.tools.agent_tools.google_search as _gs_mod
+    import app.adk.tools.agent_tools.numerical_analyst as _na_mod
+    from app.adk.tools.registry.agent_tool_registry import (
+        clear_agent_tool_registry,
+        register_agent_subagent,
+    )
+
+    clear_agent_tool_registry()
+    register_agent_subagent("google_search", _make_google_search_task_mode_subagent)
+    yield
+    clear_agent_tool_registry()
+    # Restore BOTH producers' import-time registrations (not just google_search).
+    importlib.reload(_gs_mod)
+    importlib.reload(_na_mod)
+    # If task_mode_supported() returns False (ADK 1.34.x), the reloads skip
+    # registration and the registry stays empty — acceptable for that environment
+    # since task-mode dispatch is gated by the same check in production code.
+
+
+async def _capture_specialist_google_search_events(
+    query: str = "search for marketing data",
+) -> list[Any]:
+    """Run specialist with agent.google_search in sub_agents; return outer Runner events.
+
+    The specialist has google_search as a task-mode sub-agent (AH-115 path). ADK
+    auto-injects a _TaskAgentTool for it at specialist construction time (model_post_init).
+    When the specialist's LLM calls 'google_search', ADK dispatches it via ctx.run_node
+    and its usage_metadata flows to the outer Runner stream (AH-99 probe-1 contract).
+
+    Key: specialist is built with rerun_on_resume=True so ctx.run_node inside the
+    DynamicNodeScheduler transfer path has _node_rerun_on_resume=True. This mirrors
+    what build_node() sets when the specialist runs as the direct agent_to_run on
+    subsequent turns in production.
+
+    Root routes to the specialist via transfer_to_agent (standard single-specialist
+    dispatch; same as Mode A / Mode B).
+    """
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from app.adk.tools.registry.agent_tool_registry import get_agent_subagent
+
+    # get_agent_subagent calls the registered factory (AH-114) to produce a fresh
+    # parentless LlmAgent(mode='task'). Passing it at construction wires ADK's
+    # model_post_init to auto-inject _TaskAgentTool(google_search) into specialist.tools
+    # so the task-delegation FC is dispatched via ctx.run_node, not the legacy
+    # handle_function_calls_async path.
+    google_search_subagent = get_agent_subagent("google_search")
+    assert google_search_subagent is not None, (
+        "google_search task-mode sub-agent not registered — "
+        "use register_task_mode_google_search fixture."
+    )
+
+    specialist = LlmAgent(
+        name="google_search_specialist",
+        model=_SearchCallerStubLlm(),
+        instruction="Research agent that uses google_search for web research.",
+        disallow_transfer_to_parent=True,
+        # rerun_on_resume=True is required so that ctx.run_node inside the specialist
+        # (when it dispatches the google_search task-mode sub-agent) sees
+        # _node_rerun_on_resume=True in the DynamicNodeScheduler transfer path.
+        # build_node() sets this when running the specialist as the direct agent_to_run
+        # in subsequent turns; we set it here to enable the same within a single turn.
+        rerun_on_resume=True,
+        sub_agents=[google_search_subagent],
+    )
+    root = LlmAgent(
+        name="root_agent",
+        model=_RouterToGoogleSearchSpecialistStubLlm(),
+        instruction="Route queries to specialists.",
+        sub_agents=[specialist],
+    )
+
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="gs_specialist_gate", user_id="test_user"
+    )
+    runner = Runner(
+        agent=root,
+        app_name="gs_specialist_gate",
+        session_service=session_service,
+    )
+    events: list[Any] = []
+    async for event in runner.run_async(
+        user_id=session.user_id,
+        session_id=session.id,
+        new_message=genai_types.Content(
+            role="user", parts=[genai_types.Part.from_text(text=query)]
+        ),
+    ):
+        events.append(event)
+    return events
+
+
+async def _capture_root_google_search_events(
+    query: str = "search for marketing data",
+) -> list[Any]:
+    """Run root with agent.google_search in sub_agents as coordinator; return events.
+
+    The root has google_search as a task-mode sub-agent at construction time (AH-116
+    path). ADK auto-injects _TaskAgentTool(google_search) in model_post_init. When the
+    root's LLM calls 'google_search', run_llm_agent_as_node detects it as a task-delegation
+    FC via _extract_task_delegation_fcs and dispatches it via ctx.run_node — the root
+    already has rerun_on_resume=True from build_node() in the Runner, so the dispatch
+    succeeds. The sub-agent's usage_metadata flows to the outer stream (AH-116).
+
+    Note: We use construct-time attachment (sub_agents at construction) to ensure
+    model_post_init creates the _TaskAgentTool entry in root.tools. Dynamic attachment
+    via attach_root_tools_before_agent_callback is tested separately in
+    test_root_tools_attacher.py; this capture function exercises the root-as-coordinator
+    billing contract that AH-116 wires up.
+    """
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from app.adk.tools.registry.agent_tool_registry import get_agent_subagent
+
+    google_search_subagent = get_agent_subagent("google_search")
+    assert google_search_subagent is not None, (
+        "google_search task-mode sub-agent not registered — "
+        "use register_task_mode_google_search fixture."
+    )
+
+    # Root with google_search in sub_agents at construction: model_post_init creates
+    # _TaskAgentTool(google_search) in root.tools so the task-delegation FC is
+    # recognized by _safe_canonical_tools_dict and dispatched via ctx.run_node.
+    # The Runner sets root.mode='chat' and build_node(root) adds rerun_on_resume=True.
+    root = LlmAgent(
+        name="root_agent",
+        model=_SearchCallerStubLlm(),
+        instruction="Root agent with google_search capability.",
+        sub_agents=[google_search_subagent],
+    )
+
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="gs_root_gate",
+        user_id="test_user",
+    )
+    runner = Runner(
+        agent=root,
+        app_name="gs_root_gate",
+        session_service=session_service,
+    )
+    events: list[Any] = []
+    async for event in runner.run_async(
+        user_id=session.user_id,
+        session_id=session.id,
+        new_message=genai_types.Content(
+            role="user", parts=[genai_types.Part.from_text(text=query)]
+        ),
+    ):
+        events.append(event)
+    return events
+
+
+class TestAgentGoogleSearchTaskModeParity:
+    """AH-117 / AH-PRD-15 §7 AC #1 MERGE BLOCKER.
+
+    Verifies that on ADK 2.0 a turn invoking agent.google_search via the migrated
+    task-mode path (AH-114/115/116) yields the search sub-agent's usage_metadata to
+    the outer stream and the production billing pipeline counts its tokens — on both
+    the specialist (AH-115) and root/coordinator (AH-116) assignment paths.
+    """
+
+    @pytest.mark.asyncio
+    async def test_specialist_path_search_tokens_counted(
+        self, register_task_mode_google_search: Any
+    ) -> None:
+        """AC-1 (specialist clause): google_search task-mode tokens counted via AH-115.
+
+        The specialist has agent.google_search in sub_agents (construct-time). ADK
+        auto-injects _TaskAgentTool(google_search) at construction. When the specialist's
+        LLM emits FunctionCall(name='google_search'), ADK dispatches it via ctx.run_node
+        and the sub-agent's usage_metadata reaches the outer Runner stream — merge blocker.
+        """
+        events = await _capture_specialist_google_search_events()
+
+        # (a) Structural guard: at least one event with author=='google_search' carrying
+        # usage_metadata must be present — a vacuous test (no task delegation) fails here
+        # because no google_search-authored event appears. Mirrors TestCaptureHarness
+        # test_mode_a_events_non_empty's role for the specialist parity tests.
+        search_events = [
+            e
+            for e in events
+            if getattr(e, "author", None) == "google_search"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+        assert len(search_events) >= 1, (
+            f"No event with author=='google_search' and usage_metadata found. "
+            f"Event authors: {[getattr(e, 'author', None) for e in events]}. "
+            "task-mode dispatch likely failed — verify google_search is in "
+            "specialist.sub_agents at construction time (model_post_init creates "
+            "_TaskAgentTool(google_search)) and rerun_on_resume=True is set."
+        )
+
+        # (b) Per-search-event extractor sum == canonical CH-10 total.
+        search_billable = sum(
+            extract_billable_tokens(e).total_billable for e in search_events
+        )
+        assert search_billable == _EXPECTED_TOTAL_BILLABLE, (
+            f"specialist path: search event billable total={search_billable}, "
+            f"expected {_EXPECTED_TOTAL_BILLABLE} (CH-10 canonical fixture). "
+            "usage_metadata from the google_search sub-agent is not reaching "
+            "extract_billable_tokens — task-mode event propagation broken."
+        )
+
+        # (c) SessionTurnAccumulator over search-only events matches canonical totals.
+        acc = SessionTurnAccumulator()
+        for e in search_events:
+            acc.add_event(e)
+        delta = acc.build_delta()
+
+        assert _increments_equal(delta["input_tokens_total"], _EXPECTED_INPUT), (
+            f"specialist path: accumulator input_tokens_total="
+            f"{getattr(delta['input_tokens_total'], 'value', delta['input_tokens_total'])} "
+            f"expected {_EXPECTED_INPUT}"
+        )
+        assert _increments_equal(delta["output_tokens_total"], _EXPECTED_OUTPUT), (
+            f"specialist path: accumulator output_tokens_total="
+            f"{getattr(delta['output_tokens_total'], 'value', delta['output_tokens_total'])} "
+            f"expected {_EXPECTED_OUTPUT}"
+        )
+        assert _increments_equal(delta["reasoning_tokens_total"], _EXPECTED_REASONING), (
+            f"specialist path: accumulator reasoning_tokens_total="
+            f"{getattr(delta['reasoning_tokens_total'], 'value', delta['reasoning_tokens_total'])} "
+            f"expected {_EXPECTED_REASONING}"
+        )
+
+        # (d) Divergence guard: extractor sum == accumulator delta (input+output+reasoning).
+        acc_total = (
+            getattr(delta["input_tokens_total"], "value", delta["input_tokens_total"])
+            + getattr(delta["output_tokens_total"], "value", delta["output_tokens_total"])
+            + getattr(
+                delta["reasoning_tokens_total"], "value", delta["reasoning_tokens_total"]
+            )
+        )
+        assert acc_total == search_billable, (
+            f"specialist path divergence: extract_billable_tokens total={search_billable} "
+            f"!= accumulator (input+output+reasoning)={acc_total}. "
+            "A future drift between the two billing codepaths would surface here."
+        )
+
+    @pytest.mark.asyncio
+    async def test_root_path_search_tokens_counted(
+        self, register_task_mode_google_search: Any
+    ) -> None:
+        """AC-1 (root clause) + AC-2 setup: root/coordinator path tokens counted via AH-116.
+
+        The root has agent.google_search in sub_agents at construct-time (mirroring
+        AH-116's end state). ADK auto-injects _TaskAgentTool(google_search) via
+        model_post_init. Runner's build_node() adds rerun_on_resume=True. When the root's
+        LLM emits FunctionCall(name='google_search'), ctx.run_node dispatches the sub-agent
+        and its usage_metadata flows to the outer stream — merge blocker.
+        """
+        events = await _capture_root_google_search_events()
+
+        search_events = [
+            e
+            for e in events
+            if getattr(e, "author", None) == "google_search"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+        assert len(search_events) >= 1, (
+            f"No event with author=='google_search' and usage_metadata found. "
+            f"Event authors: {[getattr(e, 'author', None) for e in events]}. "
+            "task-mode dispatch failed on the root path — verify google_search is in "
+            "root.sub_agents at construction time (model_post_init creates "
+            "_TaskAgentTool(google_search); Runner's build_node adds rerun_on_resume=True)."
+        )
+
+        search_billable = sum(
+            extract_billable_tokens(e).total_billable for e in search_events
+        )
+        assert search_billable == _EXPECTED_TOTAL_BILLABLE, (
+            f"root path: search event billable total={search_billable}, "
+            f"expected {_EXPECTED_TOTAL_BILLABLE} (CH-10 canonical fixture). "
+            "usage_metadata from the google_search sub-agent is not reaching "
+            "extract_billable_tokens on the root/coordinator path."
+        )
+
+        acc = SessionTurnAccumulator()
+        for e in search_events:
+            acc.add_event(e)
+        delta = acc.build_delta()
+
+        assert _increments_equal(delta["input_tokens_total"], _EXPECTED_INPUT), (
+            f"root path: accumulator input_tokens_total="
+            f"{getattr(delta['input_tokens_total'], 'value', delta['input_tokens_total'])} "
+            f"expected {_EXPECTED_INPUT}"
+        )
+        assert _increments_equal(delta["output_tokens_total"], _EXPECTED_OUTPUT), (
+            f"root path: accumulator output_tokens_total="
+            f"{getattr(delta['output_tokens_total'], 'value', delta['output_tokens_total'])} "
+            f"expected {_EXPECTED_OUTPUT}"
+        )
+        assert _increments_equal(delta["reasoning_tokens_total"], _EXPECTED_REASONING), (
+            f"root path: accumulator reasoning_tokens_total="
+            f"{getattr(delta['reasoning_tokens_total'], 'value', delta['reasoning_tokens_total'])} "
+            f"expected {_EXPECTED_REASONING}"
+        )
+
+        acc_total = (
+            getattr(delta["input_tokens_total"], "value", delta["input_tokens_total"])
+            + getattr(delta["output_tokens_total"], "value", delta["output_tokens_total"])
+            + getattr(
+                delta["reasoning_tokens_total"], "value", delta["reasoning_tokens_total"]
+            )
+        )
+        assert acc_total == search_billable, (
+            f"root path divergence: extract_billable_tokens total={search_billable} "
+            f"!= accumulator (input+output+reasoning)={acc_total}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_specialist_and_root_paths_have_identical_search_token_totals(
+        self, register_task_mode_google_search: Any
+    ) -> None:
+        """AC-2 (no path divergence): specialist and root paths count identical tokens.
+
+        Drives both capture helpers in the same test and asserts that the per-google_search-
+        event billable total is identical. A future drift between the specialist resolver
+        (AH-115) and the root reconciler (AH-116) that strips usage_metadata on one path
+        fails here even if both single-path tests pass individually.
+        """
+        specialist_events = await _capture_specialist_google_search_events()
+        root_events = await _capture_root_google_search_events()
+
+        specialist_search = [
+            e
+            for e in specialist_events
+            if getattr(e, "author", None) == "google_search"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+        root_search = [
+            e
+            for e in root_events
+            if getattr(e, "author", None) == "google_search"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+
+        # Structural guards: if task dispatch silently failed on EITHER path, both
+        # totals would be 0 and the equality would report spurious "divergence". Guard
+        # separately so failures on individual paths produce actionable diagnostics.
+        assert len(specialist_search) >= 1, (
+            f"specialist path produced no google_search events with usage_metadata. "
+            f"Authors: {[getattr(e, 'author', None) for e in specialist_events]}. "
+            "task-mode dispatch failed on the specialist path."
+        )
+        assert len(root_search) >= 1, (
+            f"root path produced no google_search events with usage_metadata. "
+            f"Authors: {[getattr(e, 'author', None) for e in root_events]}. "
+            "task-mode dispatch failed on the root path."
+        )
+
+        specialist_total = sum(
+            extract_billable_tokens(e).total_billable for e in specialist_search
+        )
+        root_total = sum(
+            extract_billable_tokens(e).total_billable for e in root_search
+        )
+
+        assert specialist_total == root_total == _EXPECTED_TOTAL_BILLABLE, (
+            f"Path divergence: specialist total={specialist_total}, "
+            f"root total={root_total}, expected both=={_EXPECTED_TOTAL_BILLABLE}. "
+            "Check AH-115 (specialist resolver) and AH-116 (root reconciler) for "
+            "usage_metadata strip on one path but not the other."
         )

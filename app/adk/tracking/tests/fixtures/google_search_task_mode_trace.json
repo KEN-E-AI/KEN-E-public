@@ -1,0 +1,148 @@
+{
+  "trace_id": "google_search_task_mode_ah_118_sample",
+  "description": "Canonical target-shape fixture for a turn that invokes agent.google_search via the migrated mode='task' path (AH-PRD-15 §7.2 AC #2 / AH-118). This fixture covers the specialist-assignment path (AH-115) as the baseline: google_analytics_specialist receives request_task_google_search as a tool, invokes the google_search_agent mode='task' leaf, and the inner google_search grounded-search tool calls appear as emitted spans in the outer stream. The root-assignment path (AH-116) is architecturally identical at the leaf level — only the parent context (root vs. specialist) differs; if MER-E requires a discriminating fixture for that path, add a sibling fixture in a follow-up issue (see D-A2 in the AH-118 Implementation Plan). Every span carries emission_status='emitted' or 'deferred'. The google.genai LLM-call span (generate_content inside the task-mode leaf) is emission_status='deferred' — this is a carry-forward from the pre-existing Weave autopatch fragility on both ADK 1.34.1 and 2.0.0 (see deferred_reason, docs/trace-structure-spec.md §4.5, AH-PRD-13 §9, and the AH-113 §5 results table row google_genai_autopatch=False). The grounded-search tool spans are emission_status='emitted' — these are the primary observability signal for AC #2 and the key extraction target for MER-E quality scoring. MER-E extractors must treat 'deferred' spans and fields as absent in live traces until their owning follow-up ships. node_path in the google_search_agent task-mode leaf summary is sourced verbatim from AH-99 probe-1 evidence: docs/spike-adk2-supervisor-orchestration-live.md §4 ('coordinator@1/task_specialist@adk-…' pattern); scope here is google_analytics_specialist@1/task_specialist@adk-<uuid>. Conformance test: app/adk/tracking/tests/test_google_search_task_mode_fixture.py. Live-verification runbook: docs/runs/AH-118-google-search-trace-coverage.md.",
+  "spans": [
+    {
+      "name": "ken_e",
+      "emission_status": "emitted",
+      "summary": {
+        "agent_name": "ken_e",
+        "agent_kind": "root"
+      },
+      "children": [
+        {
+          "name": "transfer_to_agent",
+          "emission_status": "emitted",
+          "summary": {
+            "agent_name": "google_analytics_specialist"
+          }
+        },
+        {
+          "name": "google_analytics_specialist",
+          "emission_status": "emitted",
+          "summary": {
+            "specialist_name": "google_analytics_specialist",
+            "agent_kind": "loop_pipeline",
+            "exit_reason": "approved",
+            "total_iterations": 1,
+            "output_key_prefix": "google_analytics_specialist_review",
+            "cache_hit": false
+          },
+          "children": [
+            {
+              "name": "google_analytics_specialist_worker",
+              "emission_status": "emitted",
+              "summary": {},
+              "deferred_summary": {
+                "iteration": 1,
+                "specialist_output": "Based on a web search for recent marketing performance trends, here are the key findings: (1) Q2 2026 sees increased paid search CPCs across retail verticals; (2) organic click-through rates improved 8% YoY for informational queries; (3) video content engagement rates are outperforming static display by 3x on mobile."
+              },
+              "deferred_reason": "The google_analytics_specialist_worker agent span IS emitted today (weave_before/after callbacks propagated from build_agent), but weave_after_agent_callback writes only output={status, text} and leaves summary empty. The iteration-level annotations under 'deferred_summary' (iteration, specialist_output) are NOT yet written. Deferred — see trace-structure-spec.md §14.2.",
+              "children": [
+                {
+                  "name": "request_task_google_search",
+                  "emission_status": "emitted",
+                  "summary": {
+                    "tool_name": "request_task_google_search",
+                    "task_id": "task_google_search_001",
+                    "status": "success"
+                  },
+                  "children": [
+                    {
+                      "name": "google_search_agent",
+                      "emission_status": "emitted",
+                      "summary": {
+                        "agent_kind": "task_mode",
+                        "task_id": "task_google_search_001",
+                        "node_path": "google_analytics_specialist@1/task_specialist@adk-00000000-0000-0000-0000-000000000001"
+                      },
+                      "children": [
+                        {
+                          "name": "google_search",
+                          "emission_status": "emitted",
+                          "summary": {
+                            "tool_name": "google_search",
+                            "status": "success",
+                            "input": {
+                              "query": "Q2 2026 marketing performance trends paid search CPC organic traffic"
+                            },
+                            "output": {
+                              "results": [
+                                {
+                                  "title": "2026 Q2 Digital Marketing Benchmarks Report",
+                                  "snippet": "Paid search CPCs in retail verticals increased an average of 12% in Q2 2026 vs Q1, driven by intensified competition and rising consumer intent signals.",
+                                  "url": "https://example-benchmark-report.com/q2-2026"
+                                },
+                                {
+                                  "title": "Organic Search CTR Trends 2026",
+                                  "snippet": "Informational query click-through rates improved 8% YoY in H1 2026, with AI-assisted featured snippets now claiming the top 3 positions in 41% of SERP pages.",
+                                  "url": "https://example-seo-insights.com/2026-ctr"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "name": "google_search",
+                          "emission_status": "emitted",
+                          "summary": {
+                            "tool_name": "google_search",
+                            "status": "success",
+                            "input": {
+                              "query": "2026 mobile video content engagement vs display advertising performance"
+                            },
+                            "output": {
+                              "results": [
+                                {
+                                  "title": "Video vs Display Ad Performance 2026",
+                                  "snippet": "Short-form video content is generating 3x higher engagement rates than static display on mobile devices in 2026, with completion rates averaging 68% for sub-30s formats.",
+                                  "url": "https://example-ad-analytics.com/video-display-2026"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "name": "generate_content",
+                          "emission_status": "deferred",
+                          "deferred_reason": "The google.genai LLM-call span (google.genai.generate_content) inside the google_search_agent task-mode leaf is absent due to a Weave autopatch fragility on both ADK 1.34.1 and 2.0.0 — the google.genai module integration does not register in all execution environments. This is a pre-existing condition predating the ADK 2.0 migration, classified as a non-blocking carry-forward by AH-PRD-13 §9 and documented in docs/trace-structure-spec.md §4.5 + docs/runs/AH-113-adk2-weave-verification.md §2 (google_genai_autopatch=False). If a future Weave or google.genai release fixes the autopatch on ADK 2.0, flip this span to 'emitted', update test_emitted_spans_are_exactly_the_runtime_set in the conformance test, and remove the §4.5 carry-forward note. Deferred — see docs/trace-structure-spec.md §4.5 and AH-PRD-13 §9.",
+                          "summary": {
+                            "gen_ai_system": "vertex_ai",
+                            "gen_ai_request_model": "gemini-2.5-flash",
+                            "gen_ai_usage_input_tokens": 512,
+                            "gen_ai_usage_output_tokens": 186
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "google_analytics_specialist_review_reviewer",
+              "emission_status": "deferred",
+              "deferred_reason": "The reviewer LlmAgent (app/adk/agents/utils/review_pipeline.py) is constructed with no before/after agent callbacks, so weave_before_agent_callback never runs for it and NO *_review_reviewer span is emitted in live traces. The 'summary' below is the target shape only. Deferred — see trace-structure-spec.md §14.2.",
+              "summary": {
+                "iteration": 1,
+                "reviewer_output": "",
+                "exit_loop_called": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "agent_id": "ken_e_chatbot",
+    "agent_version": "v1.0.0",
+    "account_id": "acc_sample_ah_118",
+    "session_id": "sess_00000000000000000000000118",
+    "environment": "staging",
+    "rollout_percentage": 100,
+    "feature_flags": {
+      "agentic_harness_task_mode_agent_tools": true
+    }
+  }
+}

@@ -290,3 +290,80 @@ def _run_one_turn_with_mock_model(
                 pass
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# AH-117: production-path gate — the REAL before_agent_callback must expose the
+# task-mode delegation tool to the LLM on the same turn.
+#
+# This is the honest, production-wiring counterpart to the construct-time billing
+# gate (TestAgentGoogleSearchTaskModeParity). It drives a real Runner turn whose
+# root carries the REAL ``attach_root_tools_before_agent_callback`` and asserts
+# the LLM request carries the ``google_search`` task-delegation tool. Before the
+# AH-117 fix the callback added the sub-agent to ``sub_agents`` but NOT the
+# ``_TaskAgentTool`` to ``tools``, so the LLM never saw ``request_task_<name>``
+# and the delegation (plus its billing) silently never fired.
+# ---------------------------------------------------------------------------
+
+
+class TestTaskModeDelegationToolReachesLLM:
+    def test_real_callback_exposes_request_task_tool_to_llm(self) -> None:
+        import importlib
+
+        from app.adk.agents.agent_factory import root_tools_attacher as rta
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.tools.registry.agent_tool_registry import (
+            clear_agent_tool_registry,
+            register_agent_subagent,
+            task_mode_supported,
+        )
+
+        if not task_mode_supported():
+            pytest.skip("task-mode sub-agents require ADK 2.0+")
+
+        from app.adk.tools.agent_tools.google_search import (
+            create_google_search_subagent,
+        )
+
+        clear_agent_tool_registry()
+        register_agent_subagent("google_search", create_google_search_subagent)
+        rta._reset_applied_hash_for_tests()
+
+        cfg = MergedAgentConfig(
+            instruction="Root.",
+            model="gemini-2.0-flash",
+            description="root",
+            mcp_servers=[],
+            tool_ids=["agent.google_search"],
+        )
+
+        received_tools: list[Any] = []
+        try:
+            agent = LlmAgent(
+                name="ken_e",
+                model="gemini-2.0-flash",
+                instruction="You are a test root agent.",
+                tools=[],
+                before_agent_callback=rta.attach_root_tools_before_agent_callback,
+            )
+            with patch.object(rta, "get_cached_merged_config", return_value=cfg):
+                _run_one_turn_with_mock_model(
+                    agent, user_text="hello", received_tools=received_tools
+                )
+        finally:
+            clear_agent_tool_registry()
+            rta._reset_applied_hash_for_tests()
+            # Restore production registrations for adjacent suites (process-global).
+            import app.adk.tools.agent_tools.google_search as _gs
+            import app.adk.tools.agent_tools.numerical_analyst as _na
+
+            importlib.reload(_gs)
+            importlib.reload(_na)
+
+        assert "google_search" in received_tools, (
+            "The real attach_root_tools_before_agent_callback must expose the "
+            "google_search task-delegation tool to the LLM on the same turn; got "
+            f"tools_dict keys={received_tools!r}. Without it the LLM cannot emit "
+            "request_task_google_search and the search sub-agent's tokens go "
+            "uncounted (AH-117)."
+        )

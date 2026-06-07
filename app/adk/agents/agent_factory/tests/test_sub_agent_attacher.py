@@ -1821,6 +1821,7 @@ class TestPerTurnReconciliationADK2:
 
         from app.adk.agents.agent_factory import root_tools_attacher as rta
         from app.adk.agents.agent_factory.root_tools_attacher import attach_root_tools
+        from app.adk.agents.agent_factory.roster import RosterResolution
 
         rta._reset_applied_hash_for_tests()
 
@@ -1838,7 +1839,7 @@ class TestPerTurnReconciliationADK2:
             with patch.object(
                 rta, "get_cached_merged_config", return_value=cfg
             ), patch.object(
-                rta, "resolve_specialist_roster", return_value=[tool_x]
+                rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_x])
             ) as mock_resolve:
                 # Turn 1 — fresh root, hash miss → resolve fires.
                 root_turn1 = _make_root()
@@ -1859,3 +1860,88 @@ class TestPerTurnReconciliationADK2:
                 assert tool_x in root_turn2.tools, "Turn 2: tool_x must be in the fresh clone"
         finally:
             rta._reset_applied_hash_for_tests()
+
+
+# ---------------------------------------------------------------------------
+# AH-117: attach_task_subagent / detach_task_subagent
+#
+# ADK injects the ``_TaskAgentTool`` (the marker that lets a chat-mode parent
+# dispatch ``request_task_<name>``) ONLY in ``LlmAgent.model_post_init``. Every
+# production attach site adds task-mode sub-agents AFTER construction, so without
+# these helpers the parent's LLM never sees the delegation tool and dispatch
+# (plus its billing) silently never fires. These tests pin the helper's output
+# against ADK's own construct-time injection so an ADK upgrade that renames the
+# internal is caught.
+# ---------------------------------------------------------------------------
+
+
+def _task_mode_leaf(name: str = "google_search") -> LlmAgent:
+    return LlmAgent(name=name, model="gemini-2.0-flash", mode="task")
+
+
+class TestAttachTaskSubagent:
+    def _task_agent_tool_cls(self) -> Any:
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        return _TaskAgentTool
+
+    def test_attach_matches_model_post_init_injection(self) -> None:
+        """``attach_task_subagent`` post-construction yields the same dispatchable
+        ``_TaskAgentTool`` ADK creates when sub_agents are passed at construction."""
+        task_tool_cls = self._task_agent_tool_cls()
+
+        # Native construct-time path (what ADK does in model_post_init).
+        native_parent = LlmAgent(
+            name="p",
+            model="gemini-2.0-flash",
+            sub_agents=[_task_mode_leaf("google_search")],
+        )
+        native_names = [
+            t.name for t in native_parent.tools if isinstance(t, task_tool_cls)
+        ]
+
+        # Helper post-construction path.
+        helper_parent = LlmAgent(name="p", model="gemini-2.0-flash")
+        helper_sub = _task_mode_leaf("google_search")
+        saa.attach_task_subagent(helper_parent, helper_sub)
+        helper_names = [
+            t.name for t in helper_parent.tools if isinstance(t, task_tool_cls)
+        ]
+
+        assert helper_names == native_names == ["google_search"]
+        assert helper_sub in helper_parent.sub_agents
+        assert helper_sub.parent_agent is helper_parent
+
+    def test_attach_appends_in_place_preserving_list_identity(self) -> None:
+        """Append in place so ``AlwaysTrueSubAgentList`` / shallow-copy holders
+        survive (mirrors the ``sub_agents[:]`` invariant in ``_reconcile``)."""
+        parent = LlmAgent(name="p", model="gemini-2.0-flash")
+        original_list = parent.sub_agents
+        saa.attach_task_subagent(parent, _task_mode_leaf("google_search"))
+        assert parent.sub_agents is original_list
+
+    def test_detach_removes_tool_subagent_and_parent(self) -> None:
+        task_tool_cls = self._task_agent_tool_cls()
+        parent = LlmAgent(name="p", model="gemini-2.0-flash")
+        sub = _task_mode_leaf("google_search")
+        saa.attach_task_subagent(parent, sub)
+        assert any(isinstance(t, task_tool_cls) for t in parent.tools)
+
+        saa.detach_task_subagent(parent, "google_search")
+
+        assert not any(
+            getattr(s, "name", None) == "google_search" for s in parent.sub_agents
+        )
+        assert not any(isinstance(t, task_tool_cls) for t in parent.tools)
+        assert sub.parent_agent is None
+
+    def test_detach_leaves_unrelated_tools_and_subagents(self) -> None:
+        task_tool_cls = self._task_agent_tool_cls()
+        keep_sub = LlmAgent(name="specialist", model="gemini-2.0-flash")
+        parent = LlmAgent(name="p", model="gemini-2.0-flash", sub_agents=[keep_sub])
+        saa.attach_task_subagent(parent, _task_mode_leaf("google_search"))
+
+        saa.detach_task_subagent(parent, "google_search")
+
+        assert any(getattr(s, "name", None) == "specialist" for s in parent.sub_agents)
+        assert not any(isinstance(t, task_tool_cls) for t in parent.tools)

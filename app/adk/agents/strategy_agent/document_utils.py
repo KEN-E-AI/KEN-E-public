@@ -108,7 +108,6 @@ def extract_text_from_pdf(
 ) -> str:
     """
     Extract text from PDF bytes with error handling and timeout.
-    Following existing pattern from agent_standalone_embedded.py.
 
     Args:
         pdf_bytes: PDF content as bytes

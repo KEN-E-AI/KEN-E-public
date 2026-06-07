@@ -361,7 +361,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           const accountId = toAccountId("acc_bypass");
           setCurrentOrganizationId(orgId);
           localStorage.setItem("currentOrganizationId", orgId);
-          setSelectedOrgAccountState({
+          setSelectedOrgAccount({
             orgId,
             accountId,
             metadata: {

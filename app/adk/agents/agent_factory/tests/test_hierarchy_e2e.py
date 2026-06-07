@@ -462,8 +462,8 @@ class TestRootAgentTools:
         yield
 
     def test_root_gets_google_search_when_tool_ids_lists_it(self) -> None:
-        from google.adk.tools.agent_tool import AgentTool
-
+        """build_hierarchy with tool_ids=['agent.google_search'] → task-mode LlmAgent
+        in root.sub_agents, NOT an AgentTool in root.tools (AH-116 migration)."""
         docs = {
             ("agent_configs", "ken_e_chatbot"): {
                 **_ROOT_DOC,
@@ -471,8 +471,20 @@ class TestRootAgentTools:
             }
         }
         root = _run_build_hierarchy(docs)
-        agent_tool_names = [t.name for t in root.tools if isinstance(t, AgentTool)]
-        assert "google_search" in agent_tool_names
+        # AH-116: agent-as-tool entries land in sub_agents as task-mode LlmAgents.
+        gs_sub = next(
+            (s for s in root.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_sub is not None, (
+            "Expected task-mode LlmAgent named 'google_search' in root.sub_agents; "
+            "got none. AH-116 routes agent-as-tool entries to sub_agents."
+        )
+        assert gs_sub.mode == "task"
+        # No AgentTool must be in root.tools (regression guard for #3984).
+        assert not any(
+            type(t).__name__ == "AgentTool" for t in root.tools
+        ), "AgentTool found in root.tools — AH-116 must route them to sub_agents."
 
     def test_root_has_no_tools_without_tool_ids(self) -> None:
         # google_search is opt-in (not default_global) → absent unless listed.
@@ -549,10 +561,9 @@ class TestRootToolsHotReload:
         root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
         assert root.tools == []
 
-    def test_cold_start_with_tool_ids_gives_agent_tool(self) -> None:
-        """build_hierarchy with tool_ids=['agent.google_search'] → AgentTool present."""
-        from google.adk.tools.agent_tool import AgentTool
-
+    def test_cold_start_with_tool_ids_gives_task_mode_subagent(self) -> None:
+        """build_hierarchy with tool_ids=['agent.google_search'] → task-mode LlmAgent
+        in root.sub_agents (AH-116 migration from AgentTool in root.tools)."""
         docs = {
             ("agent_configs", "ken_e_chatbot"): {
                 **_ROOT_DOC,
@@ -560,7 +571,15 @@ class TestRootToolsHotReload:
             }
         }
         root = _run_build_hierarchy(docs)
-        assert any(isinstance(t, AgentTool) and t.name == "google_search" for t in root.tools)
+        gs_sub = next(
+            (s for s in root.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_sub is not None, (
+            "Expected task-mode LlmAgent named 'google_search' in root.sub_agents; "
+            "got none. AH-116 routes agent-as-tool entries to sub_agents, not root.tools."
+        )
+        assert gs_sub.mode == "task"
 
     # -----------------------------------------------------------------------
     # AC-1: Hot-reload — add tool, then remove tool
@@ -568,15 +587,18 @@ class TestRootToolsHotReload:
 
     def test_hot_reload_add_tool_on_next_turn(self) -> None:
         """Simulating a Firestore edit that adds ``agent.google_search`` causes
-        the callback to materialise the tool on ``root.tools`` for the next
-        turn — without a redeploy."""
-        from google.adk.tools.agent_tool import AgentTool
-
+        the callback to attach a task-mode LlmAgent to ``root.sub_agents`` on
+        the next turn — without a redeploy (AH-116 migration)."""
         from app.adk.agents.agent_factory import root_tools_attacher as rta
 
-        # Start: root built with no tool_ids → tools=[]
+        # Start: root built with no tool_ids → no agent-as-tool sub_agents.
         root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
         assert root.tools == []
+        gs_before = next(
+            (s for s in root.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_before is None
 
         # Simulate admin Firestore edit: config now lists google_search.
         cfg_with_tool = self._make_merged_config(tool_ids=["agent.google_search"])
@@ -585,15 +607,20 @@ class TestRootToolsHotReload:
         with patch.object(rta, "get_cached_merged_config", return_value=cfg_with_tool):
             rta.attach_root_tools_before_agent_callback(ctx)
 
-        # The tool should now be on root.tools.
-        agent_tool_names = [t.name for t in root.tools if isinstance(t, AgentTool)]
-        assert "google_search" in agent_tool_names
+        # The task-mode sub_agent should now be in root.sub_agents.
+        gs_after = next(
+            (s for s in root.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_after is not None, (
+            "Expected google_search task-mode LlmAgent in root.sub_agents after hot-reload add."
+        )
+        assert gs_after.mode == "task"
 
     def test_hot_reload_remove_tool_on_next_turn(self) -> None:
         """Removing ``agent.google_search`` from ``tool_ids`` causes the callback
-        to remove the tool from ``root.tools`` on the next turn."""
-        from google.adk.tools.agent_tool import AgentTool
-
+        to remove the task-mode LlmAgent from ``root.sub_agents`` on the next turn
+        (AH-116 migration)."""
         from app.adk.agents.agent_factory import root_tools_attacher as rta
 
         # Start: root built with google_search already present (cold-start path).
@@ -604,7 +631,11 @@ class TestRootToolsHotReload:
             }
         }
         root = _run_build_hierarchy(docs)
-        assert any(isinstance(t, AgentTool) and t.name == "google_search" for t in root.tools)
+        gs_initial = next(
+            (s for s in root.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_initial is not None, "Precondition: google_search sub_agent present at cold start."
 
         # Simulate admin edit: tool_ids cleared.
         cfg_no_tool = self._make_merged_config(tool_ids=[])
@@ -613,18 +644,22 @@ class TestRootToolsHotReload:
         with patch.object(rta, "get_cached_merged_config", return_value=cfg_no_tool):
             rta.attach_root_tools_before_agent_callback(ctx)
 
-        agent_tool_names = [t.name for t in root.tools if isinstance(t, AgentTool)]
-        assert "google_search" not in agent_tool_names
+        gs_after = next(
+            (s for s in root.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            None,
+        )
+        assert gs_after is None, (
+            "Expected google_search sub_agent removed from root.sub_agents after hot-reload remove."
+        )
 
     def test_hot_reload_idempotent_no_fingerprint_churn(self) -> None:
         """Calling the callback twice with no config change is a no-op — the
         fingerprint cache prevents redundant resolver calls.
 
-        The config must resolve to a non-empty tool list: under the ADK 2.0
-        populated-guard (``_applied_hash == content_hash and root.tools``) a
-        config that resolves to zero tools re-resolves every turn by design
-        (see ``test_zero_tool_config_resolves_correctly_each_turn``), so a
-        zero-tool config would not exercise the fingerprint-hit early-return."""
+        AH-116: the populated-guard now covers both root.tools (non-empty) AND
+        agent-as-tool sub_agents present, so a config resolving only to
+        task-mode LlmAgents (no regular tools) still benefits from the cache on
+        the second call once the sub_agent is attached."""
         from app.adk.agents.agent_factory import root_tools_attacher as rta
         from app.adk.agents.agent_factory.roster import resolve_specialist_roster
 

@@ -177,6 +177,10 @@ steps:
   # tracking tier — includes test_no_adk2_event_field_consumers.py (static-analysis
   # guard: no production tracking module may read node_info / isolation_scope) plus
   # the emission-status span-set lock in test_transfer_to_specialist_fixture.py.
+  # AH-119 / AH-PRD-15 §7 AC #3: app/adk/tools/agent_tools/tests/ is the
+  # agent.{name} registry + ctx.run_node concurrency contract. AH-98 shipped
+  # without CI coverage of this directory; AH-119 closes the gap and makes
+  # the parallel-search AC #9 merge gate CI-enforced.
   - name: "python:3.11-slim"
     id: app-adk-tests
     waitFor: ['install-dependencies']
@@ -197,6 +201,7 @@ steps:
           app/adk/mcp_config/tests/ \
           app/adk/security/tests/ \
           app/adk/tracking/tests/ \
+          app/adk/tools/agent_tools/tests/ \
           -q
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
@@ -232,6 +237,23 @@ steps:
           app/adk/tracking/ \
           --exclude '/tests/' \
           --ignore-missing-imports
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # no-AgentTool-in-chat-tree guard (AH-120 / AH-PRD-15 §7 AC #4):
+  # Fails if any AgentTool( constructor exists in the chat-tree 2.0 build
+  # (app/adk/), except inside strategy_agent/ (stays on ADK 1.34.1).
+  # This guard locks in the AH-114/115/116 task-mode migration so no future
+  # change silently reintroduces the #3984 event-drop regression.
+  - name: "python:3.11-slim"
+    id: no-agent-tool-guard
+    waitFor: ['install-dependencies']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        uv run --no-sync python api/scripts/lint/check_no_agent_tool_in_chat_tree.py
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 

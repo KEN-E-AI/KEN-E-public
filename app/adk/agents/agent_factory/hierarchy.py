@@ -204,8 +204,9 @@ def build_hierarchy(
     from app.adk.agents.agent_factory.sub_agent_attacher import (
         AlwaysTrueSubAgentList,
         attach_specialists_before_agent_callback,
+        attach_task_subagent,
     )
-    from app.adk.tools.registry.agent_tool_registry import resolve_agent_tools
+    from app.adk.tools.registry.agent_tool_registry import resolve_agent_subagents
     from app.adk.tools.registry.tool_registry import get_default_registry
     from app.adk.tracking.callbacks import (
         adk_after_model_callback,
@@ -216,21 +217,26 @@ def build_hierarchy(
     )
 
     _default_registry = get_default_registry()
-    root_tools = resolve_specialist_roster(
+    _root_roster = resolve_specialist_roster(
         "ken_e",
         mcp_toolsets={},
         function_tools=[],
         mcp_server_ids=[],
-        agent_tools=resolve_agent_tools(_default_registry),
+        agent_subagents=resolve_agent_subagents(_default_registry),
         tool_ids=getattr(root_config, "tool_ids", None),
         registry=_default_registry,
     )
+    # AH-116: RosterResolution already separates non-agent tools from task-mode
+    # sub_agents. route sub_agents to root.sub_agents so ADK 2.0 auto-injects
+    # request_task_<name> on the LLM call.
+    root_function_tools = _root_roster.tools
+    root_agent_subagents = _root_roster.sub_agents
 
     root_agent = build_agent(
         root_config,
         name="ken_e",
         account_id=account_id,
-        tools=root_tools,
+        tools=root_function_tools,
         config_doc_id=ROOT_CONFIG_ID,
         instruction_suffix_provider=available_specialists_provider,
         additional_before_agent_callbacks=[
@@ -270,5 +276,18 @@ def build_hierarchy(
     # fresh regular [] for the per-turn clone, which _reconcile then populates
     # in-place per turn.
     root_agent.sub_agents = AlwaysTrueSubAgentList()
+
+    # AH-116/AH-117: seed agent-as-tool task-mode sub_agents on the deploy-time
+    # root. ``attach_task_subagent`` registers each one in ``root.sub_agents``,
+    # sets its parent, AND injects the matching ``_TaskAgentTool`` into
+    # ``root.tools`` — the latter is what ADK's per-turn clone shallow-copies so
+    # the LLM can dispatch ``request_task_<name>`` (model_post_init, which is the
+    # only other place that tool is created, already ran without these
+    # sub-agents). The per-turn attach_root_tools_before_agent_callback still
+    # reconciles them against hot-reloaded config each turn; this seed ensures
+    # the original root carries the full surface for inspection and for any
+    # non-cloning deploy path.
+    for sub in root_agent_subagents:
+        attach_task_subagent(root_agent, sub)
 
     return root_agent

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { auth } from "./firebase";
+import { auth, authBypassEnabled } from "./firebase";
 
 // Create axios instance with base configuration
 const api = axios.create({
@@ -35,7 +35,24 @@ api.interceptors.request.use(
       const user = auth.currentUser;
       if (user) {
         const token = await user.getIdToken();
-        config.headers.Authorization = `Bearer ${token}`;
+        // In bypass mode the bare token maps to a no-member user (no account
+        // permissions).  When an account is selected, append its id so the
+        // backend's "{token}:{account_id}" path grants access to that account.
+        if (authBypassEnabled) {
+          try {
+            const saved = localStorage.getItem("selectedOrgAccount");
+            const accountId = saved
+              ? (JSON.parse(saved) as { accountId?: string })?.accountId
+              : null;
+            config.headers.Authorization = accountId
+              ? `Bearer ${token}:${accountId}`
+              : `Bearer ${token}`;
+          } catch {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        } else {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
       }
 
       // Set Content-Type based on data type if not already set
