@@ -1,4 +1,4 @@
-"""Numerical analyst agent tool (AH-149 / AH-114).
+"""Numerical analyst agent tool (AH-149 / AH-114 / AH-PRD-15 re-plan).
 
 ``create_numerical_analyst_agent()`` builds a leaf ``Agent`` that only
 carries ``code_executor=BuiltInCodeExecutor()`` — no other tools, no MCP
@@ -9,22 +9,22 @@ tools"). The analyst lives in its own leaf and is exposed to the GA
 specialist (and any other specialist that needs arithmetic-via-code) as an
 agent-as-a-tool.
 
-AH-114 (ADK 2.0 task-mode migration): ``create_numerical_analyst_subagent()``
-builds the equivalent ``LlmAgent(mode='task')`` for the ADK 2.0 chat tree.
-Task-mode dispatch (``request_task_numerical_analyst`` / ``complete_task``)
-propagates inner events to the outer stream natively (AH-99 probe-4), fixing
-the AH-75 billing / trace defect. ``mode='task'`` is orthogonal to
-``code_executor=`` — the leaf's own code executor is unaffected. This module
-registers the task-mode variant under the catalogue name ``numerical_analyst``
-so it can be assigned to any agent via ``tool_ids`` (opt-in;
-``default_global: false`` — see the ``agent_tools:`` entry in ``tools.yaml``).
+**AH-PRD-15 re-plan (AH-121).** AH-114 tried to register this as a
+``mode='task'`` sub-agent; that is unworkable for the same reason isolation is
+needed — ``mode='task'`` injects ``FinishTaskTool`` next to the code executor →
+the very ``400 ... all search tools`` above. The code-execution leaf can ONLY be
+isolated by an ADK ``AgentTool``. ``create_numerical_analyst_agent_tool()`` builds
+that isolated ``AgentTool`` for the ADK 2.0 chat tree and attaches
+``capture_agent_tool_usage`` so the ``usage_metadata`` that ``AgentTool.run_async``
+drops (GitHub #3984) is still billed (``app/adk/agents/agent_tool_billing.py``). It
+is registered on the *isolated* lane under the catalogue name ``numerical_analyst``
+(opt-in; ``default_global: false`` — see the ``agent_tools:`` entry in
+``tools.yaml``). ``create_numerical_analyst_subagent`` (the AH-114 task-mode variant)
+is retained but DORMANT — it is no longer registered.
 
-``create_numerical_analyst_agent`` is left byte-identical — it is the
-non-task-mode constructor kept for symmetry with the google_search isolation
-pattern and to preserve any caller that might use it outside the ADK 2.0 chat
-path.
+``create_numerical_analyst_agent`` is left byte-identical (the ADK 1.34.x leaf).
 
-Design reference: AH-PRD-15 §2 (scope boundary), §5 (Implementation Outline), AH-114.
+Design reference: AH-PRD-15 §2 (scope boundary), §5 (Implementation Outline), §7.7.
 """
 
 from __future__ import annotations
@@ -33,10 +33,12 @@ import logging
 
 from google.adk.agents import Agent, LlmAgent
 from google.adk.code_executors import BuiltInCodeExecutor
+from google.adk.tools.agent_tool import AgentTool
 from google.genai import types
 
+from app.adk.agents.agent_tool_billing import capture_agent_tool_usage
 from app.adk.tools.registry.agent_tool_registry import (
-    register_agent_subagent,
+    register_isolated_agent_tool,
     task_mode_supported,
 )
 
@@ -120,23 +122,63 @@ def create_numerical_analyst_subagent() -> LlmAgent:
     )
 
 
+def create_numerical_analyst_agent_tool() -> AgentTool:
+    """Create the isolated ``AgentTool`` wrapping the numerical-analyst leaf (chat tree).
+
+    The leaf is named ``numerical_analyst`` so ``AgentTool.name`` matches the
+    ``agent.numerical_analyst`` tool id. It carries ONLY ``BuiltInCodeExecutor()``
+    — no sibling function tool — which is the invariant Gemini 2.5+ enforces for
+    code execution (same ``400 ... all search tools`` class as google_search). The
+    AH-114 task-mode variant would inject ``FinishTaskTool`` next to the code
+    executor and 400 on dispatch; ``AgentTool`` is the only mechanism that isolates
+    it. ``capture_agent_tool_usage`` recovers the leaf's ``usage_metadata`` for
+    billing, dropped by ``AgentTool.run_async`` (#3984). See AH-PRD-15 §5 / §7.7.
+    """
+    leaf = Agent(
+        name="numerical_analyst",
+        model="gemini-2.5-flash",
+        code_executor=BuiltInCodeExecutor(),
+        description=(
+            "Specialised arithmetic assistant that computes numerical results "
+            "(percentages, growth rates, averages, sorting) by writing and "
+            "executing Python code in a sandboxed Gemini code executor."
+        ),
+        instruction=_NUMERICAL_ANALYST_INSTRUCTION,
+        generate_content_config=types.GenerateContentConfig(
+            temperature=0.1,
+            max_output_tokens=2048,
+        ),
+        after_model_callback=capture_agent_tool_usage,
+    )
+    # isolation-required: AH-PRD-15 §7.7 — built-in code execution must be isolated
+    # in its own AgentTool sub-runner; billing via the leaf after_model_callback.
+    return AgentTool(agent=leaf)
+
+
 # ---------------------------------------------------------------------------
-# Registry wiring (side-effect on import) — AH-114
+# Registry wiring (side-effect on import) — AH-PRD-15 re-plan (AH-121)
 #
-# ``task_mode_supported()`` gates construction + registration: ``LlmAgent(mode=
-# 'task')`` only validates on ADK 2.0+. Any ADK-1.34.x deploy tree that imports
-# this module skips the task-mode sub-agent rather than crashing at import on the
-# missing ``mode`` field. See ``task_mode_supported`` docstring and AH-PRD-15 §2.
+# ``task_mode_supported()`` is reused as a "this is the ADK 2.0 chat tree" proxy
+# (``LlmAgent.mode`` exists only on 2.0). The 1.34.x deploy tree skips registration
+# (it never reads this registry). The isolated AgentTool replaces the AH-114
+# task-mode registration: ``mode='task'`` injects ``FinishTaskTool`` next to the
+# built-in code executor → Gemini 2.5+ rejects it with the same 400 as google_search.
 # ---------------------------------------------------------------------------
 
 if task_mode_supported():
-    register_agent_subagent("numerical_analyst", create_numerical_analyst_subagent)
+    register_isolated_agent_tool(
+        "numerical_analyst", create_numerical_analyst_agent_tool
+    )
 else:
     logger.info(
-        "Skipping numerical_analyst task-mode registration: installed google-adk "
-        "LlmAgent has no 'mode' field (ADK 1.34.x deploy tree). "
-        "create_numerical_analyst_agent (ADK 1.34.x leaf) remains available."
+        "Skipping numerical_analyst isolated-AgentTool registration on the ADK "
+        "1.34.x deploy tree. create_numerical_analyst_agent (ADK 1.34.x leaf) "
+        "remains available."
     )
 
 
-__all__ = ["create_numerical_analyst_agent", "create_numerical_analyst_subagent"]
+__all__ = [
+    "create_numerical_analyst_agent",
+    "create_numerical_analyst_agent_tool",
+    "create_numerical_analyst_subagent",
+]

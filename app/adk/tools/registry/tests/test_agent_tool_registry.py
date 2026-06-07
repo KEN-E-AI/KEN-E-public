@@ -86,7 +86,9 @@ class TestRegisterAgentSubagent:
         except ImportError:
             pytest.skip("AgentTool not importable on this ADK version")
 
-        leaf = Agent(name="google_search_agent", model="gemini-2.5-flash", description="stub")
+        leaf = Agent(
+            name="google_search_agent", model="gemini-2.5-flash", description="stub"
+        )
         agent_tool = AgentTool(agent=leaf)
         with pytest.raises(TypeError, match="AgentTool"):
             register_agent_subagent("google_search", lambda: agent_tool)  # type: ignore[arg-type,return-value]
@@ -135,7 +137,9 @@ class TestRegisterAgentSubagent:
 
     def test_no_agent_tool_ever_stored(self):
         """Structural guard: no AgentTool instance can be in the registry after registration."""
-        register_agent_subagent("google_search", lambda: _stub_subagent("google_search"))
+        register_agent_subagent(
+            "google_search", lambda: _stub_subagent("google_search")
+        )
         stored = get_agent_subagent("google_search")
         assert isinstance(stored, LlmAgent)
         try:
@@ -204,7 +208,11 @@ class TestResolveAgentSubagents:
             resolved = resolve_agent_subagents(registry)
 
         assert [a.name for a in resolved] == ["alpha"]
-        assert any("missing_instance" in r.message for r in caplog.records if r.levelname == "WARNING")
+        assert any(
+            "missing_instance" in r.message
+            for r in caplog.records
+            if r.levelname == "WARNING"
+        )
 
     def test_returns_empty_when_catalogue_empty(self):
         register_agent_subagent("alpha", lambda: _stub_subagent("alpha"))
@@ -263,7 +271,9 @@ class TestLegacyShim:
 
         assert result == []
 
-    def test_resolve_agent_tools_warns_once_per_process(self, caplog: pytest.LogCaptureFixture):
+    def test_resolve_agent_tools_warns_once_per_process(
+        self, caplog: pytest.LogCaptureFixture
+    ):
         registry = _registry_with_catalogue([])
 
         with caplog.at_level(logging.WARNING):
@@ -271,7 +281,11 @@ class TestLegacyShim:
             resolve_agent_tools(registry)
             resolve_agent_tools(registry)
 
-        warnings = [r for r in caplog.records if r.levelname == "WARNING" and "deprecated" in r.message.lower()]
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelname == "WARNING" and "deprecated" in r.message.lower()
+        ]
         # Exactly one warning despite three calls (warn-once latch).
         assert len(warnings) == 1
 
@@ -307,7 +321,11 @@ class TestClearAgentToolRegistry:
         # Second call — emits the warning again (latch was reset).
         with caplog.at_level(logging.WARNING):
             resolve_agent_tools(registry)
-        warnings = [r for r in caplog.records if r.levelname == "WARNING" and "deprecated" in r.message.lower()]
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelname == "WARNING" and "deprecated" in r.message.lower()
+        ]
         assert len(warnings) == 1
 
 
@@ -325,8 +343,111 @@ class TestTaskModeSupported:
         assert "mode" in LlmAgent.model_fields
         assert task_mode_supported() is True
 
-    def test_false_when_llm_agent_lacks_mode_field(self, monkeypatch: pytest.MonkeyPatch):
+    def test_false_when_llm_agent_lacks_mode_field(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         """Simulated ADK 1.34.x — no ``mode`` field, so task-mode is unsupported."""
         without_mode = {k: v for k, v in LlmAgent.model_fields.items() if k != "mode"}
         monkeypatch.setattr(LlmAgent, "model_fields", without_mode)
         assert task_mode_supported() is False
+
+
+# ---------------------------------------------------------------------------
+# TestIsolatedAgentToolLane (AH-PRD-15 re-plan)
+# ---------------------------------------------------------------------------
+
+
+def _iso_tool(name: str = "google_search"):
+    """Build a minimal valid isolated AgentTool (leaf carries the billing callback)."""
+    from google.adk.agents import Agent
+    from google.adk.tools.agent_tool import AgentTool
+
+    from app.adk.agents.agent_tool_billing import capture_agent_tool_usage
+
+    leaf = Agent(
+        name=name,
+        model="gemini-2.5-flash",
+        description="stub",
+        instruction="stub",
+        after_model_callback=capture_agent_tool_usage,
+    )
+    return AgentTool(agent=leaf)
+
+
+class TestIsolatedAgentToolLane:
+    def test_registers_and_resolves(self):
+        from app.adk.tools.registry.agent_tool_registry import (
+            get_isolated_agent_tool,
+            register_isolated_agent_tool,
+            resolve_isolated_agent_tools,
+        )
+
+        register_isolated_agent_tool(
+            "google_search", lambda: _iso_tool("google_search")
+        )
+        got = get_isolated_agent_tool("google_search")
+        assert type(got).__name__ == "AgentTool" and got.name == "google_search"
+        resolved = resolve_isolated_agent_tools(
+            _registry_with_catalogue(["google_search"])
+        )
+        assert [t.name for t in resolved] == ["google_search"]
+
+    def test_rejects_non_agent_tool(self):
+        from app.adk.tools.registry.agent_tool_registry import (
+            register_isolated_agent_tool,
+        )
+
+        with pytest.raises(TypeError):
+            register_isolated_agent_tool(
+                "google_search", lambda: _stub_subagent("google_search")
+            )
+
+    def test_rejects_missing_billing_callback(self):
+        from google.adk.agents import Agent
+        from google.adk.tools.agent_tool import AgentTool
+
+        from app.adk.tools.registry.agent_tool_registry import (
+            register_isolated_agent_tool,
+        )
+
+        leaf = Agent(name="google_search", model="gemini-2.5-flash", description="stub")
+        with pytest.raises(ValueError, match="capture_agent_tool_usage"):
+            register_isolated_agent_tool("google_search", lambda: AgentTool(agent=leaf))
+
+    def test_rejects_name_mismatch(self):
+        from app.adk.tools.registry.agent_tool_registry import (
+            register_isolated_agent_tool,
+        )
+
+        with pytest.raises(ValueError, match="does not match"):
+            register_isolated_agent_tool(
+                "google_search", lambda: _iso_tool("other_name")
+            )
+
+    def test_cross_lane_isolated_then_task_raises(self):
+        from app.adk.tools.registry.agent_tool_registry import (
+            register_agent_subagent,
+            register_isolated_agent_tool,
+        )
+
+        register_isolated_agent_tool(
+            "google_search", lambda: _iso_tool("google_search")
+        )
+        with pytest.raises(ValueError, match="isolated-AgentTool lane"):
+            register_agent_subagent(
+                "google_search", lambda: _stub_subagent("google_search")
+            )
+
+    def test_cross_lane_task_then_isolated_raises(self):
+        from app.adk.tools.registry.agent_tool_registry import (
+            register_agent_subagent,
+            register_isolated_agent_tool,
+        )
+
+        register_agent_subagent(
+            "google_search", lambda: _stub_subagent("google_search")
+        )
+        with pytest.raises(ValueError, match="task-mode lane"):
+            register_isolated_agent_tool(
+                "google_search", lambda: _iso_tool("google_search")
+            )

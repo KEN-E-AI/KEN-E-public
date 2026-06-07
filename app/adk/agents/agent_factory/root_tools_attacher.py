@@ -93,7 +93,10 @@ from app.adk.agents.agent_factory.roster import (
 )
 from app.adk.agents.agent_factory.specialist_runtime import block_lock_for
 from app.adk.agents.utils.config_cache import get_cached_merged_config
-from app.adk.tools.registry.agent_tool_registry import resolve_agent_subagents
+from app.adk.tools.registry.agent_tool_registry import (
+    resolve_agent_subagents,
+    resolve_isolated_agent_tools,
+)
 from app.adk.tools.registry.tool_registry import get_default_registry
 from shared.account_id_utils import validate_account_id
 
@@ -304,8 +307,7 @@ def _attach_locked(
         config = get_cached_merged_config("ken_e_chatbot", account_id, ttl_seconds=60)
     except FirestoreConnectionError as exc:
         logger.error(
-            "[ATTACH-ROOT-TOOLS] Firestore error fetching root config "
-            "(account=%r): %s",
+            "[ATTACH-ROOT-TOOLS] Firestore error fetching root config (account=%r): %s",
             account_id,
             exc,
         )
@@ -356,6 +358,10 @@ def _attach_locked(
             function_tools=[],
             mcp_server_ids=[],
             agent_subagents=resolve_agent_subagents(_registry),
+            # AH-PRD-15 re-plan: isolated AgentTools (google_search /
+            # numerical_analyst) flow into ``.tools`` and are reconciled onto
+            # ``root.tools`` below as regular tools — no ``_TaskAgentTool``.
+            isolated_agent_tools=resolve_isolated_agent_tools(_registry),
             tool_ids=getattr(config, "tool_ids", None),
             registry=_registry,
         )
@@ -385,9 +391,7 @@ def _attach_locked(
     #    tools (MCP toolsets, function tools) that continue to live in root.tools.
     resolved_non_agent: list[Any] = list(_roster.tools)
     agent_subs_desired: dict[str, LlmAgent] = {
-        sub.name: sub
-        for sub in _roster.sub_agents
-        if sub.name is not None
+        sub.name: sub for sub in _roster.sub_agents if sub.name is not None
     }
 
     # 6. Reconcile agent-as-tool sub_agents (name-scoped; specialists untouched).

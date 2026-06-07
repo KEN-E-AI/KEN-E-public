@@ -744,3 +744,134 @@ class TestBuildTurnDeltaMultiAuthorMessageCount:
         ]
         delta = _build_turn_delta(events, self._now())
         assert delta.message_count == 2
+
+
+# ---------------------------------------------------------------------------
+# AH-PRD-15 re-plan: isolated AgentTool leaf billing capture
+# ---------------------------------------------------------------------------
+
+
+class TestAgentToolBillingIntegration:
+    """The leaf's usage_metadata (dropped by AgentTool.run_async, #3984) is parked
+    in the per-turn sink and folded into the after-callback's billed delta."""
+
+    def _now(self) -> datetime:
+        return datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_build_turn_delta_folds_extra_tokens(self) -> None:
+        from shared.token_accounting import BillableTokenCounts
+
+        # No events at all, but an isolated leaf captured tokens out-of-band.
+        delta = _build_turn_delta(
+            [], self._now(), extra=BillableTokenCounts(input=300, output=80, reasoning=5)
+        )
+        assert delta.input_tokens_increment == 300
+        assert delta.output_tokens_increment == 80
+        assert delta.reasoning_tokens_increment == 5
+        # current_context_tokens accumulates the same turn total.
+        assert delta.current_context_tokens == 385
+
+    def test_extra_adds_to_event_tokens_no_double_count(self) -> None:
+        from shared.token_accounting import BillableTokenCounts
+
+        # The root/specialist model events ARE in session.events (counted here);
+        # the leaf tokens are NOT (extra) — the two sources are additive, distinct.
+        events = [_MockEvent(author="model", usage=_MockUsage(prompt_token_count=100, candidates_token_count=20))]
+        delta = _build_turn_delta(
+            events, self._now(), extra=BillableTokenCounts(input=300, output=80)
+        )
+        assert delta.input_tokens_increment == 400  # 100 (event) + 300 (leaf)
+        assert delta.output_tokens_increment == 100  # 20 (event) + 80 (leaf)
+
+    def test_after_callback_bills_captured_leaf_tokens(self) -> None:
+        from app.adk.agents.agent_tool_billing import (
+            capture_agent_tool_usage,
+            reset_for_tests,
+            set_outer_turn_id,
+        )
+
+        reset_for_tests()
+        # Simulate the turn: before-callback bound the turn id; the isolated leaf's
+        # after_model_callback parked its usage. The root session.events do NOT
+        # contain the leaf events (AgentTool drops them — #3984).
+        set_outer_turn_id("inv-1")
+        leaf_response = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=300,
+                candidates_token_count=80,
+                thoughts_token_count=0,
+                cached_content_token_count=0,
+            )
+        )
+        capture_agent_tool_usage(None, leaf_response)
+
+        ctx = _make_callback_context(parent_agent=None, invocation_id="inv-1")
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
+            chat_after_agent_callback(ctx)
+
+        mock_post.assert_called_once()
+        posted_delta = mock_post.call_args.kwargs["delta"]
+        # Wire format sentinel-encodes increments.
+        assert posted_delta["input_tokens_total"] == {"_increment": 300}
+        assert posted_delta["output_tokens_total"] == {"_increment": 80}
+        reset_for_tests()
+
+    def test_after_callback_drains_one_shot(self) -> None:
+        from app.adk.agents.agent_tool_billing import (
+            capture_agent_tool_usage,
+            reset_for_tests,
+            set_outer_turn_id,
+        )
+
+        reset_for_tests()
+        set_outer_turn_id("inv-1")
+        capture_agent_tool_usage(
+            None,
+            SimpleNamespace(
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=50,
+                    candidates_token_count=5,
+                    thoughts_token_count=0,
+                    cached_content_token_count=0,
+                )
+            ),
+        )
+        ctx = _make_callback_context(parent_agent=None, invocation_id="inv-1")
+        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+            chat_after_agent_callback(ctx)  # drains
+            chat_after_agent_callback(ctx)  # second flush sees an empty sink
+
+        first = mock_post.call_args_list[0].kwargs["delta"]
+        second = mock_post.call_args_list[1].kwargs["delta"]
+        assert first["input_tokens_total"] == {"_increment": 50}
+        assert second["input_tokens_total"] == {"_increment": 0}
+        reset_for_tests()
+
+    def test_before_callback_binds_turn_id_for_capture(self) -> None:
+        from app.adk.agents.agent_tool_billing import (
+            capture_agent_tool_usage,
+            drain_turn_billing,
+            reset_for_tests,
+        )
+
+        reset_for_tests()
+        ctx = _make_callback_context(parent_agent=None, invocation_id="inv-xyz")
+        with patch("app.adk.agents.chat_callbacks._post_side_table_update"):
+            chat_before_agent_callback(ctx)
+        # After before-callback bound the id, a leaf capture lands under it.
+        capture_agent_tool_usage(
+            None,
+            SimpleNamespace(
+                usage_metadata=SimpleNamespace(
+                    prompt_token_count=12,
+                    candidates_token_count=3,
+                    thoughts_token_count=0,
+                    cached_content_token_count=0,
+                )
+            ),
+        )
+        drained = drain_turn_billing("inv-xyz")
+        assert (drained.input, drained.output) == (12, 3)
+        reset_for_tests()

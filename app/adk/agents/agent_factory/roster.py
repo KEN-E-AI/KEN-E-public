@@ -123,6 +123,7 @@ def count_specialist_tool_roster(
     mcp_server_ids: list[str],
     function_tools: list[Any],
     agent_subagents: list[Any] | None = None,
+    isolated_agent_tools: list[Any] | None = None,
     registry: ToolRegistry,
 ) -> int:
     """Return the logical tool count for a specialist before construction.
@@ -165,15 +166,17 @@ def count_specialist_tool_roster(
         Total logical tool count.
     """
     agent_subagent_count = len(agent_subagents or [])
+    isolated_count = len(isolated_agent_tools or [])
     server_count = sum(_tool_count_for_server(sid, registry) for sid in mcp_server_ids)
-    total = server_count + len(function_tools) + agent_subagent_count
+    total = server_count + len(function_tools) + agent_subagent_count + isolated_count
     logger.debug(
         "Logical roster count for %r: %d mcp-tool(s) + %d function-tool(s) + "
-        "%d agent-subagent(s) = %d",
+        "%d agent-subagent(s) + %d isolated-agent-tool(s) = %d",
         specialist_name,
         server_count,
         len(function_tools),
         agent_subagent_count,
+        isolated_count,
         total,
     )
     return total
@@ -245,6 +248,26 @@ def _filter_agent_subagents_by_ids(
     return kept
 
 
+def _filter_isolated_agent_tools_by_ids(
+    isolated_agent_tools: list[Any], tool_ids: set[str]
+) -> list[Any]:
+    """Return only isolated ``AgentTool``s whose ``agent.{name}`` ID is in tool_ids.
+
+    Isolated agent-tools (AH-PRD-15 re-plan) are ADK ``AgentTool`` instances whose
+    ``.name`` equals the catalogue name (``google_search`` / ``numerical_analyst``).
+    They share the ``agent.{name}`` tool-id namespace with the task-mode lane, but
+    are routed into ``RosterResolution.tools`` (regular tools) rather than
+    ``sub_agents``, because the built-in tool they wrap cannot be dispatched as a
+    task-mode sub-agent. Anything without a discoverable ``name`` is dropped.
+    """
+    kept: list[Any] = []
+    for agent_tool in isolated_agent_tools:
+        bare_name = getattr(agent_tool, "name", None)
+        if isinstance(bare_name, str) and f"agent.{bare_name}" in tool_ids:
+            kept.append(agent_tool)
+    return kept
+
+
 def resolve_specialist_roster(
     specialist_name: str,
     *,
@@ -252,6 +275,7 @@ def resolve_specialist_roster(
     function_tools: list[Any],
     mcp_server_ids: list[str],
     agent_subagents: list[Any] | None = None,
+    isolated_agent_tools: list[Any] | None = None,
     tool_ids: list[str] | None = None,
     registry: ToolRegistry | None = None,
 ) -> RosterResolution:
@@ -311,6 +335,7 @@ def resolve_specialist_roster(
     frozen_toolsets: dict[str, Any] = dict(mcp_toolsets)
     frozen_function_tools: list[Any] = list(function_tools)
     frozen_agent_subagents: list[Any] = list(agent_subagents or [])
+    frozen_isolated_agent_tools: list[Any] = list(isolated_agent_tools or [])
 
     # AH-PRD-06: apply the per-agent tool allowlist. Within-toolset filtering
     # is the caller's job at construction (``hierarchy.py`` passes
@@ -351,8 +376,19 @@ def resolve_specialist_roster(
         kept_agent_subagents = _filter_agent_subagents_by_ids(
             frozen_agent_subagents, tool_id_set
         )
+        # AH-PRD-15 re-plan: isolated AgentTools share the ``agent.{name}`` opt-in
+        # namespace but are regular tools — route them into ``.tools`` so the
+        # parent attaches them via ``tools=`` (an isolated AgentTool sub-runner),
+        # NOT as a task-mode sub-agent.
+        kept_isolated_agent_tools = _filter_isolated_agent_tools_by_ids(
+            frozen_isolated_agent_tools, tool_id_set
+        )
         return RosterResolution(
-            tools=[*kept_toolsets.values(), *kept_function_tools],
+            tools=[
+                *kept_toolsets.values(),
+                *kept_function_tools,
+                *kept_isolated_agent_tools,
+            ],
             sub_agents=kept_agent_subagents,
         )
 
@@ -396,7 +432,8 @@ def resolve_specialist_roster(
     # branch above). The registry lookup is guarded so empty-agent-subagent
     # callers don't depend on it.
     kept_agent_subagents = []
-    if frozen_agent_subagents:
+    kept_isolated_agent_tools = []
+    if frozen_agent_subagents or frozen_isolated_agent_tools:
         default_global_agent_names = {
             t.name for t in registry.list_agent_tools() if t.default_global
         }
@@ -405,23 +442,37 @@ def resolve_specialist_roster(
             for t in frozen_agent_subagents
             if getattr(t, "name", None) in default_global_agent_names
         ]
+        # AH-PRD-15 re-plan: opt-in isolated tools (google_search /
+        # numerical_analyst are default_global: false) are excluded with no
+        # tool_ids filter — parity with the task-mode lane and default-global
+        # function tools.
+        kept_isolated_agent_tools = [
+            t
+            for t in frozen_isolated_agent_tools
+            if getattr(t, "name", None) in default_global_agent_names
+        ]
 
     logical_count = count_specialist_tool_roster(
         specialist_name,
         mcp_server_ids=mcp_server_ids,
         function_tools=frozen_function_tools,
         agent_subagents=kept_agent_subagents,
+        isolated_agent_tools=kept_isolated_agent_tools,
         registry=registry,
     )
 
     if logical_count > MAX_TOOLS_PER_SPECIALIST:
         mcp_count = (
-            logical_count - len(frozen_function_tools) - len(kept_agent_subagents)
+            logical_count
+            - len(frozen_function_tools)
+            - len(kept_agent_subagents)
+            - len(kept_isolated_agent_tools)
         )
         raise RosterCapExceededError(
             f"Specialist {specialist_name!r} has a logical tool count of {logical_count} "
             f"({len(frozen_function_tools)} function tool(s) + "
             f"{len(kept_agent_subagents)} agent-subagent(s) + "
+            f"{len(kept_isolated_agent_tools)} isolated-agent-tool(s) + "
             f"{mcp_count} MCP tool(s)), "
             f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap. "
             f"Note: function tools include any default-global entries from "
@@ -433,6 +484,10 @@ def resolve_specialist_roster(
         )
 
     return RosterResolution(
-        tools=[*frozen_toolsets.values(), *frozen_function_tools],
+        tools=[
+            *frozen_toolsets.values(),
+            *frozen_function_tools,
+            *kept_isolated_agent_tools,
+        ],
         sub_agents=kept_agent_subagents,
     )

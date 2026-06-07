@@ -1,12 +1,15 @@
-"""Tests for the numerical analyst agent tool (AH-149 / AH-114).
+"""Tests for the numerical analyst agent tool (AH-149 / AH-114 / AH-PRD-15 re-plan).
 
-AH-114: the module-bottom side effect now registers a task-mode ``LlmAgent``
-(via ``register_agent_subagent``) instead of an ``AgentTool``. Tests updated
-to assert the task-mode contract; ``create_numerical_analyst_agent`` is unchanged.
+AH-PRD-15 re-plan (AH-121): the module-bottom side effect now registers an
+*isolated* ``AgentTool`` (via ``register_isolated_agent_tool``) instead of a
+task-mode ``LlmAgent``. Gemini 2.5+ rejects code execution alongside the function
+tool that ``mode='task'`` injects (the same ``400 ... all search tools`` class as
+google_search), so the code-execution leaf must be isolated in an AgentTool
+sub-runner. The dropped ``usage_metadata`` (#3984) is recovered by the leaf's
+``capture_agent_tool_usage`` after_model_callback.
 
 Importing the module is the production registration path (the side effect
-hierarchy.py relies on), so these tests exercise it directly rather than
-clearing the registry first.
+hierarchy.py relies on), so these tests exercise it directly.
 """
 
 from __future__ import annotations
@@ -15,10 +18,15 @@ import importlib
 
 from google.adk.agents import Agent, LlmAgent
 from google.adk.code_executors import BuiltInCodeExecutor
+from google.adk.tools.agent_tool import AgentTool
 
-# Importing the module registers the task-mode subagent as a side effect.
+# Importing the module registers the isolated AgentTool as a side effect.
 import app.adk.tools.agent_tools.numerical_analyst as na
-from app.adk.tools.registry.agent_tool_registry import get_agent_subagent
+from app.adk.agents.agent_tool_billing import capture_agent_tool_usage
+from app.adk.tools.registry.agent_tool_registry import (
+    get_agent_subagent,
+    get_isolated_agent_tool,
+)
 
 
 def test_create_numerical_analyst_agent_returns_leaf_agent() -> None:
@@ -59,16 +67,29 @@ def test_numerical_analyst_subagent_has_code_executor() -> None:
     assert isinstance(agent.code_executor, BuiltInCodeExecutor)
 
 
-def test_import_registers_agent_subagent_under_catalogue_name() -> None:
-    """The import-time side effect registers a task-mode LlmAgent — not an AgentTool.
+def test_create_numerical_analyst_agent_tool_isolates_code_exec_and_bills() -> None:
+    """The chat-tree factory wraps an isolated, billed code-exec leaf in an AgentTool."""
+    tool = na.create_numerical_analyst_agent_tool()
+    assert isinstance(tool, AgentTool)
+    assert tool.name == "numerical_analyst"
+    leaf = tool.agent
+    assert leaf.after_model_callback is capture_agent_tool_usage
+    assert isinstance(leaf.code_executor, BuiltInCodeExecutor)
+    # No function tools alongside the built-in code executor.
+    assert (leaf.tools or []) == []
 
-    AH-114: registry no longer stores AgentTool instances. The catalogue name
-    maps to a task-mode LlmAgent with code_executor so the roster resolver (AH-115)
-    can attach it to sub_agents= and benefit from native event propagation.
+
+def test_import_registers_isolated_agent_tool_not_task_mode() -> None:
+    """The import-time side effect registers an isolated AgentTool, NOT a task-mode leaf.
+
+    AH-PRD-15 re-plan: numerical_analyst lives on the isolated lane (``AgentTool`` in
+    ``.tools``) and is absent from the task-mode lane.
     """
     importlib.reload(na)
-    agent = get_agent_subagent("numerical_analyst")
-    assert isinstance(agent, LlmAgent)
-    assert agent.name == "numerical_analyst"
-    assert agent.mode == "task"
-    assert isinstance(agent.code_executor, BuiltInCodeExecutor)
+    tool = get_isolated_agent_tool("numerical_analyst")
+    assert isinstance(tool, AgentTool)
+    assert tool.name == "numerical_analyst"
+    assert isinstance(tool.agent.code_executor, BuiltInCodeExecutor)
+    assert tool.agent.after_model_callback is capture_agent_tool_usage
+    # Not on the task-mode lane.
+    assert get_agent_subagent("numerical_analyst") is None

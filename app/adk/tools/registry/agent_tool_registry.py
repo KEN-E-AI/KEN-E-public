@@ -47,7 +47,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from google.adk.agents import LlmAgent
 
@@ -72,7 +72,25 @@ except ImportError:
 # instances, is load-bearing: ADK 2.0's ``BaseAgent`` rejects attaching one
 # sub-agent to more than one parent, so each resolve must mint a fresh,
 # parentless instance (see module docstring).
+#
+# NOTE (AH-PRD-15 re-plan / AH-121): this task-mode lane is currently DORMANT.
+# Both real agent-tools (google_search, numerical_analyst) wrap a built-in tool
+# that Gemini forbids alongside any function declaration (search grounding /
+# code execution), and ``mode='task'`` injects ``FinishTaskTool`` next to it →
+# ``400 ... all search tools``. They are registered on the *isolated* lane below
+# (``_ISOLATED_REGISTRY``) instead. The task-mode lane is kept for a future
+# multi-tool agent-tool that can tolerate the injected delegation tool.
 _REGISTRY: dict[str, Callable[[], LlmAgent]] = {}
+
+# Process-global registry for the *isolated AgentTool* lane (AH-PRD-15 re-plan).
+# Values are factories that build a fresh ``AgentTool`` wrapping a leaf whose LLM
+# request carries ONLY its built-in tool (google_search grounding /
+# code-execution). ``AgentTool`` is the only dispatch mechanism that isolates such
+# a leaf (own sub-runner, no transfer/task tool injected). Because
+# ``AgentTool.run_async`` drops the leaf's inner ``usage_metadata`` (#3984), each
+# such leaf MUST carry the ``capture_agent_tool_usage`` after_model_callback so the
+# tokens are still billed — :func:`register_isolated_agent_tool` enforces that.
+_ISOLATED_REGISTRY: dict[str, Callable[[], Any]] = {}
 
 # Warn-once latch for the legacy resolve_agent_tools deprecation shim.
 _warned: bool = False
@@ -160,6 +178,13 @@ def register_agent_subagent(name: str, factory: Callable[[], LlmAgent]) -> None:
         )
 
     with _REGISTRY_LOCK:
+        if name in _ISOLATED_REGISTRY:
+            raise ValueError(
+                f"Catalogue name {name!r} is already registered on the isolated-AgentTool "
+                "lane (register_isolated_agent_tool). A name must use exactly ONE lane — "
+                "registering on both would double-attach (one sub_agent + one tool). "
+                "See AH-PRD-15 §5."
+            )
         if name in _REGISTRY:
             logger.warning(
                 "Task-mode sub-agent %r is being re-registered, overwriting the previous "
@@ -211,23 +236,147 @@ def resolve_agent_subagents(registry: ToolRegistry) -> list[LlmAgent]:
     """
     with _REGISTRY_LOCK:
         snapshot = dict(_REGISTRY)
+        isolated_names = set(_ISOLATED_REGISTRY)
     resolved: list[LlmAgent] = []
     for tool_def in registry.list_agent_tools():
         factory = snapshot.get(tool_def.name)
         if factory is None:
-            logger.warning(
-                "Agent sub-agent %r is catalogued in tools.yaml but no factory is "
-                "registered; skipping. Register via "
-                "``register_agent_subagent(%r, create_%s_subagent)`` from the module "
-                "that implements the tool — usually imported at startup from "
-                "``app/adk/agents/agent_factory/hierarchy.py`` so the side effect "
-                "fires before build_hierarchy resolves rosters.",
-                tool_def.name,
-                tool_def.name,
-                tool_def.name,
-            )
+            # No task-mode factory. Stay quiet when the entry is handled by the
+            # isolated AgentTool lane (the normal case post-AH-PRD-15 re-plan) —
+            # only warn for a catalogue entry with no implementation on EITHER lane.
+            if tool_def.name not in isolated_names:
+                logger.warning(
+                    "Agent-tool %r is catalogued in tools.yaml but no factory is "
+                    "registered on either the task-mode or isolated lane; skipping. "
+                    "Register via ``register_isolated_agent_tool`` (built-in-tool "
+                    "leaf) or ``register_agent_subagent`` (task-mode) from the module "
+                    "that implements the tool — imported at startup from "
+                    "``app/adk/agents/agent_factory/hierarchy.py``.",
+                    tool_def.name,
+                )
             continue
         resolved.append(factory())
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Isolated AgentTool lane (AH-PRD-15 re-plan / AH-121)
+#
+# google_search and numerical_analyst wrap a built-in tool (search grounding /
+# code execution) that Gemini rejects alongside any function declaration. The
+# only dispatch mechanism that isolates such a leaf is an ADK ``AgentTool`` (own
+# sub-runner, no transfer/task tool injected). ``AgentTool.run_async`` drops the
+# leaf's inner events incl. ``usage_metadata`` (#3984), so each isolated leaf MUST
+# carry the ``capture_agent_tool_usage`` after_model_callback — registration
+# enforces it so an isolated AgentTool can never be added without its billing.
+# ---------------------------------------------------------------------------
+
+
+def _leaf_has_billing_callback(agent_tool: Any) -> bool:
+    """True iff the AgentTool's wrapped leaf carries ``capture_agent_tool_usage``.
+
+    The leaf's ``after_model_callback`` may be a single callable or a list (ADK
+    accepts both). Imported lazily to avoid an import-time dependency on the agent
+    layer from this registry module (kept importable in minimal contexts).
+    """
+    try:
+        from app.adk.agents.agent_tool_billing import capture_agent_tool_usage
+    except Exception:  # pragma: no cover - billing module always importable
+        return False
+    leaf = getattr(agent_tool, "agent", None)
+    cb = getattr(leaf, "after_model_callback", None)
+    if cb is capture_agent_tool_usage:
+        return True
+    if isinstance(cb, (list, tuple)):
+        return capture_agent_tool_usage in cb
+    return False
+
+
+def register_isolated_agent_tool(name: str, factory: Callable[[], Any]) -> None:
+    """Register a factory that builds an isolated ``AgentTool`` for *name*.
+
+    ``factory`` is a zero-arg callable returning a fresh ``AgentTool`` whose
+    ``.name`` equals *name* (``AgentTool`` inherits ``name=agent.name``, so the
+    wrapped leaf must be named *name* to match the ``agent.{name}`` tool id) and
+    whose wrapped leaf carries the ``capture_agent_tool_usage``
+    after_model_callback.
+
+    A single instance is built here to validate the contract loudly at import.
+
+    Raises:
+        TypeError: the factory does not produce an ``AgentTool``.
+        ValueError: the AgentTool's ``name`` != *name* (catalogue/instance drift).
+        ValueError: the wrapped leaf is missing the billing callback (would
+            silently under-bill — the exact #3984 defect this lane prevents).
+    """
+    sample = factory()
+
+    if _AgentTool is None or not isinstance(sample, _AgentTool):
+        raise TypeError(
+            "register_isolated_agent_tool expects a factory producing an AgentTool "
+            f"(isolated built-in-tool leaf), got {type(sample).__name__!r}. Wrap a leaf "
+            f"named {name!r} carrying after_model_callback=capture_agent_tool_usage in "
+            "an AgentTool. See AH-PRD-15 §5."
+        )
+
+    if sample.name != name:
+        raise ValueError(
+            f"Catalogue name {name!r} does not match AgentTool.name {sample.name!r}. "
+            f"Name the wrapped leaf {name!r} so the tool matches the agent.{name} id."
+        )
+
+    if not _leaf_has_billing_callback(sample):
+        raise ValueError(
+            f"Isolated AgentTool {name!r} is missing the capture_agent_tool_usage "
+            "after_model_callback on its wrapped leaf. AgentTool.run_async drops the "
+            "leaf's usage_metadata (#3984), so without the callback the tool's tokens "
+            "go unbilled. Attach after_model_callback=capture_agent_tool_usage to the "
+            "leaf. See app/adk/agents/agent_tool_billing.py and AH-PRD-15 §5."
+        )
+
+    with _REGISTRY_LOCK:
+        if name in _REGISTRY:
+            raise ValueError(
+                f"Catalogue name {name!r} is already registered on the task-mode lane "
+                "(register_agent_subagent). A name must use exactly ONE lane — "
+                "registering on both would make resolve_agent_subagents and "
+                "resolve_isolated_agent_tools each emit it (double-attach: one "
+                "sub_agent + one tool). See AH-PRD-15 §5."
+            )
+        if name in _ISOLATED_REGISTRY:
+            logger.warning(
+                "Isolated agent-tool %r is being re-registered, overwriting the "
+                "previous entry. Two modules claiming the same catalogue name is "
+                "almost always a bug.",
+                name,
+            )
+        _ISOLATED_REGISTRY[name] = factory
+
+
+def get_isolated_agent_tool(name: str) -> Any | None:
+    """Return a *fresh* isolated ``AgentTool`` for *name*, or ``None`` if unregistered."""
+    with _REGISTRY_LOCK:
+        factory = _ISOLATED_REGISTRY.get(name)
+    return factory() if factory is not None else None
+
+
+def resolve_isolated_agent_tools(registry: ToolRegistry) -> list[Any]:
+    """Return a *fresh* isolated ``AgentTool`` for every catalogued entry with one.
+
+    Mirrors :func:`resolve_agent_subagents` but for the isolated lane. Iterates the
+    catalogue's ``agent_tools:`` entries and calls each registered isolated factory.
+    Entries without a registered isolated factory are skipped silently here — they
+    may instead be registered on the task-mode lane (or not yet implemented); the
+    per-lane resolvers each surface only their own entries. The roster resolver
+    applies the per-agent ``tool_ids`` allowlist on top.
+    """
+    with _REGISTRY_LOCK:
+        snapshot = dict(_ISOLATED_REGISTRY)
+    resolved: list[Any] = []
+    for tool_def in registry.list_agent_tools():
+        factory = snapshot.get(tool_def.name)
+        if factory is not None:
+            resolved.append(factory())
     return resolved
 
 
@@ -329,6 +478,7 @@ def clear_agent_tool_registry() -> None:
     global _warned
     with _REGISTRY_LOCK:
         _REGISTRY.clear()
+        _ISOLATED_REGISTRY.clear()
         _warned = False
 
 
@@ -338,9 +488,13 @@ __all__ = [
     "get_agent_subagent",
     # Legacy shims — importable until AH-115 / AH-116 migrate consumers
     "get_agent_tool",
+    # Isolated AgentTool lane (AH-PRD-15 re-plan / AH-121)
+    "get_isolated_agent_tool",
     "register_agent_subagent",
     "register_agent_tool",
+    "register_isolated_agent_tool",
     "resolve_agent_subagents",
     "resolve_agent_tools",
+    "resolve_isolated_agent_tools",
     "task_mode_supported",
 ]

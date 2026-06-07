@@ -374,26 +374,62 @@ print("weave_total:", weave_total)
 
 ---
 
-## §5 — Rollback
+## §5 — Rollback (RE-BASED — AH-121 re-plan)
 
-Trigger rollback if: deploy fails 3× (§2), any §3 smoke row FAILs, or §4 drift ≥ 0.5% **with meter_total < weave_total** (under-billing — the exact regression this PRD prevents). If drift ≥ 0.5% with meter_total > weave_total (over-billing anomaly), do NOT roll back — file a bug and investigate before the next deploy cycle; reverting to the pre-2.0 tree would re-introduce the known `AgentTool` under-billing path.
+> **The original §5 (`git checkout 13ce795a`) WON'T DEPLOY** and is removed. That SHA
+> predates the #887/#888 deploy-tree fixes (unpinned `aiplatform` → boot unpickle fail;
+> the `[adk]` extra → backend-build `ResolutionImpossible`), so deploying it reproduces
+> the staging-deploy outage. There is **no single historical commit** that has both
+> pre-task-mode `google_search` AND the #887/#888 fixes. The rollback is therefore two
+> tiers, neither of which is `13ce795a`.
+
+Trigger rollback if: deploy fails 3× (§2), any §3 smoke row FAILs, or §4 drift ≥ 0.5%
+**with meter_total < weave_total** (under-billing). If drift ≥ 0.5% with
+meter_total > weave_total (over-billing anomaly), do NOT roll back — file a bug.
+
+### Tier 1 — Stop-the-bleed (NO deploy; ~60 s; the default first move)
+
+`agent.google_search` is opt-in via `ken_e_chatbot.tool_ids` and hot-reloaded each
+turn by `root_tools_attacher` within the 60 s config TTL. **Un-assigning it stops the
+400s with no deploy and no risk to basic chat:**
 
 ```bash
-# 1) Re-point the prod engine to the last-known-good (pre-cutover) engine revision.
-#    deploy_ken_e.py updates the canonical engine in place and writes ken-e-engine-id;
-#    capture the PRIOR engine ID BEFORE deploy (§2) so rollback is a known target.
-PREV_ENGINE_ID=<recorded before §2 deploy>
-
-# 2) Fastest path: redeploy the previous main commit (pre-Wave-3) to prod via §2.2 manual path
-#    Pre-Wave-3 main SHA: 13ce795a (the commit immediately before e7f6ee52 on origin/main)
-git stash  # ensure no local modifications are accidentally included
-git checkout 13ce795a
-cd app/adk && uv sync --frozen && uv run python deploy_ken_e.py --env prod
-# NOTE: this bypasses the approval-gated deploy-to-prod-pipeline intentionally — rollback
-# must be fast. A direct deploy from a non-HEAD SHA is the documented recovery path.
+# Remove "agent.google_search" (and "agent.numerical_analyst" if assigned) from the
+# prod root config's tool_ids. Effective within ~60 s; fully reversible.
+#   Firestore: agent_configs/ken_e_chatbot.tool_ids  (ken-e-production)
+# Verify with a §3.2 web-search turn afterwards — expect a graceful "no web search"
+# answer, NOT a 400.
 ```
 
-**Important:** rolling the chat tree back to pre-2.0 also reverts the task-mode migration → the `#3984` `AgentTool` event-drop returns and `agent.google_search` under-bills again. Rollback is a **stop-the-bleed**, not a resting state: if rolled back, **un-assign `agent.google_search`** from prod agents (as AH-PRD-13 ran Foundation) until the cutover is re-attempted, so no web-search turn under-bills while rolled back.
+This is also the recommended **prod interim** while the AgentTool-isolation fix is in
+review (PO decision, AH-121 re-plan): web search is unavailable, but no turn errors and
+no under-billing.
+
+### Tier 2 — Full rollback (redeploy the last-known-good engine artifact)
+
+The new known-good is the **AgentTool-isolation fix commit** (restores `google_search`
+as an isolated `AgentTool` WITH the leaf billing callback, on top of #887/#888). Once it
+is merged, redeploy it — NOT a pre-fix SHA:
+
+```bash
+PREV_ENGINE_ID=<recorded before §2 deploy>   # for reference / audit
+git stash
+git checkout <agenttool-isolation-fix-SHA>   # the merged re-plan commit, NOT 13ce795a
+cd app/adk && uv sync --frozen && uv run python deploy_ken_e.py --env prod
+# Bypasses the approval-gated pipeline intentionally — rollback must be fast.
+```
+
+> Before this fix is merged there is no engine artifact that both deploys AND bills
+> `google_search` correctly, so **Tier 1 (un-assign) is the only safe rollback until the
+> fix lands.** After the fix lands, Tier 2 is the resting state and the cutover is
+> re-attempted from there (gated on the §1 live-Gemini staging smoke — see below).
+
+### New precondition for any re-deploy (AH-121 re-plan)
+
+`smoke_google_search_live.py` MUST PASS on the **staging** engine — a real grounded
+web-search turn with no `error_code`, a grounded answer, and the leaf tokens reaching
+the meter — before approving any prod deploy. The AC #1–#6 suites mock the LLM; this
+live turn is the gate the prod 400 slipped through.
 
 | Field | Value |
 |---|---|

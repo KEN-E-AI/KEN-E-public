@@ -206,7 +206,10 @@ def build_hierarchy(
         attach_specialists_before_agent_callback,
         attach_task_subagent,
     )
-    from app.adk.tools.registry.agent_tool_registry import resolve_agent_subagents
+    from app.adk.tools.registry.agent_tool_registry import (
+        resolve_agent_subagents,
+        resolve_isolated_agent_tools,
+    )
     from app.adk.tools.registry.tool_registry import get_default_registry
     from app.adk.tracking.callbacks import (
         adk_after_model_callback,
@@ -223,12 +226,15 @@ def build_hierarchy(
         function_tools=[],
         mcp_server_ids=[],
         agent_subagents=resolve_agent_subagents(_default_registry),
+        # AH-PRD-15 re-plan: google_search / numerical_analyst resolve as isolated
+        # AgentTools (built-in tool that cannot be a task-mode sub-agent) and flow
+        # into ``.tools``; the task-mode lane above is dormant.
+        isolated_agent_tools=resolve_isolated_agent_tools(_default_registry),
         tool_ids=getattr(root_config, "tool_ids", None),
         registry=_default_registry,
     )
-    # AH-116: RosterResolution already separates non-agent tools from task-mode
-    # sub_agents. route sub_agents to root.sub_agents so ADK 2.0 auto-injects
-    # request_task_<name> on the LLM call.
+    # RosterResolution.tools carries the isolated AgentTools (when opted in via
+    # tool_ids); .sub_agents carries any task-mode sub-agents (currently none).
     root_function_tools = _root_roster.tools
     root_agent_subagents = _root_roster.sub_agents
 
