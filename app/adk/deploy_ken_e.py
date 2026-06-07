@@ -249,9 +249,29 @@ def _resolve_existing_engine_id(project_number: str) -> str | None:
     return response.payload.data.decode("UTF-8").strip() or None
 
 
-# The chat tree is pinned to this google-adk major (app/adk/requirements.txt).
-# The deploy cloudpickles locally, so the build env must match the deploy pin —
-# a 1.34.1 venv would bake a 1.x pickle that fails to unpickle on a 2.0 backend.
+# Chat-tree deploy-manifest invariants (app/adk/requirements.txt). The manifest is
+# kept comment-free on purpose: agent_engines.update/create reads it as a path and
+# the Vertex SDK's requirements parser emits "Failed to parse constraint" warnings
+# for full-line `#` comments, which bury real deploy errors in the build log. The
+# rationale that used to live as inline comments is recorded here and ENFORCED by
+# deployment/ci/scripts/verify_deploy_tree.py (Checks 5 & 6):
+#
+#   * google-adk[mcp]==2.0.0 — the agent is cloudpickled locally and unpickled on
+#     the Agent Engine backend, so the manifest pin must match the build-env major
+#     (a 1.34.1 venv bakes a 1.x pickle that fails to unpickle on a 2.0 backend).
+#     The [mcp] extra is load-bearing: ADK 2.0 demoted `mcp` from a core dep to an
+#     optional extra, and the GA specialist talks to its MCP server over SSE
+#     (google.adk.tools.mcp_tool.McpToolset → mcp). Without it the deploy succeeds
+#     but the GA specialist ModuleNotFoundErrors at runtime (invisible to CI, which
+#     mocks MCP). This is the CHAT tree only; the strategy tree pins google-adk==1.34.1
+#     via requirements-strategy.txt (AH-106 decoupling).
+#   * google-cloud-aiplatform[adk,agent_engines]==<uv.lock version> — must be PINNED
+#     to the exact aiplatform that app/adk/uv.lock resolves. deploy_ken_e cloudpickles
+#     the agent with the LOCKED aiplatform's AdkApp wrapper (module path
+#     vertexai.agent_engines.templates.adk); an unpinned manifest installs a newer
+#     aiplatform in the container where that module has moved, so the engine fails to
+#     unpickle at boot → opaque "400 The Reasoning Engine failed to be updated"
+#     (the AH-121 staging-deploy failure). Check 6 asserts manifest == uv.lock.
 CHAT_ADK_VERSION_PREFIX = "2."
 
 

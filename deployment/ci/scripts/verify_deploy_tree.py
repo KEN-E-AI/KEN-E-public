@@ -6,7 +6,7 @@ of regression that shipped in PR #382: a ModuleNotFoundError that only
 manifested at Agent Engine runtime because CI never exercised the packaged
 import path.
 
-Five checks:
+Six checks:
   1. assemble_deploy_tree() runs without error (packaging integrity).
   2. from agents.agent_factory import build_hierarchy resolves inside the
      temp tree with the source tree stripped from sys.path (import resolution).
@@ -24,8 +24,16 @@ Five checks:
      ADK majors (chat → google-adk[mcp]==2.0.0, strategy →
      google-adk==1.34.1) and the strategy deploy still consumes
      requirements-strategy.txt (AH-105 / AH-106 decoupling guard).
+  6. The chat manifest's google-cloud-aiplatform pin matches the version
+     app/adk/uv.lock resolves (AH-121 guard): deploy_ken_e cloudpickles the
+     agent with the LOCKED aiplatform's AdkApp wrapper
+     (vertexai.agent_engines.templates.adk); an unpinned/skewed manifest installs
+     a newer aiplatform in the container where that module has moved, so the engine
+     fails to unpickle at boot → opaque "400 The Reasoning Engine failed to be
+     updated". This static check would have caught the staging-deploy outage that
+     went red across multiple main commits.
 
-Exit 0 = all five checks pass.  Non-zero = at least one check failed.
+Exit 0 = all six checks pass.  Non-zero = at least one check failed.
 """
 
 # This script IS safe to use `from __future__ import annotations` — it is never
@@ -112,6 +120,45 @@ _FAKE_DOCS: dict = {
         "description": "Sample specialist for smoke testing",
     },
 }
+
+
+def _locked_aiplatform_version(uv_lock_path: Path) -> str | None:
+    """Return the google-cloud-aiplatform version resolved in a uv.lock, or None.
+
+    Scans for the ``[[package]]`` block whose ``name = "google-cloud-aiplatform"``
+    and returns its ``version``. The inline-table requires entries
+    (``{ name = "google-cloud-aiplatform", extra = [...] }``) are not standalone
+    ``name = ...`` lines, so they are correctly ignored.
+    """
+    in_block = False
+    for line in uv_lock_path.read_text().splitlines():
+        stripped = line.strip()
+        if stripped == "[[package]]":
+            in_block = False
+        elif stripped == 'name = "google-cloud-aiplatform"':
+            in_block = True
+        elif in_block and stripped.startswith("version = "):
+            return stripped.split('"')[1]
+    return None
+
+
+def _pinned_aiplatform_version(requirements_path: Path) -> str | None:
+    """Return the ``==``-pinned google-cloud-aiplatform version, or None.
+
+    Returns None when the entry is absent or not pinned with ``==`` — the AH-121
+    failure mode, where an unpinned entry lets the container resolve a newer
+    aiplatform than the one the agent was cloudpickled with. Optional extras such
+    as ``[adk,agent_engines]`` are stripped before matching the base name.
+    """
+    for line in requirements_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        name = stripped.split("==")[0].split("[")[0].strip()
+        if name == "google-cloud-aiplatform":
+            _, sep, version = stripped.partition("==")
+            return version.strip() if sep else None
+    return None
 
 
 def main() -> int:
@@ -305,6 +352,49 @@ def main() -> int:
     logger.info(
         "PASS Check 5: chat manifest pinned to google-adk[mcp]==2.0.0, "
         "strategy manifest pinned to google-adk==1.34.1"
+    )
+
+    # ------------------------------------------------------------------
+    # Check 6: chat manifest aiplatform pin matches uv.lock (AH-121 guard)
+    # ------------------------------------------------------------------
+    # deploy_ken_e cloudpickles the agent with the aiplatform that uv.lock
+    # resolves; the container installs from requirements.txt. If the manifest
+    # pin is absent/unpinned/skewed, the container can resolve a newer aiplatform
+    # where vertexai.agent_engines.templates.adk has moved, so the engine fails to
+    # unpickle at boot → opaque "400 ...failed to be updated". Keep them identical.
+    uv_lock = adk_root / "uv.lock"
+    requirements_txt = adk_root / "requirements.txt"
+    locked = _locked_aiplatform_version(uv_lock)
+    pinned = _pinned_aiplatform_version(requirements_txt)
+    if locked is None:
+        logger.error(
+            "FAIL Check 6: could not find a google-cloud-aiplatform package in %s",
+            uv_lock,
+        )
+        return 1
+    if pinned is None:
+        logger.error(
+            "FAIL Check 6: %s does not pin google-cloud-aiplatform with '=='. "
+            "Unpinned → the container can install a newer aiplatform than the "
+            "cloudpickle SDK (the AH-121 staging-deploy outage). Pin it to ==%s "
+            "to match uv.lock.",
+            requirements_txt.name,
+            locked,
+        )
+        return 1
+    if pinned != locked:
+        logger.error(
+            "FAIL Check 6: aiplatform pin skew — %s pins ==%s but uv.lock resolves "
+            "%s. They MUST match (cloudpickle/unpickle version skew → opaque "
+            "'400 ...failed to be updated' at engine boot).",
+            requirements_txt.name,
+            pinned,
+            locked,
+        )
+        return 1
+    logger.info(
+        "PASS Check 6: google-cloud-aiplatform pinned to ==%s, matching uv.lock",
+        pinned,
     )
     return 0
 
