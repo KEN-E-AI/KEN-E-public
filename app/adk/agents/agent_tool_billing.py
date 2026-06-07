@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import contextvars
 import logging
+import threading
 from typing import Any
 
 from shared.token_accounting import BillableTokenCounts, extract_billable_tokens
@@ -72,7 +73,15 @@ _OUTER_TURN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 
 # Per-turn capture sink, keyed by outer invocation_id. Off-state (module-global),
 # so it survives AgentTool.run_async's deep-copy of session state.
+#
+# Concurrency: ADK dispatches a turn (incl. parallel google_search via
+# asyncio.gather) within a single event loop on one worker process, so the
+# read-modify-write below is already serialised by the GIL between awaits. The
+# lock is belt-and-suspenders to keep the multi-step evict+insert atomic should
+# Agent Engine ever dispatch turns across OS threads — matching the explicit
+# locking its sibling registry (`agent_tool_registry._REGISTRY_LOCK`) uses.
 _BILLING_SINK: dict[str, list[BillableTokenCounts]] = {}
+_SINK_LOCK = threading.Lock()
 
 # Bound the sink so a turn that aborts before its after_agent_callback drains it
 # cannot leak unboundedly. A turn appends O(1-3) entries; 256 live turns is far
@@ -83,21 +92,14 @@ _MAX_TRACKED_TURNS = 256
 def set_outer_turn_id(invocation_id: str | None) -> None:
     """Bind *invocation_id* as the current turn's billing key (root turn start).
 
-    Call once from the root ``before_agent_callback``. Initialises (or resets) the
-    sink bucket for this turn so :func:`drain_turn_billing` always finds a list,
-    and evicts the oldest bucket when the bound is exceeded (defensive cleanup for
-    turns that errored out before draining).
+    Call once from the root ``before_agent_callback`` for EVERY root turn —
+    including non-billable ones — so the ContextVar always reflects the current
+    turn and a reused context/thread can never leak a prior turn's id into a leaf
+    capture. The sink bucket is created lazily by :func:`capture_agent_tool_usage`
+    (only when a leaf actually bills), so binding here costs nothing on the common
+    no-web-search turn.
     """
     _OUTER_TURN_ID.set(invocation_id)
-    if not invocation_id:
-        return
-    if invocation_id not in _BILLING_SINK:
-        if len(_BILLING_SINK) >= _MAX_TRACKED_TURNS:
-            # Drop the oldest-inserted bucket (insertion-ordered dict).
-            oldest = next(iter(_BILLING_SINK), None)
-            if oldest is not None:
-                _BILLING_SINK.pop(oldest, None)
-        _BILLING_SINK[invocation_id] = []
 
 
 def capture_agent_tool_usage(callback_context: Any, llm_response: Any) -> None:
@@ -118,8 +120,19 @@ def capture_agent_tool_usage(callback_context: Any, llm_response: Any) -> None:
         if not turn_id:
             return None
         counts = extract_billable_tokens(llm_response)
-        if counts.total_billable:
-            _BILLING_SINK.setdefault(turn_id, []).append(counts)
+        if not counts.total_billable:
+            return None
+        with _SINK_LOCK:
+            bucket = _BILLING_SINK.get(turn_id)
+            if bucket is None:
+                if len(_BILLING_SINK) >= _MAX_TRACKED_TURNS:
+                    # Drop the oldest-inserted bucket (insertion-ordered dict) —
+                    # an aborted turn that never drained.
+                    oldest = next(iter(_BILLING_SINK), None)
+                    if oldest is not None:
+                        _BILLING_SINK.pop(oldest, None)
+                bucket = _BILLING_SINK[turn_id] = []
+            bucket.append(counts)
     except Exception:  # pragma: no cover - defensive; billing must not break turns
         logger.debug("capture_agent_tool_usage failed (non-blocking)", exc_info=True)
     return None
@@ -135,7 +148,8 @@ def drain_turn_billing(invocation_id: str | None) -> BillableTokenCounts:
     """
     if not invocation_id:
         return BillableTokenCounts()
-    captured = _BILLING_SINK.pop(invocation_id, [])
+    with _SINK_LOCK:
+        captured = _BILLING_SINK.pop(invocation_id, [])
     if not captured:
         return BillableTokenCounts()
     return BillableTokenCounts(
@@ -147,5 +161,6 @@ def drain_turn_billing(invocation_id: str | None) -> BillableTokenCounts:
 
 def reset_for_tests() -> None:
     """Clear the sink and unset the turn id. Test isolation only."""
-    _BILLING_SINK.clear()
+    with _SINK_LOCK:
+        _BILLING_SINK.clear()
     _OUTER_TURN_ID.set(None)

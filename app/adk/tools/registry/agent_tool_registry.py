@@ -178,6 +178,13 @@ def register_agent_subagent(name: str, factory: Callable[[], LlmAgent]) -> None:
         )
 
     with _REGISTRY_LOCK:
+        if name in _ISOLATED_REGISTRY:
+            raise ValueError(
+                f"Catalogue name {name!r} is already registered on the isolated-AgentTool "
+                "lane (register_isolated_agent_tool). A name must use exactly ONE lane — "
+                "registering on both would double-attach (one sub_agent + one tool). "
+                "See AH-PRD-15 §5."
+            )
         if name in _REGISTRY:
             logger.warning(
                 "Task-mode sub-agent %r is being re-registered, overwriting the previous "
@@ -328,6 +335,14 @@ def register_isolated_agent_tool(name: str, factory: Callable[[], Any]) -> None:
         )
 
     with _REGISTRY_LOCK:
+        if name in _REGISTRY:
+            raise ValueError(
+                f"Catalogue name {name!r} is already registered on the task-mode lane "
+                "(register_agent_subagent). A name must use exactly ONE lane — "
+                "registering on both would make resolve_agent_subagents and "
+                "resolve_isolated_agent_tools each emit it (double-attach: one "
+                "sub_agent + one tool). See AH-PRD-15 §5."
+            )
         if name in _ISOLATED_REGISTRY:
             logger.warning(
                 "Isolated agent-tool %r is being re-registered, overwriting the "

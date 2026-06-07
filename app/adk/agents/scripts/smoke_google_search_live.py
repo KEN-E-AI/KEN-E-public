@@ -11,13 +11,20 @@ prod re-deploy of the chat tree** (AH-121 re-plan, mandatory process fix).
 What it asserts
 ---------------
 1. No streamed event carries an ``error_code`` (the prod incident was an
-   ``error_code`` on the ``google_search`` node — this is the must-have check).
-2. A ``google_search`` call fires and a non-empty, grounded answer comes back
-   (citations / grounding present) — the search leaf actually ran.
-3. (best-effort, needs Firestore read) the turn's billed tokens on the
-   ``chat_sessions`` side-table grew by MORE than a caller-only baseline — i.e.
-   the search leaf's ``usage_metadata`` reached the meter via the
-   ``capture_agent_tool_usage`` after_model_callback (AgentTool drops it, #3984).
+   ``error_code`` on the ``google_search`` node — this is the must-have check, and
+   the only one that needs a live model).
+2. A ``google_search`` function_call fires and a non-empty answer comes back.
+   Grounding metadata is reported when detectable but not hard-required — its wire
+   shape through Agent Engine isn't guaranteed, and check (1) is the real grounding
+   guard (a non-grounded request wouldn't 400).
+3. (needs Firestore read) the leaf's tokens reached the meter: the
+   ``chat_sessions`` side-table delta EXCEEDS the caller-visible token usage seen on
+   the stream by ~a leaf call. Because AgentTool drops the leaf's usage from the
+   stream (#3984), a working capture makes the meter exceed the stream baseline;
+   a broken capture makes them equal → this check FAILs. SKIPs (never silently
+   PASSes) when the baseline can't be measured. The CI propagation test
+   (``test_agent_tool_billing_integration.py``) and the §4 reconciliation are the
+   authoritative billing checks; this is the live cross-check.
 
 Prerequisites
 -------------
@@ -72,7 +79,7 @@ def _resolve_engine(env: str, explicit: str | None) -> str:
     project = _ENV_PROJECT[env]
     client = secretmanager.SecretManagerServiceClient()
     name = f"projects/{project}/secrets/{_ENGINE_ID_SECRET}/versions/latest"
-    value = client.access_secret_version(name={"name": name}).payload.data.decode()
+    value = client.access_secret_version(request={"name": name}).payload.data.decode()
     # The secret may hold a bare id or a full resource name.
     if value.startswith("projects/"):
         return value
@@ -86,10 +93,78 @@ def _event_error_code(event: Any) -> str | None:
     return getattr(event, "error_code", None) or getattr(event, "errorCode", None)
 
 
-def _event_mentions_search(event: Any) -> bool:
-    """True if the event references a google_search function call / grounding."""
-    blob = repr(event).lower()
-    return "google_search" in blob or "grounding" in blob
+def _event_has_search_call(event: Any) -> bool:
+    """True if the event carries a function_call to the ``google_search`` AgentTool.
+
+    This is the "the search tool was dispatched" signal — distinct from grounding
+    (see :func:`_event_has_grounding`). It does NOT prove grounding ran inside the
+    leaf, only that the root/specialist invoked the tool.
+    """
+    if isinstance(event, dict):
+        parts = ((event.get("content") or {}).get("parts")) or []
+        for p in parts:
+            fc = p.get("function_call") if isinstance(p, dict) else None
+            if isinstance(fc, dict) and fc.get("name") == "google_search":
+                return True
+        return False
+    get_fcs = getattr(event, "get_function_calls", None)
+    if callable(get_fcs):
+        return any(
+            getattr(fc, "name", None) == "google_search" for fc in (get_fcs() or [])
+        )
+    return False
+
+
+def _event_has_grounding(event: Any) -> bool:
+    """True if the event carries grounding metadata (real web grounding ran).
+
+    Looks for ADK/Gemini grounding fields (``grounding_metadata`` /
+    ``grounding_chunks`` / ``web_search_queries``). Best-effort across wire shapes;
+    a soft signal, since the exact field surfacing through Agent Engine's stream is
+    not guaranteed — absence is reported, not failed.
+    """
+    keys = (
+        "grounding_metadata",
+        "groundingMetadata",
+        "grounding_chunks",
+        "web_search_queries",
+    )
+    if isinstance(event, dict):
+        blob = event
+        return any(k in str(blob) for k in keys)
+    return any(getattr(event, k, None) for k in ("grounding_metadata",)) or any(
+        k in repr(event) for k in keys
+    )
+
+
+def _event_usage_total(event: Any) -> int:
+    """Sum prompt+candidates+thoughts tokens from an event's usage_metadata.
+
+    This is the CALLER-visible usage (root/specialist) on the outer stream — the
+    isolated leaf's usage is dropped from the stream by the AgentTool inner runner
+    (#3984), which is why the billing check compares the meter delta to this baseline.
+    Returns 0 when no usage is present or the shape is unreadable.
+    """
+    usage: Any = None
+    if isinstance(event, dict):
+        usage = event.get("usage_metadata") or event.get("usageMetadata")
+    else:
+        usage = getattr(event, "usage_metadata", None)
+    if usage is None:
+        return 0
+
+    def _get(obj: Any, *names: str) -> int:
+        for n in names:
+            v = obj.get(n) if isinstance(obj, dict) else getattr(obj, n, None)
+            if v:
+                return int(v)
+        return 0
+
+    return (
+        _get(usage, "prompt_token_count", "promptTokenCount")
+        + _get(usage, "candidates_token_count", "candidatesTokenCount")
+        + _get(usage, "thoughts_token_count", "thoughtsTokenCount")
+    )
 
 
 def _event_text(event: Any) -> str:
@@ -157,7 +232,9 @@ def run_smoke(
     )
 
     errors: list[str] = []
-    saw_search = False
+    saw_search_call = False
+    saw_grounding = False
+    stream_caller_tokens = 0
     answer_chunks: list[str] = []
     event_count = 0
 
@@ -172,16 +249,24 @@ def run_smoke(
         if code:
             errors.append(str(code))
             print(f"  !! error_code event: {code}: {repr(event)[:300]}")
-        if _event_mentions_search(event):
-            saw_search = True
+        if _event_has_search_call(event):
+            saw_search_call = True
+        if _event_has_grounding(event):
+            saw_grounding = True
+        stream_caller_tokens += _event_usage_total(event)
         answer_chunks.append(_event_text(event))
 
     answer = "".join(answer_chunks).strip()
-    print(f"[smoke] streamed {event_count} event(s); answer length={len(answer)}")
+    print(
+        f"[smoke] streamed {event_count} event(s); answer length={len(answer)}; "
+        f"caller-visible tokens={stream_caller_tokens}; grounding seen={saw_grounding}"
+    )
 
     # ---- Assertions -------------------------------------------------------
     ok = True
 
+    # (1) The real 400 guard — the only check that needs a live model. This is
+    # what the prod cutover missed.
     if errors:
         print(f"FAIL (1): {len(errors)} event(s) carried an error_code: {errors}")
         print(
@@ -192,43 +277,69 @@ def run_smoke(
     else:
         print("PASS (1): no event carried an error_code.")
 
-    if not saw_search:
+    # (2) The search tool was dispatched and an answer came back. Grounding
+    # metadata is reported when detectable but not hard-required (its wire shape
+    # through Agent Engine is not guaranteed) — check (1) is the real grounding
+    # guard since a non-grounded request would not 400 in the first place.
+    if not saw_search_call:
         print(
-            "FAIL (2a): no google_search / grounding reference in the stream — "
-            "is agent.google_search assigned in this env's tool_ids?"
+            "FAIL (2a): no google_search function_call in the stream — is "
+            "agent.google_search assigned in this env's tool_ids?"
         )
         ok = False
     elif not answer:
-        print("FAIL (2b): search ran but no answer text came back.")
+        print("FAIL (2b): the search tool ran but no answer text came back.")
         ok = False
     else:
+        grounding_note = (
+            "grounding metadata present"
+            if saw_grounding
+            else "grounding metadata NOT detected on the wire (soft — see check 1)"
+        )
         print(
-            f"PASS (2): google_search ran and returned an answer ({answer[:120]!r}...)."
+            f"PASS (2): google_search dispatched + answer returned ({grounding_note})."
         )
 
+    # (3) Did the LEAF's tokens actually reach the meter? This must be able to FAIL
+    # when the capture silently breaks — comparing the meter delta against the
+    # caller-visible stream usage is what makes it non-vacuous: the leaf's usage is
+    # dropped from the stream (#3984), so a working capture makes the meter EXCEED
+    # the caller-visible total by ~a leaf call. SKIP (never silently PASS) when the
+    # baseline can't be measured.
     if billing_check:
         # Give the fire-and-forget side-table POST a moment to land.
         time.sleep(5)
         after_total = _read_side_table_total(project, account_id, session_id)
         if before_total is None or after_total is None:
             print(
-                "SKIP (3): billing side-table not readable; verify the meter "
-                "delta manually (Weave-vs-meter §4 reconciliation)."
+                "SKIP (3): billing side-table not readable; verify the meter delta "
+                "manually (the CI propagation test + Weave-vs-meter §4 reconciliation "
+                "are the authoritative billing checks)."
+            )
+        elif stream_caller_tokens == 0:
+            print(
+                "SKIP (3): could not read caller-visible usage off the stream, so the "
+                "leaf-vs-caller baseline can't be established; rely on §4 reconciliation."
             )
         else:
-            delta = after_total - before_total
-            # A caller-only turn (no search leaf) bills a few hundred tokens; a
-            # grounded search turn that also counts the gemini-2.5-flash leaf bills
-            # materially more. A non-trivial delta is the signal the leaf was billed.
-            if delta > 0:
+            meter_delta = after_total - before_total
+            leaf_estimate = meter_delta - stream_caller_tokens
+            # A gemini-2.5-flash grounded-search leaf call bills well over this floor
+            # (instruction + query input + the grounded answer output); the floor only
+            # absorbs minor stream-vs-session aggregation noise.
+            leaf_floor = 50
+            if leaf_estimate >= leaf_floor:
                 print(
-                    f"PASS (3): side-table billed +{delta} tokens this turn "
-                    "(includes the search leaf if the callback fired)."
+                    f"PASS (3): meter delta {meter_delta} exceeds caller-visible "
+                    f"{stream_caller_tokens} by {leaf_estimate} (~the search leaf) — "
+                    "the leaf usage_metadata reached the meter."
                 )
             else:
                 print(
-                    f"FAIL (3): side-table token delta was {delta} — the turn "
-                    "billed nothing; the leaf usage may not be reaching the meter."
+                    f"FAIL (3): meter delta {meter_delta} vs caller-visible "
+                    f"{stream_caller_tokens} → leaf estimate {leaf_estimate} < {leaf_floor}. "
+                    "The leaf's tokens are NOT reaching the meter — the #3984 capture "
+                    "(after_model_callback / ContextVar) is broken."
                 )
                 ok = False
 

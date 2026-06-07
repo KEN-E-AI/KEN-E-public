@@ -329,6 +329,16 @@ def chat_before_agent_callback(
         if agent is not None and getattr(agent, "parent_agent", None) is not None:
             return None
 
+        invocation_id = getattr(invocation_context, "invocation_id", None)
+        # AH-PRD-15 re-plan: rebind THIS turn's billing key for EVERY root turn —
+        # BEFORE the session/account early-returns below — so a reused context can
+        # never leak a prior (already-drained) turn's id into an isolated AgentTool
+        # leaf's capture. The raw id matches the after-callback drain key; the sink
+        # bucket is created lazily only if a leaf actually bills, so non-billable
+        # turns cost nothing. (The uuid fallback below only affects the side-table
+        # idempotency key, not the billing key.)
+        set_outer_turn_id(invocation_id)
+
         session_id = _extract_session_id(invocation_context)
         if not session_id or session_id.startswith("pending_"):
             return None
@@ -338,12 +348,6 @@ def chat_before_agent_callback(
         if not account_id:
             return None
 
-        invocation_id = getattr(invocation_context, "invocation_id", None)
-        # AH-PRD-15 re-plan: bind THIS turn's id (raw — matches the after-callback
-        # drain key) so an isolated AgentTool leaf's after_model_callback can park
-        # its usage_metadata for billing. Set before the uuid fallback below, which
-        # only affects the idempotency key.
-        set_outer_turn_id(invocation_id)
         if invocation_id is None:
             logger.warning(
                 "chat_before_agent_callback: invocation_id is None; idempotency key will be non-stable"
