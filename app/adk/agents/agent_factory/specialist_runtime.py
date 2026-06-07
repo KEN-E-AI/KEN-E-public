@@ -395,7 +395,10 @@ def _build_specialist(
         per_server_allowed_tools,
         resolve_specialist_roster,
     )
-    from app.adk.tools.registry.agent_tool_registry import resolve_agent_subagents
+    from app.adk.tools.registry.agent_tool_registry import (
+        resolve_agent_subagents,
+        resolve_isolated_agent_tools,
+    )
     from app.adk.tools.registry.function_tool_registry import (
         resolve_default_global_tools,
     )
@@ -594,6 +597,14 @@ def _build_specialist(
     # parentless ``LlmAgent(mode='task')`` instance per build (AH-114 contract).
     agent_subagents = resolve_agent_subagents(get_default_registry())
 
+    # AH-PRD-15 re-plan: google_search / numerical_analyst resolve as isolated
+    # AgentTools (their built-in tool — grounding / code execution — cannot share
+    # an LLM request with the function tool that any sub-agent mode injects). They
+    # flow into ``roster.tools`` and attach to the specialist via ``tools=`` as
+    # isolated AgentTool sub-runners, with billing recovered by the leaf
+    # after_model_callback (AgentTool.run_async drops the inner usage_metadata).
+    isolated_agent_tools = resolve_isolated_agent_tools(get_default_registry())
+
     # AH-PRD-02 §2.5: enforce the ≤30-tool logical cap and apply the
     # ``tool_ids`` filter to the assembled tool list. Raises
     # ``RosterCapExceededError`` (which propagates through ``resolve_agent``
@@ -606,6 +617,7 @@ def _build_specialist(
             function_tools=default_global_function_tools,
             mcp_server_ids=list(toolsets.keys()),
             agent_subagents=agent_subagents,
+            isolated_agent_tools=isolated_agent_tools,
             tool_ids=config.tool_ids,
         )
     except RosterCapExceededError:

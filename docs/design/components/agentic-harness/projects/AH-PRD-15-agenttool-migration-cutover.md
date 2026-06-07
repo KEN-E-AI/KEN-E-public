@@ -1,13 +1,30 @@
-# AH-PRD-15 — AgentTool → Task-Mode Migration & ADK 2.0 Prod Cutover
+# AH-PRD-15 — Agent-as-Tool Isolation & ADK 2.0 Prod Cutover
 
-**Status:** Draft (spec) — ADK 2.0 migration initiative (Phase 4)
+**Status:** Re-planned (AH-121, 2026-06-07) — ADK 2.0 migration initiative (Phase 4)
 **Owner team:** Core AI / Agent Platform (Agentic Harness)
 **Blocked by:** [AH-PRD-13](./AH-PRD-13-adk2-foundation.md) (the chat tree must be on ADK 2.0). Coordinates with AH-PRD-05 (coordinator tool model) and AH-PRD-14 (parity contracts).
 **Blocks:** **ADK 2.0 production cutover** — this PRD's completion is the cutover go/no-go gate.
 **Release:** 1 — Foundation (ADK 2.0 migration initiative; owns the prod-cutover gate).
 **Decision record:** [DESIGN-REVIEW-LOG Review 45](../../../DESIGN-REVIEW-LOG.md#review-45--adk-20-migration-initiative-structuring-strategy-agent-pin-sk-10-correction); origin: [AH-99](https://linear.app/ken-e/issue/AH-99) §9 carry-forward.
 
-> **Why this is its own PRD.** [AH-98](https://linear.app/ken-e/issue/AH-98) shipped `agent.google_search` as an `AgentTool(agent=create_google_search_agent())` (`source="agent"`), and [AH-100](https://linear.app/ken-e/issue/AH-100) made it per-turn-assignable to the **root**. On ADK 2.0, GitHub `#3984` (OPEN) means `AgentTool.run_async` still **discards inner sub-agent events** — so the search sub-agent's `gemini-2.5-flash` tokens go **uncounted** and its grounded-search steps **vanish from traces**: the exact AH-75 billing/tracing defect, on the most critical agents. Adopting 2.0 (AH-PRD-13) without this migration ships a billing regression to prod. This PRD migrates the chat-tree agent-as-tool surface off the inner-Runner path and is the **prod-cutover gate**.
+> **⚠️ RE-PLAN (AH-121, 2026-06-07) — the original task-mode premise is invalid.**
+> The original plan migrated `agent.google_search` from an `AgentTool` to a
+> `mode='task'` sub-agent to fix the `#3984` billing under-count. **That is
+> fundamentally unworkable.** The built-in `google_search` grounding tool (and the
+> `numerical_analyst` code-execution leaf) must be the ONLY tool in their LLM
+> request — Gemini rejects `400 INVALID_ARGUMENT: "Multiple tools are supported only
+> when they are all search tools."` whenever a function declaration shares the
+> request. **Every** in-hierarchy sub-agent mode injects one next to it
+> (`mode='task'` → `FinishTaskTool`; `mode='chat'` → `transfer_to_agent`), so the
+> leaf can ONLY be isolated by an `AgentTool` (own sub-runner, no injected sibling
+> tool). The task-mode cutover deployed to prod and `agent.google_search` 400'd on
+> **every** web-search turn (AH-121 incident). Verified against ADK 2.0 source and a
+> live staging engine. **The re-plan keeps these tools as isolated `AgentTool`s and
+> recovers the `#3984`-dropped `usage_metadata` with a leaf `after_model_callback`,
+> not task-mode.** This document's §2/§5/§7 are revised accordingly; the original
+> task-mode framing is retained only where struck through for history.
+
+> **Why this is its own PRD.** [AH-98](https://linear.app/ken-e/issue/AH-98) shipped `agent.google_search` as an `AgentTool(agent=create_google_search_agent())` (`source="agent"`), and [AH-100](https://linear.app/ken-e/issue/AH-100) made it per-turn-assignable to the **root**. On ADK 2.0, GitHub `#3984` (OPEN) means `AgentTool.run_async` still **discards inner sub-agent events** — so the search sub-agent's `gemini-2.5-flash` tokens go **uncounted**: the exact AH-75 billing defect, on the most critical agents. Adopting 2.0 (AH-PRD-13) without fixing this ships a billing regression to prod. **Re-plan correction:** the fix is *billing capture on the isolated AgentTool leaf*, NOT moving it off the AgentTool path (which is the only path that works). This PRD is the **prod-cutover gate**.
 
 ---
 
@@ -27,18 +44,53 @@ ADK 2.0 provides the correct replacement: **task mode** (`mode='task'` sub-agent
 
 ## 2. Scope
 
-### In scope
-- **Migrate the agent-as-tool registry/resolver to task-mode.** On ADK 2.0, `agent_tool_registry.py` + `roster.py` + `specialist_runtime` emit `source="agent"` entries as `mode='task'` sub-agents (invoked via `request_task_<name>` / `ctx.run_node`) instead of `AgentTool` instances, so inner events (incl. `usage_metadata`) reach the outer stream.
-- **`agent.google_search` specifically** migrated and verified: its `gemini-2.5-flash` tokens are counted by `extract_billable_tokens` + `SessionTurnAccumulator`, and its grounded-search steps appear in the trace — on both the **root** (AH-100 path) and **specialist** assignment paths.
-- **Re-validate AH-98 parallel-search AC #9** under ADK 2.0's concurrency model (`ctx.run_node` fan-out, not 1.x `handle_function_call_list_async` → `asyncio.gather`).
-- **Coordinator/root tool reconciliation** (the AH-100 × supervisor tension): define how a `mode='chat'` coordinator's per-turn hot-reloaded `tool_ids` containing agent-as-tool entries are dispatched as `mode='task'` (rather than carried as `AgentTool` on the coordinator). Aligns with AH-PRD-05's "coordinator carries only ledger tools" model.
-- **Dispose of `agent_standalone_embedded.py`** — confirm it is not deployed; remove it or exclude it from the 2.0 chat build so it does not reintroduce an `AgentTool`.
-- **Prod cutover go/no-go** — the deploy of the 2.0 chat tree to production, gated on: AH-PRD-13 green in staging, this migration complete, and Billing/Chat/MER-E parity confirmed on the search sub-agent.
+> **Re-planned (AH-121).** The struck-through bullets reflect the original
+> task-mode plan, retained for history. The live bullets are the AgentTool-isolation
+> design that actually ships.
+
+### In scope (re-planned)
+- **Keep `source="agent"` tools as isolated `AgentTool`s.** `google_search`
+  (built-in grounding) and `numerical_analyst` (built-in code execution) wrap a
+  built-in tool that Gemini forbids alongside any function declaration. They are
+  registered on an **isolated AgentTool lane** in `agent_tool_registry.py`
+  (`register_isolated_agent_tool` / `resolve_isolated_agent_tools`), filtered by the
+  same `agent.{name}` opt-in id, and routed into `RosterResolution.tools` (regular
+  tools), **not** `sub_agents`. The dormant task-mode lane is retained for a future
+  multi-tool agent-tool that can tolerate the injected delegation tool.
+- **Recover the `#3984`-dropped tokens with a leaf `after_model_callback`.** Each
+  isolated leaf carries `capture_agent_tool_usage` (`app/adk/agents/agent_tool_billing.py`),
+  which parks the leaf model call's `usage_metadata` in a per-turn off-state sink
+  (keyed by the outer `invocation_id` via a `ContextVar`; mirrors the proven
+  `tool_trace_context.py` pattern that survives `AgentTool.run_async`'s state
+  deep-copy). The root `chat_after_agent_callback` drains the sink and folds the
+  total into the turn delta. Verified with the real `extract_billable_tokens` on
+  **both** root (AH-100 path) and specialist assignment.
+- **`numerical_analyst` is fixed alongside `google_search`** — it has the identical
+  task-mode 400 (code-exec + injected `FinishTaskTool`); the same isolation +
+  billing-callback fix applies.
+- **Mandatory live-Gemini staging smoke** (`smoke_google_search_live.py`) before any
+  prod re-deploy — a real grounded web-search turn against the staging engine that
+  asserts no `error_code`, a grounded answer, and the leaf tokens reaching the meter.
+  The AC #1–#6 suites mock the LLM; this is the gate the prod 400 slipped through.
+- **AC #4 no-AgentTool guard** is amended to a narrow allow-list (the two isolation
+  files) + mandatory `isolation-required` marker + a companion test asserting the
+  billing callback is present — so an AgentTool can never be reintroduced unbilled.
+- **Dispose of `agent_standalone_embedded.py`** — already done (AH-120); unchanged.
+- **Prod cutover go/no-go** — deploy of the 2.0 chat tree to production, gated on:
+  AH-PRD-13 green in staging, this fix complete, the live-Gemini staging smoke PASS,
+  and Billing/Chat parity confirmed on the search leaf.
+
+### ~~In scope (original task-mode plan — invalid, retained for history)~~
+- ~~Migrate the agent-as-tool registry/resolver to task-mode (`mode='task'` /
+  `ctx.run_node`).~~ **Unworkable** — built-in grounding/code-exec tools cannot share
+  their request with the injected `FinishTaskTool`/`transfer_to_agent` (400).
+- ~~Coordinator/root reconciliation dispatching agent-as-tool as `mode='task'`.~~
+  Reconciled instead as an isolated `AgentTool` in `root.tools`.
 
 ### Out of scope
 - `strategy_agent` `AgentTool` usage (stays 1.34.1; retired via KG-PRD-05).
-- The supervisor coordinator implementation itself (AH-PRD-05) — this PRD only supplies the agent-as-tool dispatch primitive it relies on.
-- New web-search capabilities — this is a dispatch-mechanism migration, not a feature change. The user-visible web-search behaviour is unchanged.
+- The supervisor coordinator implementation itself (AH-PRD-05).
+- New web-search capabilities — this is a billing/isolation fix, not a feature change. The user-visible web-search behaviour is unchanged.
 
 ---
 
@@ -61,16 +113,20 @@ ADK 2.0 provides the correct replacement: **task mode** (`mode='task'` sub-agent
 
 ---
 
-## 5. Implementation Outline
+## 5. Implementation Outline (re-planned — AH-121)
 
 | Action | File | Note |
 |---|---|---|
-| Modify | `app/adk/tools/registry/agent_tool_registry.py` | Emit `mode='task'` sub-agent (or `ctx.run_node` dispatch) for `source="agent"` on 2.0 |
-| Modify | `app/adk/agents/agent_factory/roster.py` | Resolve `agent.{name}` entries to task-mode sub-agents in the roster |
-| Modify | `app/adk/agents/agent_factory/specialist_runtime.py` | Construct agent-as-tool entries as `mode='task'` leaves |
-| Modify | AH-100 root-tools reconcile callback | Dispatch hot-reloaded `agent.{name}` root entries as task-mode (not `AgentTool` on root) |
-| Remove/Exclude | `app/adk/agent_standalone_embedded.py` | Legacy, not in chat deploy — remove or exclude from 2.0 build |
-| Extend | parity + trace tests | Assert search sub-agent tokens counted + steps traced (root + specialist paths) |
+| Add | `app/adk/agents/agent_tool_billing.py` | `ContextVar` outer-turn id + off-state per-turn sink + `capture_agent_tool_usage` (after_model) + `drain_turn_billing`. Mirrors `tool_trace_context.py` (survives AgentTool's state deep-copy). Top-level funcs (cloudpickle-safe). |
+| Modify | `app/adk/tools/agent_tools/google_search.py` | Add `create_google_search_agent_tool() -> AgentTool` (leaf named `google_search`, `after_model_callback=capture_agent_tool_usage`, marker comment). Register on the isolated lane (gated on the 2.0 chat tree). Keep `create_google_search_agent` byte-identical (strategy 1.34.x). |
+| Modify | `app/adk/tools/agent_tools/numerical_analyst.py` | Same pattern: `create_numerical_analyst_agent_tool()`; register on the isolated lane. |
+| Modify | `app/adk/tools/registry/agent_tool_registry.py` | Add the isolated lane: `register_isolated_agent_tool` (validates AgentTool + name + billing callback) / `get_isolated_agent_tool` / `resolve_isolated_agent_tools`. Suppress the task-mode "no factory" warning for isolated-lane entries. |
+| Modify | `app/adk/agents/agent_factory/roster.py` | `isolated_agent_tools` param; filter by `agent.{name}`; route into `RosterResolution.tools`; count in the ≤30-tool cap. |
+| Modify | `app/adk/agents/agent_factory/{hierarchy,root_tools_attacher,specialist_runtime}.py` | Resolve isolated tools and pass them through so they land in `.tools` (no `_TaskAgentTool` injection). |
+| Modify | `app/adk/agents/chat_callbacks.py` | `chat_before_agent_callback` binds the outer turn id; `chat_after_agent_callback` drains the sink and folds captured tokens into `_build_turn_delta(extra=...)`. |
+| Modify | `api/scripts/lint/check_no_agent_tool_in_chat_tree.py` | Allow-list the two isolation files + require the `isolation-required` marker; companion test asserts the billing callback. |
+| Add | `app/adk/agents/scripts/smoke_google_search_live.py` | Live-Gemini staging engine-probe smoke (the mandatory pre-prod gate). |
+| Extend | billing/guard/factory tests | Real-`extract_billable_tokens` parity (root + specialist); parallel additive-sink; guard allow-list; isolation-leaf billing-callback present. |
 
 ---
 
@@ -80,15 +136,37 @@ No HTTP API change. Web-search tool selection (`tool_ids` containing `agent.goog
 
 ---
 
-## 7. Acceptance Criteria
+## 7. Acceptance Criteria (re-planned — AH-121)
 
-1. On ADK 2.0, a turn where `agent.google_search` is invoked yields the search sub-agent's `usage_metadata` to the outer stream; `extract_billable_tokens` + `SessionTurnAccumulator` count its `gemini-2.5-flash` tokens — verified on **both** root (AH-100) and specialist assignment — **merge blocker**.
-2. The search sub-agent's grounded-search steps appear in the Weave trace (no missing spans vs the intended shape).
-3. AH-98's parallel-search AC #9 passes under `ctx.run_node` concurrency (not `AgentTool.run_async`).
-4. No `AgentTool` instance is constructed anywhere in the **chat-tree** 2.0 build (registry/resolver/standalone) — enforced by a grep-based regression guard (mirrors the `check_artifact_register` lint pattern).
-5. `agent_standalone_embedded.py` is removed or provably excluded from the chat deploy.
-6. Coordinator path: a `mode='chat'` coordinator with a hot-reloaded `agent.google_search` `tool_id` dispatches it as `mode='task'` and bills correctly.
-7. **Prod cutover gate:** AH-PRD-13 green in staging + ACs 1–6 green → documented go/no-go; 2.0 chat tree deployed to production with billing parity confirmed in the first 24h.
+1. On ADK 2.0, a turn where `agent.google_search` runs (as an isolated `AgentTool`)
+   has its leaf `usage_metadata` captured by `capture_agent_tool_usage` and folded
+   into the turn delta by `chat_after_agent_callback`; `extract_billable_tokens`
+   counts its `gemini-2.5-flash` tokens with no double-count — verified on **both**
+   root (AH-100) and specialist assignment — **merge blocker**.
+2. **(Re-scoped.)** The `google_search` `AgentTool` `function_call`/`function_response`
+   are visible in the outer trace, and the turn's billing reflects the leaf. The leaf's
+   *inner* grounded-search spans are NOT recoverable under `AgentTool` (the same
+   `#3984` event-drop) and are a documented known gap — the same class as the AH-88
+   `generate_content` Weave-autopatch deferral. (The original "all grounded steps in
+   the trace" is unachievable without task-mode and is dropped.)
+3. AH-98's parallel-search AC #9 passes under the `AgentTool`/`asyncio.gather` model:
+   multiple `google_search` calls in one turn each capture their tokens additively in
+   the per-turn sink (no clobber across the `gather`-copied contexts).
+4. **(Amended.)** No `AgentTool` is constructed in the chat-tree 2.0 build **except**
+   the two sanctioned isolation leaves (`google_search`, `numerical_analyst`), which
+   must carry the `isolation-required` marker; a companion test asserts each carries
+   the `capture_agent_tool_usage` billing callback. Enforced by
+   `check_no_agent_tool_in_chat_tree.py`.
+5. `agent_standalone_embedded.py` is removed/excluded from the chat deploy (AH-120; unchanged).
+6. Root/coordinator path: a hot-reloaded `agent.google_search` `tool_id` is dispatched
+   as an isolated `AgentTool` in `root.tools` (not task-mode) and bills correctly.
+7. **(New blocking precondition.)** A live-Gemini `google_search` smoke
+   (`smoke_google_search_live.py`) passes on the **staging** engine — no `error_code`,
+   a grounded answer, and the leaf tokens reaching the meter — **before** any prod
+   re-deploy.
+8. **Prod cutover gate:** AH-PRD-13 green in staging + ACs 1–7 green → documented
+   go/no-go; 2.0 chat tree deployed to production with billing parity confirmed in the
+   first 24h.
 
 ---
 
@@ -125,17 +203,34 @@ No HTTP API change. Web-search tool selection (`tool_ids` containing `agent.goog
 
 ---
 
-## 11. Linear issue breakdown (AH-98 follow-through scopes)
+## 11. Linear issue breakdown
 
-Suggested issues for the Linear project (8–12 range per CLAUDE.md). Each maps to a §7 AC.
+> **Re-plan (AH-121).** AH-114–120 (the task-mode migration) shipped but the cutover
+> failed at the prod `google_search` 400. The re-plan replaces the task-mode mechanism
+> with AgentTool isolation + billing capture. The original task-mode issues are
+> retained for history (struck through); the re-plan issues below are what gets built.
+
+### Re-plan issues (AgentTool isolation + billing — AH-121 follow-on)
 
 | # | Issue | AC | Notes |
 |---|---|---|---|
-| 1 | Registry: emit `mode='task'` for `source="agent"` on 2.0 | 1, 4 | `agent_tool_registry.py` core change |
-| 2 | Roster + `specialist_runtime`: resolve `agent.{name}` to task-mode leaves | 1, 4 | resolver path |
-| 3 | AH-100 root path: dispatch hot-reloaded agent-as-tool as task-mode | 6 | coordinator/root reconciliation |
-| 4 | `agent.google_search` billing parity on 2.0 (root + specialist) | 1 | **merge blocker**; uses AH-PRD-14 parity harness |
-| 5 | `agent.google_search` trace-step coverage on 2.0 | 2 | search steps present in trace |
-| 6 | Re-validate AH-98 parallel-search AC #9 under `ctx.run_node` | 3 | concurrency model swap |
-| 7 | Remove/exclude `agent_standalone_embedded.py`; add no-`AgentTool` CI guard | 4, 5 | regression guard |
-| 8 | Prod cutover runbook + go/no-go + 24h billing reconciliation | 7 | depends on AH-PRD-13 staging-green |
+| R1 | Add `agent_tool_billing.py` (ContextVar + off-state sink + capture/drain) | 1, 3 | core billing primitive; mirrors `tool_trace_context.py` |
+| R2 | Isolated AgentTool factories for `google_search` + `numerical_analyst` | 1, 4 | leaf + `after_model_callback`; keep strategy leaf byte-identical |
+| R3 | Registry isolated lane + roster/attachers/hierarchy route into `.tools` | 1, 6 | `register_isolated_agent_tool` / `resolve_isolated_agent_tools` |
+| R4 | Wire capture/drain into `chat_callbacks` (`_build_turn_delta(extra=...)`) | 1 | **merge blocker**; real `extract_billable_tokens`, root + specialist |
+| R5 | Amend AC #4 no-AgentTool guard (allow-list + marker + billing-callback test) | 4 | regression guard |
+| R6 | Live-Gemini staging smoke (`smoke_google_search_live.py`) + runbook §5 re-base | 7, 8 | the mandatory pre-prod gate |
+| R7 | Re-deploy staging→prod after smoke PASS; 24h billing reconciliation | 8 | cutover gate |
+
+### ~~Original task-mode issues (AH-114–120 — premise invalidated)~~
+
+| # | Issue | AC | Notes |
+|---|---|---|---|
+| ~~1~~ | ~~Registry: emit `mode='task'` for `source="agent"` on 2.0~~ | ~~1, 4~~ | AH-114 — superseded by R3 |
+| ~~2~~ | ~~Roster + `specialist_runtime`: resolve `agent.{name}` to task-mode leaves~~ | ~~1, 4~~ | AH-115 — superseded by R3 |
+| ~~3~~ | ~~AH-100 root path: dispatch hot-reloaded agent-as-tool as task-mode~~ | ~~6~~ | AH-116 — superseded by R3 |
+| ~~4~~ | ~~`agent.google_search` billing parity on 2.0~~ | ~~1~~ | AH-117 — superseded by R4 |
+| ~~5~~ | ~~`agent.google_search` trace-step coverage on 2.0~~ | ~~2~~ | AH-118 — re-scoped (inner spans unrecoverable) |
+| ~~6~~ | ~~Re-validate parallel-search under `ctx.run_node`~~ | ~~3~~ | AH-119 — superseded by R3 (`asyncio.gather`) |
+| 7 | Remove/exclude `agent_standalone_embedded.py`; no-`AgentTool` CI guard | 4, 5 | AH-120 — guard **amended** by R5 (allow-list) |
+| 8 | Prod cutover runbook + go/no-go + 24h reconciliation | 8 | AH-121 — runbook §5 re-based by R6 |

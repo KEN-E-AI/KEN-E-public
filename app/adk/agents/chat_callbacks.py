@@ -19,6 +19,7 @@ import requests
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as _google_id_token
 
+from app.adk.agents.agent_tool_billing import drain_turn_billing, set_outer_turn_id
 from shared.structured_logging import get_structured_logger
 
 if TYPE_CHECKING:
@@ -46,6 +47,10 @@ except ImportError:
         extra={"error_id": "CHAT_TOKEN_ACCOUNTING_MISSING"},
     )
     _extract_billable_tokens = None  # type: ignore[assignment]
+
+# AH-PRD-15 re-plan: ``set_outer_turn_id`` / ``drain_turn_billing`` (imported at
+# top) bridge an isolated AgentTool leaf's usage_metadata — dropped by
+# ``AgentTool.run_async`` from ``session.events`` (#3984) — into the turn delta.
 
 # Resolve TurnDelta — same fallback pattern as token_accounting above.
 try:
@@ -204,7 +209,9 @@ def _isoformat_sentinel(dt: datetime) -> dict[str, str]:
     return {"_isoformat": dt.isoformat()}
 
 
-def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
+def _build_turn_delta(
+    events: list[Any], now: datetime, extra: Any | None = None
+) -> TurnDelta:
     """Build a typed TurnDelta from this turn's ADK events.
 
     Returns a TurnDelta whose .to_wire_dict() produces the HTTP wire format
@@ -212,6 +219,12 @@ def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
 
     Mirrors SessionTurnAccumulator.build_delta() but outputs a typed model
     instead of an untyped dict.
+
+    ``extra`` (AH-PRD-15 re-plan): a ``BillableTokenCounts`` of tokens captured
+    out-of-band from isolated AgentTool leaves (google_search / numerical_analyst),
+    whose inner events ``AgentTool.run_async`` drops from ``session.events`` (#3984).
+    These are added to the per-turn token increments (and the context counter) so
+    the meter bills them; they are otherwise invisible to the event scan below.
     """
     input_tokens = 0
     output_tokens = 0
@@ -275,6 +288,14 @@ def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
             _token_extract_errors,
         )
 
+    # AH-PRD-15 re-plan: fold in isolated-AgentTool-leaf tokens (google_search /
+    # numerical_analyst) that never reached session.events (#3984). No double-count:
+    # those events are absent from the scan above, so this is the only source.
+    if extra is not None:
+        input_tokens += int(getattr(extra, "input", 0) or 0)
+        output_tokens += int(getattr(extra, "output", 0) or 0)
+        reasoning_tokens += int(getattr(extra, "reasoning", 0) or 0)
+
     turn_tokens = input_tokens + output_tokens + reasoning_tokens
 
     return TurnDelta(
@@ -318,6 +339,11 @@ def chat_before_agent_callback(
             return None
 
         invocation_id = getattr(invocation_context, "invocation_id", None)
+        # AH-PRD-15 re-plan: bind THIS turn's id (raw — matches the after-callback
+        # drain key) so an isolated AgentTool leaf's after_model_callback can park
+        # its usage_metadata for billing. Set before the uuid fallback below, which
+        # only affects the idempotency key.
+        set_outer_turn_id(invocation_id)
         if invocation_id is None:
             logger.warning(
                 "chat_before_agent_callback: invocation_id is None; idempotency key will be non-stable"
@@ -374,8 +400,13 @@ def chat_after_agent_callback(
         invocation_id = getattr(invocation_context, "invocation_id", None)
         events = _gather_turn_events(invocation_context, invocation_id)
 
+        # AH-PRD-15 re-plan: drain any isolated-AgentTool-leaf tokens captured this
+        # turn (one-shot) and fold them into the delta. Returns zeros on the common
+        # no-web-search turn.
+        captured = drain_turn_billing(invocation_id)
+
         now = datetime.now(timezone.utc)
-        delta = _build_turn_delta(events, now)
+        delta = _build_turn_delta(events, now, extra=captured)
 
         turn_id = invocation_id or str(uuid.uuid4())
         # Shared per-turn key: the /completions finally block flushes partial

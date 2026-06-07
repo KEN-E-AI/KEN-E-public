@@ -100,9 +100,73 @@ class TestViolation:
         (tmp_path / "agent_factory").mkdir()
         (tmp_path / "agent_factory" / "tool.py").write_text(f"{_VIOLATION_LINE}\n")
         result = _run(tmp_path)
-        assert (
-            "Use the task-mode dispatch path (LlmAgent(mode='task'))" in result.stderr
-        ), f"Remediation message missing from stderr.\nstderr: {result.stderr}"
+        assert "isolation-required" in result.stderr, (
+            f"Remediation message missing from stderr.\nstderr: {result.stderr}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (g) Isolation allow-list (AH-PRD-15 §7.7 re-plan)
+# ---------------------------------------------------------------------------
+
+
+class TestIsolationAllowlist:
+    """The two sanctioned isolation leaves may construct AgentTool with the marker;
+    anything else (including an allow-listed file WITHOUT the marker) is flagged."""
+
+    def _write(self, root: Path, rel: str, body: str) -> None:
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body)
+
+    def test_allowlisted_file_with_marker_on_same_line_ok(self, tmp_path: Path) -> None:
+        self._write(
+            tmp_path,
+            "tools/agent_tools/google_search.py",
+            f"{_VIOLATION_LINE}  # isolation-required: AH-PRD-15 §7.7\n",
+        )
+        result = _run(tmp_path)
+        assert result.returncode == 0, (
+            f"Allow-listed file with the marker must pass.\nstderr: {result.stderr}"
+        )
+
+    def test_allowlisted_file_with_marker_on_preceding_line_ok(
+        self, tmp_path: Path
+    ) -> None:
+        self._write(
+            tmp_path,
+            "tools/agent_tools/numerical_analyst.py",
+            "    # isolation-required: AH-PRD-15 §7.7\n    return "
+            f"{_VIOLATION_LINE.split('= ', 1)[1]}\n",
+        )
+        result = _run(tmp_path)
+        assert result.returncode == 0, (
+            f"Marker on the immediately preceding line must satisfy the guard.\n"
+            f"stderr: {result.stderr}"
+        )
+
+    def test_allowlisted_file_without_marker_is_flagged(self, tmp_path: Path) -> None:
+        self._write(
+            tmp_path, "tools/agent_tools/google_search.py", f"{_VIOLATION_LINE}\n"
+        )
+        result = _run(tmp_path)
+        assert result.returncode != 0, (
+            "An allow-listed file must STILL be flagged when the construction lacks "
+            f"the isolation-required marker.\nstdout: {result.stdout}"
+        )
+
+    def test_non_allowlisted_file_with_marker_is_flagged(self, tmp_path: Path) -> None:
+        # The marker alone does not sanction a non-allow-listed file.
+        self._write(
+            tmp_path,
+            "agent_factory/sneaky.py",
+            f"{_VIOLATION_LINE}  # isolation-required\n",
+        )
+        result = _run(tmp_path)
+        assert result.returncode != 0, (
+            "A non-allow-listed file must be flagged even with the marker.\n"
+            f"stdout: {result.stdout}"
+        )
 
 
 # ---------------------------------------------------------------------------
