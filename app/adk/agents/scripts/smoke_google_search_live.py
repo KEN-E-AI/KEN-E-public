@@ -215,15 +215,24 @@ def run_smoke(
     billing_check: bool,
 ) -> int:
     import vertexai
+    from vertexai import agent_engines
 
     project = _ENV_PROJECT[env]
     vertexai.init(project=project, location=_LOCATION)
     print(f"[smoke] env={env} project={project}\n[smoke] engine={engine_name}")
 
-    engine = vertexai.agent_engines.get(engine_name)
-    session = engine.create_session(user_id=user_id)
+    engine = agent_engines.get(engine_name)
+    # Put account_id in the session state (as the chat router does) so the chat
+    # side-table callbacks engage and the billing check (3) can read the meter
+    # delta. Without an account, the callbacks return early and billing is SKIPped.
+    if account_id:
+        session = engine.create_session(
+            user_id=user_id, state={"account_id": account_id}
+        )
+    else:
+        session = engine.create_session(user_id=user_id)
     session_id = session["id"] if isinstance(session, dict) else session.id
-    print(f"[smoke] session={session_id}")
+    print(f"[smoke] session={session_id} account={account_id or '(none)'}")
 
     before_total = (
         _read_side_table_total(project, account_id, session_id)
@@ -310,11 +319,17 @@ def run_smoke(
         # Give the fire-and-forget side-table POST a moment to land.
         time.sleep(5)
         after_total = _read_side_table_total(project, account_id, session_id)
-        if before_total is None or after_total is None:
+        # A fresh session has no side-table doc until the first turn writes it, so
+        # an absent pre-turn doc is a genuine 0 baseline (not "unreadable").
+        before_eff = before_total or 0
+        if after_total is None:
             print(
-                "SKIP (3): billing side-table not readable; verify the meter delta "
-                "manually (the CI propagation test + Weave-vs-meter §4 reconciliation "
-                "are the authoritative billing checks)."
+                "SKIP (3): no chat_sessions side-table doc was written for this "
+                "session — the engine→internal-API side-table write path is not "
+                "functional in this env (it is OIDC-gated and not wired in dev/staging "
+                "by default; see chat-status-dots OIDC wiring). Billing is validated by "
+                "the CI propagation test + the §4 prod Weave-vs-meter reconciliation, "
+                "NOT this live check."
             )
         elif stream_caller_tokens == 0:
             print(
@@ -322,7 +337,7 @@ def run_smoke(
                 "leaf-vs-caller baseline can't be established; rely on §4 reconciliation."
             )
         else:
-            meter_delta = after_total - before_total
+            meter_delta = after_total - before_eff
             leaf_estimate = meter_delta - stream_caller_tokens
             # A gemini-2.5-flash grounded-search leaf call bills well over this floor
             # (instruction + query input + the grounded answer output); the floor only
