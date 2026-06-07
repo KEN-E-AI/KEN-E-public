@@ -215,12 +215,13 @@ def run_smoke(
     billing_check: bool,
 ) -> int:
     import vertexai
+    from vertexai import agent_engines
 
     project = _ENV_PROJECT[env]
     vertexai.init(project=project, location=_LOCATION)
     print(f"[smoke] env={env} project={project}\n[smoke] engine={engine_name}")
 
-    engine = vertexai.agent_engines.get(engine_name)
+    engine = agent_engines.get(engine_name)
     session = engine.create_session(user_id=user_id)
     session_id = session["id"] if isinstance(session, dict) else session.id
     print(f"[smoke] session={session_id}")
