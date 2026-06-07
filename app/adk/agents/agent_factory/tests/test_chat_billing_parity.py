@@ -16,6 +16,16 @@ MERGE BLOCKER STATUS (AH-110 / AH-PRD-13 §7 AC #3):
     regression guard (TestNoAgentToolInGate), and ports the AH-99 probe assertions
     into the CI test suite.
 
+AH-129 MERGE BLOCKER (AH-PRD-14 §7 AC-6):
+  `TestMultiTaskChatBillingParity` (bottom of this file) is the integration-level
+  merge gate for the multi-task / fan-out accumulator work shipped in AH-123
+  (`SessionTurnAccumulator`) and AH-128 (`_build_turn_delta`). It feeds a single
+  synthetic event list (4 task specialists, one fan-out group) to BOTH codepaths
+  and asserts aggregate equality vs the sum of single-specialist baselines. A
+  future change that drifts the two aggregators apart fails here even if both
+  unit suites pass individually. Re-confirm against a live 2.0 runner event stream
+  once AH-PRD-13 + AH-PRD-05 land (see TestMultiTaskChatBillingParity docstring).
+
 CANONICAL FIXTURE (from api/tests/unit/chat/test_token_accounting_parity.py):
   prompt_token_count        = 1250
   candidates_token_count    =  380
@@ -47,6 +57,8 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -60,6 +72,7 @@ from google.genai.types import Content, FunctionCall, Part
 from app.adk.agents.agent_factory import specialist_runtime as sr
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.sub_agent_attacher import AlwaysTrueSubAgentList
+from app.adk.agents.chat_callbacks import _build_turn_delta
 from shared.token_accounting import extract_billable_tokens
 
 # Resolve api/src so kene_api is importable without installing the api package.
@@ -187,6 +200,103 @@ def _make_deterministic_specialist(name: str = "canonical_stub_agent") -> LlmAge
 def _increments_equal(a: Any, b: Any) -> bool:
     """Compare two firestore.Increment objects by their .value attribute."""
     return getattr(a, "value", a) == getattr(b, "value", b)
+
+
+class _MultiTaskEvent:
+    """Shared synthetic event satisfying both accumulator (attribute) and
+    _build_turn_delta (method) API surfaces simultaneously.
+
+    Anchored to the canonical trace fixture task_ids (AH-125) and the CH-10
+    canonical token shape (prompt=1250, candidates=380, cached=200,
+    thoughts=None → input=1050, output=380, total_billable=1430).
+
+    The accumulator uses attribute duck-typing (event.type, event.is_final_text);
+    _build_turn_delta uses method calls (event.get_function_calls(),
+    event.is_final_response()). A single class satisfying both surfaces guarantees
+    the two paths see semantically identical input so divergence cannot be
+    attributed to fixture skew (AH-PRD-14 §2).
+    """
+
+    def __init__(
+        self,
+        *,
+        task_id: str,
+        event_id: str,
+        author: str = "google_analytics_specialist",
+        invocation_id: str = "inv_multi_task",
+        node_info: object = None,
+        isolation_scope: str | None = None,
+    ) -> None:
+        self.usage_metadata = SimpleNamespace(
+            prompt_token_count=_CANONICAL_PROMPT_TOKEN_COUNT,
+            candidates_token_count=_CANONICAL_CANDIDATES_TOKEN_COUNT,
+            thoughts_token_count=_CANONICAL_THOUGHTS_TOKEN_COUNT,
+            cached_content_token_count=_CANONICAL_CACHED_TOKEN_COUNT,
+        )
+        self.author = author
+        self.id = event_id
+        self.invocation_id = invocation_id
+        self.type = None  # not a tool_call or compaction_summary
+        self.is_final_text = False
+        self.text = ""
+        self.content = None
+        # ADK 2.0 fields — only set for fan-out events (tolerance guard)
+        if node_info is not None:
+            self.node_info = node_info
+        if isolation_scope is not None:
+            self.isolation_scope = isolation_scope
+        # Suppress unused parameter warning — task_id is carried for traceability
+        self._task_id = task_id
+
+    def get_function_calls(self) -> list[Any]:
+        """Real ADK Event API used by _build_turn_delta."""
+        return []
+
+    def is_final_response(self) -> bool:
+        """Real ADK Event API used by _build_turn_delta."""
+        return False
+
+
+def _build_canonical_multi_task_events() -> list[_MultiTaskEvent]:
+    """Return 4 synthetic events anchored to supervisor_orchestration_trace.json.
+
+    Matches the trace fixture's task_ids, assignees, and node_path values
+    (AH-125) so swapping to a recorded stream when AH-PRD-13 lands is 1:1.
+
+    Layout:
+      task_001_analyze_traffic  — sequential task_delegation (no fan-out)
+      task_002_performance_data — fan-out branch A (specialist_a@1)
+      task_003_competitor_data  — fan-out branch B (specialist_b@1)
+      task_004_synthesis        — synthesis task_delegation
+
+    Each event carries the CH-10 canonical token shape (input=1050, output=380,
+    total_billable=1430). All events share invocation_id="inv_multi_task".
+    """
+    node_path_a = SimpleNamespace(path="specialist_a@1", output_for=[])
+    node_path_b = SimpleNamespace(path="specialist_b@1", output_for=[])
+
+    return [
+        _MultiTaskEvent(
+            task_id="task_001_analyze_traffic",
+            event_id="evt_task_001",
+        ),
+        _MultiTaskEvent(
+            task_id="task_002_performance_data",
+            event_id="evt_task_002",
+            node_info=node_path_a,
+            isolation_scope="fc_branch_a",
+        ),
+        _MultiTaskEvent(
+            task_id="task_003_competitor_data",
+            event_id="evt_task_003",
+            node_info=node_path_b,
+            isolation_scope="fc_branch_b",
+        ),
+        _MultiTaskEvent(
+            task_id="task_004_synthesis",
+            event_id="evt_task_004",
+        ),
+    ]
 
 
 async def _capture_mode_a_events(
@@ -717,3 +827,172 @@ class TestNoAgentToolInGate:
                 f"'google_search'. Found: {named_search}. "
                 "agent.google_search is deferred to AH-PRD-15 (prod-cutover gate)."
             )
+
+
+# ---------------------------------------------------------------------------
+# TestMultiTaskChatBillingParity — AH-129 / AH-PRD-14 §7 AC-6 MERGE BLOCKER.
+#
+# Integration-level gate: a single synthetic event list (4 task specialists,
+# one fan-out group) is fed to BOTH SessionTurnAccumulator and _build_turn_delta.
+# Both must produce aggregate token / tool-call / message counts equal to the
+# sum of single-specialist baselines (4 x CH-10 canonical fixture), and the two
+# codepaths must produce identical aggregate values — the divergence guard.
+#
+# AH-PRD-13 RE-CONFIRM GATE: re-run against a live 2.0 runner event stream once
+# AH-PRD-13 + AH-PRD-05 land and the coordinator starts emitting the supervisor
+# event shape. Swap _build_canonical_multi_task_events() for a recorded stream
+# fixture at that point.
+#
+# All four tests are synchronous — the class consumes synthetic events directly
+# without Runner.run_async involvement (mirrors api/tests/unit/chat/test_accumulator.py
+# and app/adk/agents/tests/test_chat_callbacks.py patterns; no pytest.mark.asyncio).
+# ---------------------------------------------------------------------------
+
+
+class TestMultiTaskChatBillingParity:
+    """AH-PRD-14 §7 AC-6 / AH-129 MERGE BLOCKER.
+
+    Integration-level gate across SessionTurnAccumulator and _build_turn_delta
+    for the supervisor-model multi-task / fan-out event stream.
+    """
+
+    def test_accumulator_aggregate_equals_sum_of_baselines(self) -> None:
+        """AC-1: SessionTurnAccumulator sums 4 task specialists to 4x CH-10 baseline."""
+        events = _build_canonical_multi_task_events()
+        acc = SessionTurnAccumulator()
+        for ev in events:
+            acc.add_event(ev)
+        delta = acc.build_delta()
+
+        expected_input = 4 * _EXPECTED_INPUT
+        expected_output = 4 * _EXPECTED_OUTPUT
+        expected_context = expected_input + expected_output  # reasoning=0
+
+        assert _increments_equal(delta["input_tokens_total"], expected_input), (
+            f"accumulator input_tokens_total="
+            f"{getattr(delta['input_tokens_total'], 'value', delta['input_tokens_total'])} "
+            f"expected {expected_input} (4 x {_EXPECTED_INPUT})"
+        )
+        assert _increments_equal(delta["output_tokens_total"], expected_output), (
+            f"accumulator output_tokens_total="
+            f"{getattr(delta['output_tokens_total'], 'value', delta['output_tokens_total'])} "
+            f"expected {expected_output} (4 x {_EXPECTED_OUTPUT})"
+        )
+        assert _increments_equal(delta["reasoning_tokens_total"], 0), (
+            f"accumulator reasoning_tokens_total="
+            f"{getattr(delta['reasoning_tokens_total'], 'value', delta['reasoning_tokens_total'])} "
+            "expected 0 (non-reasoning model)"
+        )
+        assert _increments_equal(delta["message_count"], 4), (
+            f"accumulator message_count="
+            f"{getattr(delta['message_count'], 'value', delta['message_count'])} "
+            "expected 4 (one LLM-response event per task specialist)"
+        )
+        assert _increments_equal(delta["current_context_tokens"], expected_context), (
+            f"accumulator current_context_tokens="
+            f"{getattr(delta['current_context_tokens'], 'value', delta['current_context_tokens'])} "
+            f"expected {expected_context} (input + output, reasoning=0)"
+        )
+
+    def test_build_turn_delta_aggregate_equals_sum_of_baselines(self) -> None:
+        """AC-2: _build_turn_delta sums 4 task specialists to 4x CH-10 baseline."""
+        events = _build_canonical_multi_task_events()
+        now = datetime.now(timezone.utc)
+        turn_delta = _build_turn_delta(events, now)
+
+        expected_input = 4 * _EXPECTED_INPUT
+        expected_output = 4 * _EXPECTED_OUTPUT
+        expected_context = expected_input + expected_output
+
+        assert turn_delta.input_tokens_increment == expected_input, (
+            f"_build_turn_delta input_tokens_increment={turn_delta.input_tokens_increment} "
+            f"expected {expected_input} (4 x {_EXPECTED_INPUT})"
+        )
+        assert turn_delta.output_tokens_increment == expected_output, (
+            f"_build_turn_delta output_tokens_increment={turn_delta.output_tokens_increment} "
+            f"expected {expected_output} (4 x {_EXPECTED_OUTPUT})"
+        )
+        assert turn_delta.reasoning_tokens_increment == 0, (
+            f"_build_turn_delta reasoning_tokens_increment={turn_delta.reasoning_tokens_increment} "
+            "expected 0 (non-reasoning model)"
+        )
+        assert turn_delta.message_count == 4, (
+            f"_build_turn_delta message_count={turn_delta.message_count} "
+            "expected 4 (one LLM-response event per task specialist)"
+        )
+        assert turn_delta.current_context_tokens == expected_context, (
+            f"_build_turn_delta current_context_tokens={turn_delta.current_context_tokens} "
+            f"expected {expected_context} (input + output, reasoning=0)"
+        )
+
+    def test_billing_total_billable_equals_sum_of_baselines(self) -> None:
+        """AC-3: billing total across 4 task specialists equals 4x CH-10 baseline."""
+        events = _build_canonical_multi_task_events()
+        total = sum(extract_billable_tokens(ev).total_billable for ev in events)
+
+        assert total == 4 * _EXPECTED_TOTAL_BILLABLE, (
+            f"billing total_billable={total} "
+            f"expected {4 * _EXPECTED_TOTAL_BILLABLE} (4 x {_EXPECTED_TOTAL_BILLABLE})"
+        )
+
+    def test_codepaths_produce_identical_aggregate(self) -> None:
+        """AC-4: accumulator and _build_turn_delta produce identical aggregate
+        counts from the same event list — the divergence guard.
+
+        Feeds ONE shared event list to both codepaths and asserts pairwise
+        equality across all counter fields. A future change that drifts the two
+        aggregators apart fails here even if both unit suites pass individually.
+        """
+        events = _build_canonical_multi_task_events()
+        now = datetime.now(timezone.utc)
+
+        acc = SessionTurnAccumulator()
+        for ev in events:
+            acc.add_event(ev)
+        acc_delta = acc.build_delta()
+        # Same list — accumulator and _build_turn_delta each maintain their own
+        # seen_event_ids so re-feeding the same list to both is correct and intentional.
+        turn_delta = _build_turn_delta(events, now)
+
+        assert _increments_equal(
+            acc_delta["input_tokens_total"], turn_delta.input_tokens_increment
+        ), (
+            f"input divergence: accumulator="
+            f"{getattr(acc_delta['input_tokens_total'], 'value', acc_delta['input_tokens_total'])} "
+            f"_build_turn_delta={turn_delta.input_tokens_increment}"
+        )
+        assert _increments_equal(
+            acc_delta["output_tokens_total"], turn_delta.output_tokens_increment
+        ), (
+            f"output divergence: accumulator="
+            f"{getattr(acc_delta['output_tokens_total'], 'value', acc_delta['output_tokens_total'])} "
+            f"_build_turn_delta={turn_delta.output_tokens_increment}"
+        )
+        assert _increments_equal(
+            acc_delta["reasoning_tokens_total"], turn_delta.reasoning_tokens_increment
+        ), (
+            f"reasoning divergence: accumulator="
+            f"{getattr(acc_delta['reasoning_tokens_total'], 'value', acc_delta['reasoning_tokens_total'])} "
+            f"_build_turn_delta={turn_delta.reasoning_tokens_increment}"
+        )
+        assert _increments_equal(
+            acc_delta["tool_call_count"], turn_delta.tool_call_count
+        ), (
+            f"tool_call_count divergence: accumulator="
+            f"{getattr(acc_delta['tool_call_count'], 'value', acc_delta['tool_call_count'])} "
+            f"_build_turn_delta={turn_delta.tool_call_count}"
+        )
+        assert _increments_equal(
+            acc_delta["message_count"], turn_delta.message_count
+        ), (
+            f"message_count divergence: accumulator="
+            f"{getattr(acc_delta['message_count'], 'value', acc_delta['message_count'])} "
+            f"_build_turn_delta={turn_delta.message_count}"
+        )
+        assert _increments_equal(
+            acc_delta["current_context_tokens"], turn_delta.current_context_tokens
+        ), (
+            f"context_tokens divergence: accumulator="
+            f"{getattr(acc_delta['current_context_tokens'], 'value', acc_delta['current_context_tokens'])} "
+            f"_build_turn_delta={turn_delta.current_context_tokens}"
+        )
