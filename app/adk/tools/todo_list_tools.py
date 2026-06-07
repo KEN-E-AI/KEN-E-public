@@ -29,6 +29,11 @@ _MAX_TITLE_LEN: int = 256
 _MAX_ITEM_ID_LEN: int = 128
 _MAX_ITEM_TEXT_LEN: int = 1024
 
+# Mirrors TodoItem.status Literal in api/src/kene_api/models/chat.py (AH-122 / AH-PRD-14 §4).
+_TODO_ITEM_STATUSES: frozenset[str] = frozenset(
+    {"pending", "dispatched", "awaiting_review", "completed", "failed"}
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,10 +49,13 @@ def _normalize_items(
 ) -> list[dict[str, Any]] | str:
     """Return a normalized copy of the caller's item list, or an ERROR string.
 
-    Guarantees every item has ``item_id``, ``text``, ``completed``, and
-    ``completed_at`` — matching the ``TodoItem`` Pydantic shape in
-    ``api/src/kene_api/models/chat.py``. A missing ``item_id`` falls back to
-    ``"item_{i:03d}"`` (zero-indexed); an explicit empty string is preserved.
+    Guarantees every item has ``item_id``, ``text``, ``completed``,
+    ``completed_at``, and the six supervisor-orchestration fields (``assignee``,
+    ``query``, ``criteria``, ``depends_on``, ``result_key``, ``status``) —
+    matching the ``TodoItem`` Pydantic shape in
+    ``api/src/kene_api/models/chat.py`` (AH-122 / AH-PRD-14 §4). A missing
+    ``item_id`` falls back to ``"item_{i:03d}"`` (zero-indexed); an explicit
+    empty string is preserved.
     """
     normalized: list[dict[str, Any]] = []
     for i, item in enumerate(raw_items):
@@ -61,12 +69,55 @@ def _normalize_items(
             return f"ERROR: text at index {i} exceeds {_MAX_ITEM_TEXT_LEN} characters."
         raw_cat = item.get("completed_at")
         completed_at = raw_cat if isinstance(raw_cat, str) or raw_cat is None else None
+
+        # --- supervisor-orchestration fields (AH-122 / AH-PRD-14 §4) ---
+        assignee = item.get("assignee")
+        if assignee is not None and not isinstance(assignee, str):
+            return f"ERROR: assignee at index {i} must be a string or null."
+
+        query = item.get("query")
+        if query is not None and not isinstance(query, str):
+            return f"ERROR: query at index {i} must be a string or null."
+
+        criteria = item.get("criteria")
+        if criteria is not None and not isinstance(criteria, str):
+            return f"ERROR: criteria at index {i} must be a string or null."
+
+        result_key = item.get("result_key")
+        if result_key is not None and not isinstance(result_key, str):
+            return f"ERROR: result_key at index {i} must be a string or null."
+
+        # Coerce absent/None → [] to match Pydantic Field(default_factory=list).
+        # Only None (and absent key) are silently coerced; any other falsy type
+        # (0, "", {}) fails the isinstance check below.
+        raw_depends_on = item.get("depends_on")
+        if raw_depends_on is None:
+            raw_depends_on = []
+        if not isinstance(raw_depends_on, list):
+            return f"ERROR: depends_on at index {i} must be a list of strings."
+        for j, dep in enumerate(raw_depends_on):
+            if not isinstance(dep, str):
+                return f"ERROR: depends_on[{j}] at index {i} must be a string."
+
+        status = item.get("status", "pending")
+        if status not in _TODO_ITEM_STATUSES:
+            return (
+                f"ERROR: status at index {i} must be one of "
+                f"{sorted(_TODO_ITEM_STATUSES)}."
+            )
+
         normalized.append(
             {
                 "item_id": item_id,
                 "text": text,
                 "completed": bool(item.get("completed", False)),
                 "completed_at": completed_at,
+                "assignee": assignee,
+                "query": query,
+                "criteria": criteria,
+                "depends_on": raw_depends_on,
+                "result_key": result_key,
+                "status": status,
             }
         )
     return normalized

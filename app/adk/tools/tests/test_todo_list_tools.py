@@ -433,6 +433,250 @@ class TestUpdateTodoListItem:
 
 
 # ---------------------------------------------------------------------------
+# TestSupervisorOrchestrationFields — AH-126 / AH-PRD-14 §7 AC-1
+# ---------------------------------------------------------------------------
+
+
+class TestSupervisorOrchestrationFields:
+    """Backward-compat + widened-shape round-trip + validation tests.
+
+    Covers:
+    - Backward-compat: legacy items (no new fields) → default values stored.
+    - Widened shape: supervisor items with all six fields → echoed verbatim.
+    - Status enum validation.
+    - depends_on type validation.
+    - assignee / query / criteria / result_key type validation.
+    - update_todo_list does not clobber widened fields.
+    - Cross-module round-trip: TodoList(**raw) validates without error.
+    """
+
+    def test_legacy_payload_gets_default_supervisor_fields(self) -> None:
+        """Legacy items omitting the six new fields get safe defaults (AC-2)."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        _run(
+            set_todo_list(
+                ctx,
+                list_id="l1",
+                title="T",
+                items=[{"text": "Do thing"}],
+            )
+        )
+        item = ctx.state["todo_lists"]["l1"]["items"][0]
+        assert item == {
+            "item_id": "item_000",
+            "text": "Do thing",
+            "completed": False,
+            "completed_at": None,
+            "assignee": None,
+            "query": None,
+            "criteria": None,
+            "depends_on": [],
+            "result_key": None,
+            "status": "pending",
+        }
+
+    def test_widened_payload_echoed_verbatim(self) -> None:
+        """Supervisor items with all six fields are stored verbatim."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        _run(
+            set_todo_list(
+                ctx,
+                list_id="l1",
+                title="T",
+                items=[
+                    {
+                        "text": "Pull GA bounce-rate",
+                        "assignee": "google_analytics_specialist",
+                        "query": "weekly bounce rate",
+                        "criteria": "≥2 weeks of data",
+                        "depends_on": ["item_000"],
+                        "result_key": "ga_bounce",
+                        "status": "dispatched",
+                    }
+                ],
+            )
+        )
+        item = ctx.state["todo_lists"]["l1"]["items"][0]
+        assert item == {
+            "item_id": "item_000",
+            "text": "Pull GA bounce-rate",
+            "completed": False,
+            "completed_at": None,
+            "assignee": "google_analytics_specialist",
+            "query": "weekly bounce rate",
+            "criteria": "≥2 weeks of data",
+            "depends_on": ["item_000"],
+            "result_key": "ga_bounce",
+            "status": "dispatched",
+        }
+
+    def test_all_valid_statuses_accepted(self) -> None:
+        set_todo_list, _ = _get_tools()
+        for status in ("pending", "dispatched", "awaiting_review", "completed", "failed"):
+            ctx = _fake_ctx()
+            result = _run(
+                set_todo_list(ctx, "l1", "T", [{"text": "x", "status": status}])
+            )
+            assert "ERROR" not in result, f"Valid status '{status}' rejected"
+            assert ctx.state["todo_lists"]["l1"]["items"][0]["status"] == status
+
+    def test_invalid_status_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "status": "in_review"}])
+        )
+        assert result.startswith("ERROR:")
+        assert "status" in result
+
+    def test_invalid_status_does_not_mutate_state(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        _run(set_todo_list(ctx, "l1", "T", [{"text": "x", "status": "invalid"}]))
+        assert "l1" not in ctx.state.get("todo_lists", {})
+
+    def test_depends_on_string_instead_of_list_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "depends_on": "item_000"}])
+        )
+        assert result.startswith("ERROR:")
+        assert "depends_on" in result
+
+    def test_depends_on_non_str_element_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(
+                ctx, "l1", "T", [{"text": "x", "depends_on": ["item_000", 7]}]
+            )
+        )
+        assert result.startswith("ERROR:")
+        assert "depends_on" in result
+
+    def test_depends_on_none_coerced_to_empty_list(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "depends_on": None}])
+        )
+        assert "ERROR" not in result
+        assert ctx.state["todo_lists"]["l1"]["items"][0]["depends_on"] == []
+
+    def test_assignee_non_string_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "assignee": 42}])
+        )
+        assert result.startswith("ERROR:")
+        assert "assignee" in result
+
+    def test_query_non_string_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "query": 42}])
+        )
+        assert result.startswith("ERROR:")
+        assert "query" in result
+
+    def test_criteria_non_string_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "criteria": 42}])
+        )
+        assert result.startswith("ERROR:")
+        assert "criteria" in result
+
+    def test_result_key_non_string_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        result = _run(
+            set_todo_list(ctx, "l1", "T", [{"text": "x", "result_key": 42}])
+        )
+        assert result.startswith("ERROR:")
+        assert "result_key" in result
+
+    def test_update_does_not_clobber_widened_fields(self) -> None:
+        """update_todo_list touches only completed/completed_at/text — widened fields survive."""
+        set_todo_list, update_todo_list = _get_tools()
+        ctx = _fake_ctx()
+        _run(
+            set_todo_list(
+                ctx,
+                list_id="l1",
+                title="T",
+                items=[
+                    {
+                        "item_id": "i1",
+                        "text": "Step",
+                        "assignee": "x",
+                        "status": "dispatched",
+                        "depends_on": ["dep_000"],
+                        "result_key": "r1",
+                        "query": "q?",
+                        "criteria": "c",
+                    }
+                ],
+            )
+        )
+        _run(update_todo_list(ctx, "l1", "i1", completed=True))
+        item = ctx.state["todo_lists"]["l1"]["items"][0]
+        completed_at = item["completed_at"]
+        assert isinstance(completed_at, str) and "T" in completed_at  # ISO-8601
+        assert {k: v for k, v in item.items() if k != "completed_at"} == {
+            "item_id": "i1",
+            "text": "Step",
+            "completed": True,
+            "assignee": "x",
+            "status": "dispatched",
+            "depends_on": ["dep_000"],
+            "result_key": "r1",
+            "query": "q?",
+            "criteria": "c",
+        }
+
+    def test_cross_module_round_trip(self) -> None:
+        """Widened item stored via ADK tools validates cleanly via the Pydantic read path."""
+        TodoList = pytest.importorskip(
+            "api.src.kene_api.models.chat",
+            reason="api package not on sys.path in this test environment",
+        ).TodoList
+
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        _run(
+            set_todo_list(
+                ctx,
+                list_id="l1",
+                title="Supervisor Tasks",
+                items=[
+                    {
+                        "item_id": "item_000",
+                        "text": "Pull GA bounce-rate",
+                        "assignee": "google_analytics_specialist",
+                        "query": "weekly bounce rate",
+                        "criteria": "≥2 weeks of data",
+                        "depends_on": [],
+                        "result_key": "ga_bounce",
+                        "status": "dispatched",
+                    }
+                ],
+            )
+        )
+        raw_list = ctx.state["todo_lists"]["l1"]
+        # ValidationError would raise — assert it doesn't.
+        validated = TodoList(**raw_list)
+        assert validated.items[0].assignee == "google_analytics_specialist"
+        assert validated.items[0].status == "dispatched"
+
+
+# ---------------------------------------------------------------------------
 # TestRegistryWiring — AC-5
 # ---------------------------------------------------------------------------
 

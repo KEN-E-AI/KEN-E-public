@@ -155,6 +155,46 @@ def _post_side_table_update_sync(
         )
 
 
+def _event_has_function_calls(event: Any) -> bool:
+    """Return True if the event carries any function calls.
+
+    Uses the real ADK Event API (``event.get_function_calls()``) — the callback
+    path receives real Event objects.  The accumulator uses a duck-type heuristic
+    (``event.type == "tool_call"``) against SimpleNamespace fixtures; the two
+    predicates share the same intent (exclude tool-dispatch events from
+    message_count) but operate on different API surfaces (AH-PRD-14 Decision 2).
+    """
+    _get_fn_calls = getattr(event, "get_function_calls", None)
+    if callable(_get_fn_calls):
+        return bool(_get_fn_calls() or [])
+    return False
+
+
+def _is_message_event(event: Any) -> bool:
+    """Return True for events that represent a user or LLM message.
+
+    Mirrors the intent of ``accumulator._is_message_event`` (AH-PRD-14 §2 /
+    Decision 2) with an intentionally different tool-call detector:
+    1. Legacy authors "user"/"model" — counted unconditionally.
+    2. Any other author with ``usage_metadata`` and no function calls — each
+       LLM-billable specialist/coordinator response contributes exactly one
+       message count regardless of which agent authored it.
+
+    The accumulator detects tool calls via ``event.type == "tool_call"`` (works
+    on duck-typed test fixtures); this path uses ``_event_has_function_calls``
+    (real ADK ``get_function_calls()`` API) because callbacks receive real Event
+    objects.  Both paths exclude the same semantic class of events.
+    """
+    author = getattr(event, "author", None)
+    if author in ("user", "model"):
+        return True
+    return (
+        author is not None
+        and getattr(event, "usage_metadata", None) is not None
+        and not _event_has_function_calls(event)
+    )
+
+
 def _isoformat_sentinel(dt: datetime) -> dict[str, str]:
     """Return the {"_isoformat": "..."} wire sentinel for a datetime value.
 
@@ -180,8 +220,21 @@ def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
     message_count = 0
     final_text = ""
     _token_extract_errors = 0
+    # Defensive event-identity dedupe (AH-PRD-14 §2 / Decision 1).
+    # Guards against replayed events from fan-out branches.  Mirrors
+    # SessionTurnAccumulator._seen_event_ids — events without an id fall
+    # through and are counted normally, preserving current behaviour.
+    # Bounded per-turn: O(100s) of events per turn, well within in-process
+    # memory.  The set is function-scoped and discarded on return.
+    seen_event_ids: set[str] = set()
 
     for event in events:
+        event_id = getattr(event, "id", None)
+        if event_id and isinstance(event_id, str):
+            if event_id in seen_event_ids:
+                continue
+            seen_event_ids.add(event_id)
+
         if _extract_billable_tokens is not None:
             try:
                 counts = _extract_billable_tokens(event)
@@ -197,7 +250,7 @@ def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
         if callable(_get_fn_calls):
             tool_call_count += len(_get_fn_calls() or [])
 
-        if getattr(event, "author", None) in ("user", "model"):
+        if _is_message_event(event):
             message_count += 1
 
         # Extract final-response text using the real ADK Event API.
