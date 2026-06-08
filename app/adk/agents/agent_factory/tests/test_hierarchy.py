@@ -203,8 +203,8 @@ class TestRootAgentConstruction:
         """Extra specialist configs in Firestore must not add tools to the root
         — specialists are resolved per-turn, not at deploy time.
 
-        AH-133: only the two supervisor function tools are present on the root;
-        extra specialist configs do not expand that set.
+        AH-133/AH-144: only the five supervisor function tools are present on
+        the root; extra specialist configs do not expand that set.
         """
         extra_spec = {
             "instruction": "You are specialist A.",
@@ -219,9 +219,16 @@ class TestRootAgentConstruction:
         }
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        # Only the two supervisor tools — no per-specialist additions.
+        # Only the five supervisor tools — no per-specialist additions.
+        # AH-144 added save/resume/clear pending tools.
         tool_names = {getattr(t, "name", None) for t in root.tools}
-        assert tool_names == {"set_todo_list", "update_todo_list"}
+        assert tool_names == {
+            "set_todo_list",
+            "update_todo_list",
+            "save_pending_supervisor_tasks",
+            "resume_pending_supervisor_tasks",
+            "clear_pending_supervisor_tasks",
+        }
 
     def test_root_agent_instruction_suffix_provider_wired(self) -> None:
         """build_hierarchy must pass a composed instruction_suffix_provider that

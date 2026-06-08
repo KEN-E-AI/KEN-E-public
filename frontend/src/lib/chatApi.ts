@@ -367,20 +367,37 @@ export async function postChatCompletion(
 }
 
 /**
+ * Inline artifact emitted via the `artifacts` SSE event (AH-131/AH-143).
+ * Matches the Artifact Pydantic model shape from shared/artifact_models.py.
+ * Only `type` and `metadata.title` are consumed for inline display; the full
+ * spec is forwarded for future rich rendering.
+ */
+export type ArtifactPayload = {
+  type: string;
+  spec: Record<string, unknown>;
+  metadata: {
+    chart_type_suggestion: string;
+    title: string;
+    data_source: string;
+    description?: string | null;
+  };
+};
+
+/**
  * Discriminated-union event emitted by streamChatCompletion.
  * - "text": a fragment of the assistant's answer text.
  * - "reasoning": a fragment of the model's reasoning (thought) text.
  * - "session": a one-time event carrying the real session id when a pending_
  *   placeholder has been resolved server-side (CH-62).
- * - "artifacts": an atomic batch of Vega-Lite chart artifacts emitted after
- *   text streaming completes (AH-PRD-04 §6.2 SSE wire contract).
+ * - "artifacts": zero or more Vega-Lite chart artifacts produced this turn
+ *   (AH-131/AH-143). Emitted once per turn, just before [DONE].
  * Unknown SSE event types are silently dropped.
  */
 export type StreamEvent =
   | { type: "text"; text: string; author?: string }
   | { type: "reasoning"; text: string; author?: string }
   | { type: "session"; sessionId: string }
-  | { type: "artifacts"; artifacts: Artifact[]; author?: string };
+  | { type: "artifacts"; artifacts: ArtifactPayload[] };
 
 /**
  * POST /api/v1/chat/completions (streaming SSE)
@@ -502,17 +519,12 @@ export async function* streamChatCompletion(
     }
     if (eventType === "artifacts") {
       try {
-        const parsed = JSON.parse(data) as { artifacts: unknown };
-        if (!Array.isArray(parsed.artifacts) || parsed.artifacts.length === 0) {
+        const parsed = JSON.parse(data) as { artifacts: ArtifactPayload[] };
+        if (!Array.isArray(parsed.artifacts)) {
           return null;
         }
-        return {
-          type: "artifacts",
-          artifacts: parsed.artifacts as Artifact[],
-          author,
-        };
+        return { type: "artifacts", artifacts: parsed.artifacts };
       } catch {
-        // Malformed artifacts JSON — drop silently, no UI noise.
         console.debug(
           "[streamChatCompletion] malformed artifacts payload:",
           data,

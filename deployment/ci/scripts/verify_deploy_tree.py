@@ -46,6 +46,7 @@ Exit 0 = all six checks pass.  Non-zero = at least one check failed.
 # applies only to modules whose closures are serialized into the Agent Engine artifact.
 from __future__ import annotations
 
+import inspect
 import logging
 import subprocess
 import sys
@@ -302,16 +303,30 @@ def main() -> int:
                     # the legacy `parameters` (genai Schema), or, when a signature
                     # triggers the JSON_SCHEMA_FOR_FUNC_DECL path (e.g. a
                     # `list[dict[str, Any]]` arg), `parameters_json_schema` — in
-                    # which case `parameters` is legitimately None. Accept either;
-                    # a tool with neither still has no declarable schema and fails.
+                    # which case `parameters` is legitimately None. Accept either.
                     has_params = (
                         decl.parameters is not None
                         or getattr(decl, "parameters_json_schema", None) is not None
                     )
-                    assert has_params, (
-                        f"declaration has neither parameters nor "
-                        f"parameters_json_schema for {fn}"
-                    )
+                    # A tool whose only arguments are ADK-injected (tool_context /
+                    # input_stream) legitimately produces a declaration with no
+                    # parameters — Gemini supports zero-argument function calls. Use
+                    # ADK's own `_ignore_params` to find the LLM-facing arguments;
+                    # only an *empty* declaration for a tool that DOES declare such
+                    # arguments signals a cloudpickle round-trip that silently lost
+                    # the schema (the real regression this check guards).
+                    ignored = set(getattr(ft, "_ignore_params", ()))
+                    declarable = [
+                        name
+                        for name in inspect.signature(restored).parameters
+                        if name not in ignored
+                    ]
+                    if declarable:
+                        assert has_params, (
+                            f"declaration has neither parameters nor "
+                            f"parameters_json_schema for {fn} "
+                            f"(declarable params: {declarable})"
+                        )
                     logger.info(
                         "  PASS cloudpickle round-trip: %s", getattr(fn, "__name__", fn)
                     )

@@ -1,9 +1,7 @@
 """Supervisor-orchestration utilities for AH-PRD-05.
 
-Pure-function substrate consumed by the root coordinator when it decomposes a
-multi-specialist user request into a TODO ledger.  Nothing in this module
-touches ADK session state, Firestore, or any I/O — every function is
-deterministic and easily unit-testable.
+Consumed by the root coordinator when it decomposes a multi-specialist user
+request into a TODO ledger and manages approval checkpoints.
 
 Public surface:
   - ``compute_dependency_levels(items)`` — Kahn topological sort over the
@@ -11,19 +9,46 @@ Public surface:
     an ``"ERROR: ..."`` string on cycle / dangling ref.
   - ``validate_ledger(items, known_specialist_ids, max_items)`` — composes
     the three validation checks (cap, unknown specialist, cycle/dangling-dep).
+  - ``select_ready_tasks(items, completed_ids)`` — returns the sorted list of
+    ``item_id``s that are ready to dispatch right now (deps satisfied, status
+    pending).  AH-141.
+  - ``BRANCH_ERROR_SENTINEL_PREFIX`` — prefix string for branch-failure
+    sentinel values written to ``result_key`` in session state.  AH-141.
+  - ``mark_branch_failure(state, result_key, error_message)`` — writes the
+    sentinel to ``state[result_key]`` when a branch fails.  AH-141.
+  - ``make_branch_failure_sentinel_after_agent_callback(specialist_name)`` —
+    returns an ``after_agent_callback`` that fires on a task-mode specialist
+    and writes the sentinel when ``result_key`` is absent from state.
+    Imported by ``specialist_runtime._build_specialist``.  AH-141.
   - ``MAX_LEDGER_ITEMS`` — soft cap constant (12).
   - ``SUPERVISOR_INSTRUCTION_FRAGMENT`` — Markdown string fragment spliced
     into the root agent's instruction suffix by ``hierarchy.py``.
-  - ``get_supervisor_function_tools()`` — returns the two ledger-management
-    ``FunctionTool`` instances needed by the coordinator.
+  - ``wrap_task_in_review(specialist, criteria, result_key)`` — optionally
+    wraps a ``mode='task'`` specialist in a ``LoopAgent`` review pipeline when
+    ``criteria`` is non-empty; returns the specialist unchanged for empty/None
+    criteria (single-pass path).
+  - ``pending_supervisor_state_provider(ctx)`` — reads
+    ``session.state["pending_supervisor_tasks"]`` and returns a Markdown block
+    for the coordinator's prompt when a checkpoint is pending.  Reads ctx.state.
+  - ``get_supervisor_function_tools()`` — returns the five ledger-management
+    and approval-checkpoint ``FunctionTool`` instances needed by the coordinator.
 """
 
 from __future__ import annotations
 
+import logging
 from collections import deque
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from google.adk.agents import BaseAgent, LlmAgent
 
 MAX_LEDGER_ITEMS: int = 12
+
+# Sentinel prefix written to result_key when a branch fails (AH-141).
+BRANCH_ERROR_SENTINEL_PREFIX: str = "ERROR: "
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # compute_dependency_levels
@@ -174,6 +199,189 @@ def validate_ledger(
 
 
 # ---------------------------------------------------------------------------
+# select_ready_tasks (AH-141)
+# ---------------------------------------------------------------------------
+
+
+def select_ready_tasks(
+    items: list[dict[str, Any]],
+    completed_ids: set[str],
+) -> list[str]:
+    """Return sorted ``item_id``s that are ready to dispatch right now.
+
+    A task is ready when ALL of:
+    - Its ``depends_on`` set is a subset of ``completed_ids``.
+    - Its ``status`` is ``"pending"`` (missing ``status`` is treated as
+      ``"pending"``; any other value — ``"completed"``, ``"dispatched"``,
+      ``"awaiting_review"``, ``"failed"`` — excludes the task).
+
+    Args:
+        items: List of TODO-ledger dicts.  Each may carry ``item_id``
+            (str), ``depends_on`` (list[str] | None), and ``status`` (str).
+        completed_ids: Set of ``item_id``s whose work is already done.
+
+    Returns:
+        Sorted list of ``item_id`` strings — deterministic output.
+        Returns ``[]`` on empty input.
+    """
+    _PENDING_STATUS = "pending"
+    ready: list[str] = []
+    for item in items:
+        item_id: str = item.get("item_id", "")
+        if not item_id:
+            continue
+        status: str = item.get("status") or _PENDING_STATUS
+        if status != _PENDING_STATUS:
+            continue
+        deps: list[str] = list(item.get("depends_on") or [])
+        if set(deps).issubset(completed_ids):
+            ready.append(item_id)
+    return sorted(ready)
+
+
+# ---------------------------------------------------------------------------
+# mark_branch_failure (AH-141)
+# ---------------------------------------------------------------------------
+
+
+def mark_branch_failure(
+    state: dict[str, Any],
+    result_key: str,
+    error_message: str,
+) -> None:
+    """Write a branch-failure sentinel to ``state[result_key]``.
+
+    Semantics:
+    - Writes ``f"{BRANCH_ERROR_SENTINEL_PREFIX}{error_message}"`` when
+      ``result_key`` is absent from state (no real result to protect).
+    - Overwrites an existing sentinel-prefixed value (last-writer-wins on
+      repeated failures; the new reason replaces the old one).
+    - Is a no-op when ``state[result_key]`` already holds a non-sentinel
+      value (real result preserved — never overwrite a good result).
+    - Mutates ``state`` in place; returns ``None``.
+    - Is idempotent w.r.t. the final state when called with the same
+      ``error_message`` twice.
+
+    Args:
+        state: Mutable session-state dict (``callback_context.state`` or a
+            plain ``dict`` in tests).
+        result_key: The key whose value advertises the branch outcome to the
+            coordinator.
+        error_message: Human-readable reason for the failure.  Combined with
+            ``BRANCH_ERROR_SENTINEL_PREFIX`` to form the sentinel string.
+    """
+    existing = state.get(result_key)
+    if existing is not None and not str(existing).startswith(BRANCH_ERROR_SENTINEL_PREFIX):
+        # Real result is already present — preserve it.
+        return
+    state[result_key] = f"{BRANCH_ERROR_SENTINEL_PREFIX}{error_message}"
+
+
+# ---------------------------------------------------------------------------
+# make_branch_failure_sentinel_after_agent_callback (AH-141)
+# ---------------------------------------------------------------------------
+
+
+def make_branch_failure_sentinel_after_agent_callback(
+    specialist_name: str,
+) -> Any:
+    """Return an ``after_agent_callback`` that writes a sentinel on branch failure.
+
+    The callback is wired onto task-mode specialist ``LlmAgent`` instances by
+    ``specialist_runtime._build_specialist`` (AH-141).  It fires after the
+    specialist completes (successfully or not) and checks whether its
+    ``result_key`` was written.  If absent, it writes the sentinel via
+    ``mark_branch_failure``.
+
+    Matching logic: the callback walks ``state["todo_lists"]["supervisor_ledger"]``
+    (if present) looking for the first item whose ``assignee == specialist_name``
+    AND whose ``status`` is not in ``{"completed", "failed"}``.  This identifies
+    the in-flight ledger item for this branch so the correct ``result_key``
+    receives the sentinel.
+
+    No-op semantics:
+    - When no ``supervisor_ledger`` is in ``state["todo_lists"]`` (single-
+      specialist ``transfer_to_agent`` turns are unaffected — AH-145 regression
+      guard).
+    - When no matching in-flight item is found.
+    - When ``result_key`` already holds a non-sentinel value (real result).
+    - Defensive ``try/except`` around all state reads so a malformed ledger
+      never crashes the turn.
+
+    Args:
+        specialist_name: ``doc_id`` of the task-mode specialist being built.
+            Used to match the ``assignee`` field in the ledger.
+
+    Returns:
+        A synchronous callable with the signature
+        ``(callback_context: Any) -> None`` suitable for ADK's
+        ``after_agent_callback``.
+    """
+    _TERMINAL_STATUSES = {"completed", "failed"}
+
+    def _sentinel_callback(callback_context: Any) -> None:
+        try:
+            state_obj = getattr(callback_context, "state", None)
+            if state_obj is None:
+                return
+            # Read via to_dict() for safe iteration; write via __setitem__ on the
+            # live proxy so the session state is actually mutated (not just a copy).
+            if hasattr(state_obj, "to_dict"):
+                state_view: dict[str, Any] = state_obj.to_dict()
+            elif isinstance(state_obj, dict):
+                state_view = state_obj
+            else:
+                state_view = dict(state_obj)
+
+            todo_lists = state_view.get("todo_lists")
+            if not todo_lists:
+                return
+            ledger_items = todo_lists.get("supervisor_ledger")
+            if not ledger_items:
+                return
+
+            # Find the first in-flight item assigned to this specialist.
+            for item in ledger_items:
+                if item.get("assignee") != specialist_name:
+                    continue
+                if item.get("status") in _TERMINAL_STATUSES:
+                    continue
+                result_key: str | None = item.get("result_key")
+                if not result_key:
+                    continue
+                # Read `existing` from the live proxy (not the snapshot) to close
+                # the TOCTOU window: a concurrent branch may write the real result
+                # between the to_dict() snapshot and this write.
+                if isinstance(state_obj, dict):
+                    existing = state_obj.get(result_key)
+                elif hasattr(state_obj, "get"):
+                    existing = state_obj.get(result_key)
+                else:
+                    existing = state_view.get(result_key)
+
+                if existing is None or str(existing).startswith(BRANCH_ERROR_SENTINEL_PREFIX):
+                    sentinel = (
+                        f"{BRANCH_ERROR_SENTINEL_PREFIX}specialist {specialist_name!r} "
+                        f"completed without writing {result_key!r}"
+                    )
+                    # Write via the live state proxy (ADK StateProxy has __setitem__).
+                    if isinstance(state_obj, dict):
+                        state_obj[result_key] = sentinel
+                    elif hasattr(state_obj, "__setitem__"):
+                        state_obj[result_key] = sentinel
+                break
+        except Exception:
+            _log.warning(
+                "branch_failure_sentinel_callback: could not write sentinel for specialist %r; "
+                "branch failure may not be detected by the coordinator.",
+                specialist_name,
+                exc_info=True,
+            )
+
+    return _sentinel_callback
+
+
+# ---------------------------------------------------------------------------
 # SUPERVISOR_INSTRUCTION_FRAGMENT
 # ---------------------------------------------------------------------------
 
@@ -276,7 +484,288 @@ set_todo_list(
 
 After calling `set_todo_list`, proceed to delegate each ready task (per its
 `depends_on` level). Tasks at the same level can run in parallel.
+
+### Dispatching ready tasks (parallel vs. sequential)
+
+After writing the ledger, determine the **ready group** for the current
+dependency level — every task whose `depends_on` is fully satisfied AND whose
+`status` is `"pending"`.
+
+**Parallel group (two or more ready tasks):** emit **one `request_task_<name>`
+FunctionCall per ready task in the SAME turn**.  The framework dispatches them
+concurrently via `ctx.run_node`.  Wait for the function-response from every
+dispatched task before proceeding to the next dependency level.
+
+**Single ready task:** emit a single `request_task_<name>` as normal.
+
+**Sequential tasks:** a task whose `depends_on` contains an `item_id` that is
+not yet completed is NOT part of the current ready group — delegate it only
+after all its upstream tasks have returned results.
+
+**Partial-failure handling:** if a task returns a result that starts with
+`ERROR: `, the branch failed.  Do NOT retry the failed task in this turn.
+Proceed with the remaining ready tasks and surface partial results to the user.
+
+#### Worked example — parallel fan-out
+
+After writing the budget-optimisation ledger above, the coordinator emits
+**two `request_task_<name>` calls in the same turn** to fan out `ga_engagement`
+and `meta_spend` in parallel (both have `depends_on: []`):
+
+```
+# Turn 1 — parallel fan-out for the two root tasks:
+request_task_google_analytics_specialist(query="Retrieve weekly engaged sessions...")
+request_task_meta_ads_specialist(query="Retrieve last-4-week spend...")
+
+# Both respond; then the coordinator emits the next ready task (synthesis):
+# Turn 2 — sequential: synthesis depends on both root tasks:
+request_task_google_analytics_specialist(query="Using {ga_result} and {meta_result}...")
+```
+
+### Approval Checkpoints
+
+When the next ready task has `"requires_approval"` in its `criteria`, **do
+NOT dispatch it**.  Instead:
+
+1. Call `save_pending_supervisor_tasks(remaining=[...], completed_results={...})`
+   where `remaining` is the list of tasks not yet executed (including the
+   approval-required task) and `completed_results` maps each completed task's
+   `result_key` to its output value.
+2. Return a conversational approval request to the user that summarises exactly
+   what will happen if approved (e.g. which campaigns will have their budgets
+   increased and by how much).  Stop — do not call any specialist in this turn.
+
+When the user's next turn indicates approval (e.g. "yes", "approved",
+"go ahead"):
+
+1. Call `resume_pending_supervisor_tasks()`.  The saved checkpoint is returned
+   and the key is cleared in one call.
+2. Parse the returned JSON.  Resume delegation from `remaining[0]` using the
+   `completed_results` as the prior outputs already in context.
+
+When the user rejects the pending workflow, changes the subject, or after a
+resumed workflow completes (whether successful or failed):
+
+1. Call `clear_pending_supervisor_tasks()`.
+
+**Pending Supervisor Tasks section:** whenever a `## Pending Supervisor Tasks`
+section appears in your prompt (injected by the instruction suffix), you MUST
+address it before writing a fresh ledger.  If the user's message approves,
+call `resume_pending_supervisor_tasks()` and continue.  If the user changes
+topic or rejects, call `clear_pending_supervisor_tasks()` and proceed normally.
 """
+
+
+# ---------------------------------------------------------------------------
+# wrap_task_in_review
+# ---------------------------------------------------------------------------
+
+
+def wrap_task_in_review(
+    specialist: LlmAgent,
+    criteria: str | None,
+    result_key: str,
+) -> BaseAgent:
+    """Optionally wrap a task-mode specialist in a Generator-Critic review loop.
+
+    This helper bridges the ``TodoItem`` domain (supervisor-orchestration) to the
+    generic ``build_review_pipeline()`` primitive.  It is a pure transform:
+
+    * Empty / whitespace-only / ``None`` ``criteria`` → returns ``specialist``
+      unchanged (single-pass delegation, no review loop).
+    * Non-empty ``criteria`` → calls ``build_review_pipeline(specialist, criteria,
+      output_key_prefix=result_key)``, renames the resulting ``LoopAgent`` to
+      ``specialist.name`` and sets its ``description`` to ``specialist.description``,
+      then returns the ``LoopAgent``.  This keeps the dispatch identifier stable
+      (ADK's ``transfer_to_agent`` / ``attach_task_subagent`` locates agents by
+      name) whether or not the review loop is active.
+
+    The ``output_key_prefix=result_key`` convention (PRD §7 AC-4) means the
+    worker writes to ``f"{result_key}_draft"`` and the reviewer writes to
+    ``f"{result_key}_feedback"``, matching the session-state layout the
+    coordinator reads when synthesizing results.
+
+    Before calling ``build_review_pipeline``, ``criteria`` is truncated to
+    ``MAX_CRITERIA_CHARS`` (2000 chars) and run through ``sanitise_criteria``
+    to strip Unicode confusables, Bidi override marks, and invisible formatting
+    characters — the same sanitization applied by ``specialist_runtime.py:860``
+    and ``dispatch_handlers.py:101`` to prevent prompt structure injection.
+
+    Callers are responsible for ``attach_task_subagent`` wiring and Weave-span
+    callback attachment — this helper is a construction primitive only (mirrors
+    the separation of ``_build_specialist`` from ``_wire_specialist_span_callbacks``
+    in ``specialist_runtime.py:911-919``).
+
+    Args:
+        specialist: The ``mode='task'`` specialist to wrap.  Must have a string
+            or callable ``instruction`` (requirement inherited from
+            ``build_review_pipeline``).
+        criteria: Acceptance criteria for the review loop.  ``None``, ``""``, or
+            whitespace-only → single-pass (specialist returned unchanged).  A
+            non-empty string is passed verbatim to ``build_review_pipeline``.
+        result_key: Session-state key the coordinator reads for this task's
+            output (e.g. ``"ga_result"``).  Used verbatim as
+            ``output_key_prefix``.  Must satisfy the ``^[a-z][a-z0-9_]{0,63}$``
+            pattern enforced by ``build_review_pipeline``; any ``result_key``
+            accepted by ``_normalize_items`` in ``todo_list_tools.py`` satisfies
+            that pattern.
+
+    Returns:
+        ``specialist`` (unchanged) when criteria is empty/None.
+        A ``LoopAgent`` (with ``name == specialist.name`` and
+        ``description == specialist.description``) when criteria is non-empty.
+
+    Raises:
+        TypeError / ValueError: propagated from ``build_review_pipeline`` on
+            invalid inputs (e.g. ``result_key`` not matching the prefix pattern,
+            sentinel tokens in criteria).
+    """
+    if not criteria or not criteria.strip():
+        return specialist
+
+    from app.adk.agents.utils.criteria_utils import (
+        MAX_CRITERIA_CHARS,
+        sanitise_criteria,
+    )
+    from app.adk.agents.utils.review_pipeline import build_review_pipeline
+
+    if len(criteria) > MAX_CRITERIA_CHARS:
+        criteria = criteria[:MAX_CRITERIA_CHARS]
+    criteria = sanitise_criteria(criteria)
+
+    pipeline = build_review_pipeline(
+        specialist=specialist,
+        acceptance_criteria=criteria,
+        output_key_prefix=result_key,
+    )
+    pipeline.name = specialist.name
+    pipeline.description = specialist.description
+    return pipeline
+
+
+# ---------------------------------------------------------------------------
+# pending_supervisor_state_provider
+# ---------------------------------------------------------------------------
+
+_PROMPT_RESULT_VALUE_MAX_LEN: int = 500
+
+# Sentinel tokens that must not appear in rendered fields — stripping prevents
+# an adversarially-crafted specialist output from injecting a fake
+# "## Pending Supervisor Tasks" block into the coordinator's prompt, which
+# could cause it to execute unapproved spend-changing actions.
+_PENDING_PROMPT_BLOCKED: tuple[str, ...] = (
+    "## Pending Supervisor Tasks",
+    "### Remaining Tasks",
+    "### Completed Results",
+)
+
+
+def _sanitize_prompt_field(s: str, max_len: int = _PROMPT_RESULT_VALUE_MAX_LEN) -> str:
+    """Strip control-token prefixes and truncate for safe prompt rendering.
+
+    Defense-in-depth only, not a complete prompt-injection defense: it strips the
+    specific ``_PENDING_PROMPT_BLOCKED`` headers this block emits, but a specialist
+    output could still contain other authoritative-looking markdown (a different
+    ``#`` heading, ``SYSTEM:`` lines, etc.). Acceptable because the rendered values
+    come from KEN-E's own specialists — an internal trust boundary — not end users.
+    """
+    for token in _PENDING_PROMPT_BLOCKED:
+        s = s.replace(token, "")
+    if len(s) > max_len:
+        s = s[:max_len] + "... [truncated]"
+    return s
+
+
+def pending_supervisor_state_provider(ctx: Any) -> str:
+    """Return a Markdown summary of pending supervisor tasks for the coordinator.
+
+    When ``session.state["pending_supervisor_tasks"]`` is set, returns a
+    ``## Pending Supervisor Tasks (Awaiting Approval)`` block so the coordinator
+    always sees the checkpoint in its prompt and cannot miss it.  When the key is
+    absent, returns ``""`` (no prompt injection).
+
+    Each completed-result value is truncated to
+    ``_PROMPT_RESULT_VALUE_MAX_LEN`` characters with a ``"... [truncated]"``
+    suffix to avoid prompt-bloat while still showing the coordinator the shape
+    of the data it collected.
+
+    Args:
+        ctx: ADK context whose ``.state`` dict is read (or any object whose
+            ``state`` attribute supports ``dict(state)`` / ``.get()``).
+
+    Returns:
+        Empty string when no pending checkpoint exists.
+        Markdown block starting with ``## Pending Supervisor Tasks`` otherwise.
+    """
+    # Single source of truth for the key lives in todo_list_tools (the module
+    # that owns save/resume/clear). Imported lazily to avoid the
+    # tools↔orchestration import cycle (mirrors todo_list_tools' own lazy import
+    # of validate_ledger).
+    from app.adk.tools.todo_list_tools import _PENDING_SUPERVISOR_TASKS_KEY
+
+    # ``ctx.state`` shape varies by ADK context type: a ``ReadonlyContext`` (the
+    # instruction-suffix path this provider runs on) exposes a ``MappingProxyType``
+    # that ``dict()`` casts cleanly, whereas a ``CallbackContext``/``ToolContext``
+    # exposes ADK's ``State`` object, which has ``__getitem__`` but no
+    # ``keys()``/``__iter__`` — ``dict(State)`` raises. Prefer ``to_dict()`` when
+    # present (mirrors ``available_specialists_provider`` in
+    # ``specialist_runtime.py``) so a future ADK release that aligns
+    # ``ReadonlyContext.state`` with ``CallbackContext.state`` cannot silently drop
+    # this spend-gating checkpoint block. A genuinely unreadable context still
+    # degrades to "" — but loudly, since a vanished checkpoint is unsafe here.
+    try:
+        raw_state = ctx.state
+        state: dict[str, Any] = (
+            raw_state.to_dict() if hasattr(raw_state, "to_dict") else dict(raw_state)
+        )
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "pending_supervisor_state_provider could not read ctx.state; "
+            "rendering no checkpoint block this turn",
+            exc_info=True,
+        )
+        return ""
+
+    pending = state.get(_PENDING_SUPERVISOR_TASKS_KEY)
+    if not pending or not isinstance(pending, dict):
+        return ""
+
+    remaining: list[dict[str, Any]] = pending.get("remaining") or []
+    completed_results: dict[str, Any] = pending.get("completed_results") or {}
+    saved_at: str = pending.get("saved_at", "")
+
+    lines: list[str] = [
+        "## Pending Supervisor Tasks (Awaiting Approval)",
+        "",
+    ]
+    if saved_at:
+        lines.append(f"_Saved at: {saved_at}_")
+        lines.append("")
+
+    if remaining:
+        lines.append("### Remaining Tasks")
+        for i, item in enumerate(remaining, start=1):
+            # Sanitize all rendered fields to strip control-token prefixes that
+            # could allow a specialist output to inject a fake pending-tasks block.
+            item_id = _sanitize_prompt_field(str(item.get("item_id", f"item_{i}")), 128)
+            title = _sanitize_prompt_field(str(item.get("text", "(no title)")), 256)
+            assignee = _sanitize_prompt_field(str(item.get("assignee") or "(none)"), 128)
+            depends_on = item.get("depends_on") or []
+            dep_str = f", depends_on: {depends_on}" if depends_on else ""
+            lines.append(f"{i}. `{item_id}` — {title} (assignee: {assignee}{dep_str})")
+        lines.append("")
+
+    if completed_results:
+        lines.append("### Completed Results")
+        for key, value in completed_results.items():
+            safe_key = _sanitize_prompt_field(str(key), 128)
+            safe_val = _sanitize_prompt_field(str(value))
+            lines.append(f"- `{safe_key}`: {safe_val}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -285,18 +774,21 @@ After calling `set_todo_list`, proceed to delegate each ready task (per its
 
 
 def get_supervisor_function_tools() -> list[Any]:
-    """Return the two ledger-management FunctionTool instances.
+    """Return the five ledger-management and approval-checkpoint FunctionTool instances.
 
-    Resolves ``set_todo_list`` and ``update_todo_list`` from the
-    function-tool registry.  The registration side-effect fires when
-    ``app.adk.tools.todo_list_tools`` is imported; ``hierarchy.py`` imports
-    that module at the top level, so the registry is populated before
-    ``build_hierarchy`` calls this function.
+    Resolves ``set_todo_list``, ``update_todo_list``,
+    ``save_pending_supervisor_tasks``, ``resume_pending_supervisor_tasks``,
+    and ``clear_pending_supervisor_tasks`` from the function-tool registry.
+    The registration side-effect fires when ``app.adk.tools.todo_list_tools``
+    is imported; ``hierarchy.py`` imports that module at the top level, so the
+    registry is populated before ``build_hierarchy`` calls this function.
 
     Returns:
-        List of exactly two ``FunctionTool`` objects in the order
-        ``[set_todo_list, update_todo_list]``.  Returns an empty list if
-        either tool is not registered (logs a warning per tool).
+        List of up to five ``FunctionTool`` objects in the order
+        ``[set_todo_list, update_todo_list, save_pending_supervisor_tasks,
+        resume_pending_supervisor_tasks, clear_pending_supervisor_tasks]``.
+        Returns tools that are registered; logs a warning per missing tool.
+        AH-144 added save/resume/clear pending tools.
     """
     import logging
 
@@ -305,7 +797,13 @@ def get_supervisor_function_tools() -> list[Any]:
     _log = logging.getLogger(__name__)
 
     tools: list[Any] = []
-    for name in ("set_todo_list", "update_todo_list"):
+    for name in (
+        "set_todo_list",
+        "update_todo_list",
+        "save_pending_supervisor_tasks",
+        "resume_pending_supervisor_tasks",
+        "clear_pending_supervisor_tasks",
+    ):
         tool = get_function_tool(name)
         if tool is None:
             _log.warning(

@@ -208,8 +208,14 @@ export async function signInAs(
   await page.click('button[type="submit"]');
 
   // Wait until the URL is no longer /sign-in (redirect on successful auth).
+  // 45s (not 20s): the FIRST signInAs of a serial 1-worker e2e run absorbs the
+  // whole backend cold-start (FastAPI + auth emulator + the Neo4j connection
+  // storm, since the e2e stack ships no Neo4j) under the AH-151 parallel-DAG CPU
+  // contention, so the post-login redirect can exceed 20s for whichever spec
+  // runs first. Warm runs still redirect in <8s; this only raises the ceiling
+  // before failing.
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), {
-    timeout: 20_000,
+    timeout: 45_000,
   });
 }
 

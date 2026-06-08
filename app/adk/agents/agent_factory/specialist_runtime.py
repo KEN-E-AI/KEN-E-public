@@ -837,6 +837,22 @@ def _build_specialist(
             _agent_kind="single_pass",
         )
         _wire_specialist_span_callbacks(specialist, _cb, add_weave_span=False)
+        # AH-141: wire the branch-failure sentinel callback onto task-mode
+        # specialists so a failed branch writes the sentinel to result_key
+        # even when the specialist's body raises / returns without writing it.
+        # Chat-mode (mode is None) is a no-op: the callback checks for the
+        # supervisor_ledger in state and does nothing when absent
+        # (single-specialist transfer_to_agent turns are unaffected —
+        # AH-145 regression guard).
+        if mode == "task":
+            from app.adk.agents.orchestration.supervisor import (
+                make_branch_failure_sentinel_after_agent_callback,
+            )
+
+            _sentinel_cb = make_branch_failure_sentinel_after_agent_callback(name)
+            _after = _as_callback_list(specialist.after_agent_callback)
+            _after.append(_sentinel_cb)
+            specialist.after_agent_callback = _after
         return specialist
 
     from app.adk.agents.utils.criteria_utils import (
@@ -930,6 +946,18 @@ def _build_specialist(
         _agent_kind="loop_pipeline",
     )
     _wire_specialist_span_callbacks(pipeline, _cb_loop, add_weave_span=True)
+    # AH-141: same sentinel wiring on the review-pipeline path.  The LoopAgent
+    # wrapper fires its after_agent_callback once per outer dispatch, so the
+    # sentinel check runs at the right granularity.
+    if mode == "task":
+        from app.adk.agents.orchestration.supervisor import (
+            make_branch_failure_sentinel_after_agent_callback,
+        )
+
+        _sentinel_cb_loop = make_branch_failure_sentinel_after_agent_callback(name)
+        _after_loop = _as_callback_list(pipeline.after_agent_callback)
+        _after_loop.append(_sentinel_cb_loop)
+        pipeline.after_agent_callback = _after_loop
 
     return pipeline
 

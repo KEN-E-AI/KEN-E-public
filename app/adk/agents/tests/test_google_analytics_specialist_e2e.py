@@ -1339,6 +1339,404 @@ class TestBackwardCompatRegression:
             f"{[repr(e) for e in error_events]}"
         )
 
+    # --- supervisor-guard tests (AH-145) ------------------------------------
+
+    @pytest.mark.parametrize(
+        "query_name,query_text,category",
+        _LEGACY_GA_QUERY_PATTERNS,
+        ids=[p[0] for p in _LEGACY_GA_QUERY_PATTERNS],
+    )
+    @pytest.mark.asyncio
+    async def test_legacy_ga_query_does_not_activate_supervisor_machinery(
+        self,
+        query_name: str,
+        query_text: str,
+        category: str,  # corpus metadata; not used in the test body
+    ) -> None:
+        """AH-145 AC #2 (stub layer): a single-specialist GA query dispatched
+        via ``transfer_to_agent`` leaves supervisor machinery inert.
+
+        The root carries the production supervisor function tools
+        (``set_todo_list``, ``update_todo_list``) and the real
+        ``SUPERVISOR_INSTRUCTION_FRAGMENT``, but because the stub LLM emits
+        ``transfer_to_agent`` unconditionally no ledger call fires and
+        ``session.state["todo_lists"]`` is never written with a
+        ``"supervisor_ledger"`` entry.
+
+        Assertions:
+        (a) ≥1 event carries ``transfer_to_agent(agent_name="google_analytics_specialist")``.
+        (b) No event has ``function_call.name`` in ``{"set_todo_list", "update_todo_list"}``.
+        (c) ``session.state["todo_lists"]`` does not contain key ``"supervisor_ledger"``.
+        (d) ``set_todo_list`` and ``update_todo_list`` are present in ``root.tools``
+            (proves the tools are wired but were not invoked).
+        (e) No event has ``error_code`` set.
+        """
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+
+        import app.adk.tools.todo_list_tools  # noqa: F401  # registration side effect
+        from app.adk.agents.orchestration.supervisor import (
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+            get_supervisor_function_tools,
+        )
+        from app.adk.tools.registry.function_tool_registry import (
+            restore_function_tool_registry,
+            snapshot_function_tool_registry,
+        )
+
+        # Snapshot the function-tool registry so this test is isolated from any
+        # other test (e.g. test_specialist_runtime) that calls
+        # clear_function_tool_registry(). The import above ensures registration;
+        # the snapshot/restore preserves that registration across test teardown.
+        _reg_snapshot = snapshot_function_tool_registry()
+        try:
+            specialist_agent = _make_ga_specialist_agent()
+            ga_config = _make_ga_config()
+            supervisor_tools = get_supervisor_function_tools()
+
+            # Use a callable instruction so ADK sets bypass_state_injection=True and
+            # does NOT run inject_session_state on it. SUPERVISOR_INSTRUCTION_FRAGMENT
+            # contains {ga_result} / {meta_result} in its worked-example code block;
+            # a static-string instruction would cause ADK to raise KeyError when those
+            # state keys are absent. The callable form bypasses that substitution path
+            # while still exercising the real fragment text at runtime.
+            def _stub_root_instruction(_ctx: Any) -> str:
+                return (
+                    "Route queries to the appropriate specialist.\n\n"
+                    + SUPERVISOR_INSTRUCTION_FRAGMENT
+                )
+
+            root = LlmAgent(
+                name="root_agent",
+                model=_TransferToGaSpecialistStubLlm(),
+                instruction=_stub_root_instruction,
+                tools=supervisor_tools,
+                before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+            )
+            root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+
+            app_name = f"supervisor_guard_stub_{query_name}"
+            session_service = InMemorySessionService()
+            session = await session_service.create_session(
+                app_name=app_name,
+                user_id="user_supervisor_guard",
+                state={
+                    "account_id": "acct_supervisor_guard",
+                },
+            )
+            runner = Runner(
+                agent=root,
+                app_name=app_name,
+                session_service=session_service,
+            )
+
+            events: list[Any] = []
+            with (
+                patch.object(
+                    attacher,
+                    "list_account_agent_configs_cached",
+                    return_value=["google_analytics_specialist"],
+                ),
+                patch.object(attacher, "resolve_config", return_value=ga_config),
+                patch.object(attacher, "resolve_agent", return_value=specialist_agent),
+            ):
+                async for event in runner.run_async(
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    new_message=genai_types.Content(
+                        role="user",
+                        parts=[Part.from_text(text=query_text)],
+                    ),
+                ):
+                    events.append(event)
+
+            # Re-fetch to get the post-run state snapshot (established pattern in
+            # this file — InMemorySessionService updates in-place, but re-fetching
+            # is the defensive convention at lines 2112, 2364, 2867).
+            final_session = await session_service.get_session(
+                app_name=app_name,
+                user_id=session.user_id,
+                session_id=session.id,
+            )
+            final_state: dict[str, Any] = dict(final_session.state) if final_session else {}
+
+        finally:
+            restore_function_tool_registry(_reg_snapshot)
+
+        # (a) Root must emit transfer_to_agent(agent_name="google_analytics_specialist").
+        transfer_events = [
+            e
+            for e in events
+            if e.content
+            and e.content.parts
+            and any(
+                p.function_call
+                and p.function_call.name == "transfer_to_agent"
+                and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+                for p in e.content.parts
+            )
+        ]
+        assert transfer_events, (
+            f"[{query_name}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+            f"event found. Events: {[repr(e) for e in events]}"
+        )
+
+        # (b) No supervisor ledger tool calls must fire.
+        supervisor_call_events = [
+            e
+            for e in events
+            if e.content
+            and e.content.parts
+            and any(
+                p.function_call
+                and p.function_call.name in {"set_todo_list", "update_todo_list"}
+                for p in e.content.parts
+            )
+        ]
+        assert not supervisor_call_events, (
+            f"[{query_name}] Unexpected supervisor tool calls in event stream — "
+            f"supervisor machinery activated for a single-specialist query: "
+            f"{[repr(e) for e in supervisor_call_events]}"
+        )
+
+        # (c) No supervisor_ledger key written to session state.
+        todo_lists: dict[str, Any] = final_state.get("todo_lists") or {}
+        assert "supervisor_ledger" not in todo_lists, (
+            f"[{query_name}] 'supervisor_ledger' key found in session state — "
+            f"supervisor machinery was activated unexpectedly. "
+            f"todo_lists={todo_lists!r}"
+        )
+
+        # (d) Supervisor tools present in root.tools (wired but inert).
+        root_tool_names = {t.name for t in root.tools if hasattr(t, "name")}
+        assert "set_todo_list" in root_tool_names, (
+            f"[{query_name}] 'set_todo_list' missing from root.tools; "
+            f"root tool names: {sorted(root_tool_names)}"
+        )
+        assert "update_todo_list" in root_tool_names, (
+            f"[{query_name}] 'update_todo_list' missing from root.tools; "
+            f"root tool names: {sorted(root_tool_names)}"
+        )
+
+        # (e) No event has error_code set.
+        error_events = [e for e in events if getattr(e, "error_code", None)]
+        assert not error_events, (
+            f"[{query_name}] Unexpected error events: {[repr(e) for e in error_events]}"
+        )
+
+    @pytest.mark.parametrize(
+        "query_name,query_text,category",
+        _LEGACY_GA_QUERY_PATTERNS,
+        ids=[p[0] for p in _LEGACY_GA_QUERY_PATTERNS],
+    )
+    @pytest.mark.llm
+    @pytest.mark.skipif(
+        not _GEMINI_CREDS_AVAILABLE,
+        reason=(
+            "Live Gemini credentials not configured — set GOOGLE_API_KEY "
+            "or GOOGLE_CLOUD_PROJECT"
+        ),
+    )
+    @pytest.mark.asyncio
+    async def test_legacy_ga_query_root_picks_transfer_to_agent_against_live_gemini(
+        self,
+        query_name: str,
+        query_text: str,
+        category: str,  # corpus metadata; not used in the test body
+    ) -> None:
+        """AH-145 AC #2 (live layer): the live Gemini root carrying the real
+        ``SUPERVISOR_INSTRUCTION_FRAGMENT`` picks ``transfer_to_agent`` for
+        each legacy GA query without decomposing it into a supervisor ledger.
+
+        Decision D-2: one trial per query (mirrors
+        ``test_legacy_ga_query_routes_against_live_gemini`` — one trial is
+        sufficient for a routing regression smoke; 3-trial parametrization is
+        reserved for code-execution output stability, not routing decisions).
+
+        Decision D-5: hand-compose the root instruction from a routing preamble
+        + a hard-coded Available Specialists block describing exactly
+        ``google_analytics_specialist`` + ``SUPERVISOR_INSTRUCTION_FRAGMENT``,
+        rather than driving the full ``_compose_root_instruction_suffix``
+        closure (which needs a ``CallbackContext``). The fragment itself is
+        imported at runtime so any text change exercises the live rule directly.
+
+        Assertions:
+        (a) ≥1 event carries ``transfer_to_agent(agent_name="google_analytics_specialist")``.
+        (b) No event has ``function_call.name`` in ``{"set_todo_list", "update_todo_list"}``.
+        (c) ``session.state["todo_lists"]`` does not contain key ``"supervisor_ledger"``.
+        """
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+
+        import app.adk.tools.todo_list_tools  # noqa: F401  # registration side effect
+        from app.adk.agents.orchestration.supervisor import (
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+            get_supervisor_function_tools,
+        )
+        from app.adk.tools.registry.function_tool_registry import (
+            restore_function_tool_registry,
+            snapshot_function_tool_registry,
+        )
+
+        # Hand-compose the root instruction (D-5).
+        # The Available Specialists block uses the pre-AH-84 format (no human_name
+        # or title set) — byte-identical to what assemble_available_specialists_block
+        # emits for this specialist alone when those fields are absent.
+        # The description text follows the production GA specialist seed
+        # (migrate_ga_specialist_to_firestore.py). Note the slight wording
+        # difference from the production migration script: "Performs accurate
+        # numerical analysis... using Gemini code execution" vs. the current
+        # migration script text "Delegates arithmetic... to the numerical_analyst
+        # sub-agent". Decision D-5 documents this is intentional — the
+        # pre-AH-84 format is used and the routing regression guard does not
+        # depend on exact description wording.
+        _GA_DESCRIPTION = (
+            "Google Analytics 4 specialist. Use for any query about website or app"
+            " traffic: sessions, users, pageviews, bounce rate, engagement, traffic"
+            " sources, conversion events, real-time data, or custom GA4 reports."
+            " Performs accurate numerical analysis (percentages, trends, averages)"
+            " using Gemini code execution."
+        )
+        root_instruction = (
+            "You are a routing agent. Dispatch user queries to the appropriate "
+            "specialist using transfer_to_agent.\n\n"
+            "## Available Specialists\n\n"
+            f"- **google_analytics_specialist**: {_GA_DESCRIPTION}\n\n"
+            + SUPERVISOR_INSTRUCTION_FRAGMENT
+        )
+
+        # Snapshot the function-tool registry for the same isolation reason as
+        # the stub-layer test above.
+        _reg_snapshot = snapshot_function_tool_registry()
+        try:
+            specialist_agent = _make_ga_specialist_agent()
+            ga_config = _make_ga_config()
+            supervisor_tools = get_supervisor_function_tools()
+
+            # Capture root_instruction in a closure so ADK sets bypass_state_injection=True
+            # (same reason as the stub-layer test above).
+            _captured_instruction = root_instruction
+
+            def _live_root_instruction(_ctx: Any) -> str:
+                return _captured_instruction
+
+            root = LlmAgent(
+                name="root_agent",
+                model="gemini-2.0-flash",
+                instruction=_live_root_instruction,
+                tools=supervisor_tools,
+                before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+            )
+            root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+
+            app_name = f"supervisor_guard_live_{query_name}"
+            session_service = InMemorySessionService()
+            session = await session_service.create_session(
+                app_name=app_name,
+                user_id="user_supervisor_guard_live",
+                state={
+                    "account_id": "acct_supervisor_guard_live",
+                },
+            )
+            runner = Runner(
+                agent=root,
+                app_name=app_name,
+                session_service=session_service,
+            )
+
+            events: list[Any] = []
+            with (
+                patch.object(
+                    attacher,
+                    "list_account_agent_configs_cached",
+                    return_value=["google_analytics_specialist"],
+                ),
+                patch.object(attacher, "resolve_config", return_value=ga_config),
+                patch.object(attacher, "resolve_agent", return_value=specialist_agent),
+            ):
+                try:
+                    async for event in runner.run_async(
+                        user_id=session.user_id,
+                        session_id=session.id,
+                        new_message=genai_types.Content(
+                            role="user",
+                            parts=[Part.from_text(text=query_text)],
+                        ),
+                    ):
+                        events.append(event)
+                except ClientError as exc:
+                    if exc.code == 403:
+                        pytest.skip(
+                            f"Gemini credentials lack required permission (HTTP 403). "
+                            f"To run this test grant ``roles/aiplatform.user`` to the "
+                            f"service account, or set GOOGLE_API_KEY for the Google AI "
+                            f"API path. Original error: {exc!s:.160}"
+                        )
+                    if exc.code == 404:
+                        pytest.skip(
+                            f"Model 'gemini-2.0-flash' is not available in this Vertex "
+                            f"project/region (HTTP 404). Run where it is enabled "
+                            f"or update the pinned model. Original error: {exc!s:.160}"
+                        )
+                    raise
+
+            # Re-fetch to get the post-run state snapshot (established pattern).
+            final_session = await session_service.get_session(
+                app_name=app_name,
+                user_id=session.user_id,
+                session_id=session.id,
+            )
+            final_state: dict[str, Any] = dict(final_session.state) if final_session else {}
+
+        finally:
+            restore_function_tool_registry(_reg_snapshot)
+
+        # (a) Root must emit transfer_to_agent(agent_name="google_analytics_specialist").
+        transfer_events = [
+            e
+            for e in events
+            if e.content
+            and e.content.parts
+            and any(
+                p.function_call
+                and p.function_call.name == "transfer_to_agent"
+                and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+                for p in e.content.parts
+            )
+        ]
+        assert transfer_events, (
+            f"[{query_name}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+            f"event found — live Gemini root may have used supervisor machinery "
+            f"instead of the direct dispatch path. "
+            f"Events: {[repr(e) for e in events]}"
+        )
+
+        # (b) No supervisor ledger tool calls must fire.
+        supervisor_call_events = [
+            e
+            for e in events
+            if e.content
+            and e.content.parts
+            and any(
+                p.function_call
+                and p.function_call.name in {"set_todo_list", "update_todo_list"}
+                for p in e.content.parts
+            )
+        ]
+        assert not supervisor_call_events, (
+            f"[{query_name}] Live Gemini root called supervisor tools — "
+            f"set_todo_list / update_todo_list invoked for a single-specialist query. "
+            f"Events: {[repr(e) for e in supervisor_call_events]}"
+        )
+
+        # (c) No supervisor_ledger key written to session state.
+        todo_lists: dict[str, Any] = final_state.get("todo_lists") or {}
+        assert "supervisor_ledger" not in todo_lists, (
+            f"[{query_name}] 'supervisor_ledger' key found in session state — "
+            f"supervisor machinery was activated for a single-specialist query. "
+            f"todo_lists={todo_lists!r}"
+        )
+
 
 # AH-31: Review-loop integration — config-driven via default_acceptance_criteria
 # ---------------------------------------------------------------------------

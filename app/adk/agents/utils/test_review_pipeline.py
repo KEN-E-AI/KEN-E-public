@@ -587,7 +587,9 @@ class TestModelFieldsSnapshot:
     # Pinned for google-adk 2.0.0 (bumped from 1.27.5 in AH-105 / AH-PRD-13).
     # New fields added in 2.0: mode, parallel_worker, rerun_on_resume,
     # retry_config, state_schema, timeout, wait_for_output.
-    # All auto-propagate to the worker (no exclusion/override/drop needed).
+    # ``mode`` is in _DROPPED_WORKER_FIELDS (AH-142) — a mode='task' worker
+    # would get FinishTaskTool injected and could exit before the reviewer runs.
+    # All other 2.0 fields auto-propagate to the worker.
     _EXPECTED_LLM_AGENT_FIELDS = frozenset(
         {
             "after_agent_callback",
@@ -1334,6 +1336,57 @@ class TestStateIsolationBehavioral:
         assert state["ga_review_feedback"] == ""
         # No cross-pollution: each prefix's draft is independent
         assert state["news_review_draft"] != state["ga_review_draft"]
+
+
+# ── task-mode worker safety (AH-142) ─────────────────────────────────────────
+
+
+class TestTaskModeWorker:
+    """Worker must NOT inherit mode='task' from the specialist (AH-142).
+
+    A mode='task' worker has FinishTaskTool injected by LlmAgent.model_post_init
+    and could call finish_task mid-loop, terminating the task before the reviewer
+    evaluates the draft.  Dropping ``mode`` in ``_DROPPED_WORKER_FIELDS`` keeps
+    the worker at mode=None so exit is only via exit_loop or max_iterations.
+    """
+
+    def test_task_mode_worker_has_mode_none(self):
+        """mode='task' specialist → worker constructed with mode=None."""
+        specialist = LlmAgent(
+            name="task_mode_spec",
+            model="gemini-2.5-pro",
+            instruction="You are helpful.",
+            mode="task",
+        )
+        pipeline = build_review_pipeline(specialist, "Be specific.", output_key_prefix="t")
+        worker, _ = pipeline.sub_agents
+        assert worker.mode is None
+
+    def test_task_mode_worker_has_no_finish_task_tool(self):
+        """Worker derived from a mode='task' specialist has no FinishTaskTool."""
+        specialist = LlmAgent(
+            name="task_mode_spec2",
+            model="gemini-2.5-pro",
+            instruction="You are helpful.",
+            mode="task",
+        )
+        pipeline = build_review_pipeline(specialist, "Be specific.", output_key_prefix="t2")
+        worker, _ = pipeline.sub_agents
+        tool_names = {
+            getattr(t, "name", getattr(t, "__name__", None)) for t in (worker.tools or [])
+        }
+        assert "finish_task" not in tool_names
+
+    def test_non_task_mode_specialist_worker_also_has_mode_none(self):
+        """A default-mode specialist also produces a worker with mode=None (unchanged)."""
+        specialist = LlmAgent(
+            name="default_mode_spec",
+            model="gemini-2.5-pro",
+            instruction="You are helpful.",
+        )
+        pipeline = build_review_pipeline(specialist, "Be specific.", output_key_prefix="d")
+        worker, _ = pipeline.sub_agents
+        assert worker.mode is None
 
 
 # ── §5.2 detection idiom ─────────────────────────────────────────────────────
@@ -2247,3 +2300,154 @@ async def test_live_worker_omits_reviewer_appeasement_for_direct_metric(
     assert "acceptance criteria" not in lowered, (
         f"[trial {trial}] draft references the acceptance criteria: {draft!r}"
     )
+
+
+# ── Wrapped task-mode iteration (AH-142) ─────────────────────────────────────
+
+
+class TestWrappedTaskModeIteration:
+    """Stub-LLM-through-real-Runner integration for wrapped mode='task' pipelines.
+
+    Verifies end-to-end that:
+    - A mode='task' specialist wrapped via wrap_task_in_review iterates correctly.
+    - The worker never calls finish_task (mode dropped → no FinishTaskTool).
+    - extract_pipeline_result returns approved=True after exit_loop on iteration 2.
+    """
+
+    @pytest.fixture(autouse=True)
+    def clear_queue(self):
+        _fake_response_queue.clear()
+        yield
+        _fake_response_queue.clear()
+
+    def _make_task_specialist(self, name: str) -> LlmAgent:
+        return LlmAgent(
+            name=name,
+            model="fake-behavioral-worker",
+            instruction="You are helpful.",
+            mode="task",
+        )
+
+    def test_wrapped_task_mode_iterates_to_approval(self):
+        """mode='task' specialist wrapped via wrap_task_in_review iterates correctly.
+
+        Two-step validation:
+          1. Structural: wrap_task_in_review produces a LoopAgent with the expected
+             name, worker output_key, and reviewer output_key.
+          2. Behavioral: a pipeline built with the same criteria + result_key using
+             the fake LLM (required for headless testing — wrap_task_in_review uses
+             DEFAULT_REVIEWER_MODEL which is not the fake model) iterates through two
+             cycles and exits on approval. The state-key parity assertion between
+             the two pipelines proves the behavioral pipeline exercises the same
+             session-state contract as the wrap_task_in_review result.
+
+        Response sequence:
+          worker iter 1  → "vague answer"        (reviewer rejects)
+          reviewer iter 1 → feedback "needs specifics"
+          worker iter 2  → "specific answer"     (reviewer approves)
+          reviewer iter 2 → exit_loop            (feedback cleared to "")
+        """
+        from app.adk.agents.orchestration.supervisor import wrap_task_in_review
+
+        specialist = self._make_task_specialist("task_wrap_spec")
+
+        # Step 1 — structural contract from wrap_task_in_review.
+        pipeline = wrap_task_in_review(
+            specialist=specialist,
+            criteria="Be specific.",
+            result_key="ga_result",
+        )
+        assert isinstance(pipeline, LoopAgent)
+        assert pipeline.name == "task_wrap_spec"
+        assert pipeline.sub_agents[0].output_key == "ga_result_draft"
+        assert pipeline.sub_agents[1].output_key == "ga_result_feedback"
+
+        # Step 2 — behavioral iteration via a pipeline with the fake reviewer model.
+        # wrap_task_in_review defaults to DEFAULT_REVIEWER_MODEL; the fake LLM
+        # only handles "fake-behavioral-*" patterns. We build an equivalent pipeline
+        # with the override, then assert state-key parity to prove the behavioral
+        # pipeline exercises the same session-state contract.
+        pipeline_for_run = build_review_pipeline(
+            specialist,
+            "Be specific.",
+            output_key_prefix="ga_result",
+            reviewer_model="fake-behavioral-reviewer",
+        )
+        assert pipeline_for_run.sub_agents[0].output_key == pipeline.sub_agents[0].output_key
+        assert pipeline_for_run.sub_agents[1].output_key == pipeline.sub_agents[1].output_key
+
+        _fake_response_queue.extend(
+            [
+                # worker iter 1
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model", parts=[genai_types.Part(text="vague answer")]
+                    )
+                ),
+                # reviewer iter 1 — reject
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text="needs specifics")],
+                    )
+                ),
+                # worker iter 2
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text="specific answer")],
+                    )
+                ),
+                # reviewer iter 2 — approve
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[
+                            genai_types.Part(
+                                function_call=genai_types.FunctionCall(
+                                    name="exit_loop", args={}
+                                )
+                            )
+                        ],
+                    )
+                ),
+            ]
+        )
+
+        state = _run(_run_pipeline(pipeline_for_run))
+
+        result = extract_pipeline_result(state, "ga_result")
+        assert result["approved"] is True
+        assert result["result"] == "specific answer"
+        assert state["ga_result_draft"] == "specific answer"
+        assert state["ga_result_feedback"] == ""
+
+    def test_wrapped_task_mode_worker_has_no_finish_task(self):
+        """wrap_task_in_review → worker has no FinishTaskTool."""
+        from app.adk.agents.orchestration.supervisor import wrap_task_in_review
+
+        specialist = self._make_task_specialist("no_finish_task_spec")
+        pipeline = wrap_task_in_review(specialist, "Be concise.", "t_result")
+
+        assert isinstance(pipeline, LoopAgent)
+        worker = pipeline.sub_agents[0]
+        tool_names = {
+            getattr(t, "name", getattr(t, "__name__", None)) for t in (worker.tools or [])
+        }
+        assert "finish_task" not in tool_names
+
+    def test_empty_criteria_returns_specialist_unchanged(self):
+        """wrap_task_in_review with empty criteria → specialist returned as-is."""
+        from app.adk.agents.orchestration.supervisor import wrap_task_in_review
+
+        specialist = self._make_task_specialist("passthrough_spec")
+        result = wrap_task_in_review(specialist, "", "some_result")
+        assert result is specialist
+
+    def test_none_criteria_returns_specialist_unchanged(self):
+        """wrap_task_in_review with None criteria → specialist returned as-is."""
+        from app.adk.agents.orchestration.supervisor import wrap_task_in_review
+
+        specialist = self._make_task_specialist("passthrough_spec2")
+        result = wrap_task_in_review(specialist, None, "some_result")
+        assert result is specialist

@@ -906,6 +906,240 @@ class TestNormalizeItemsSecurityBounds:
 
 
 # ---------------------------------------------------------------------------
+# TestPendingSupervisorTasks — AH-144
+# ---------------------------------------------------------------------------
+
+
+class TestPendingSupervisorTasks:
+    """Covers AH-144 §7 AC-7 unit-test clauses:
+
+    - save writes the exact shape
+    - resume returns the saved structure and clears the state key
+    - clear is idempotent
+    - non-dict completed_results rejected
+    - an invalid remaining list returns the _normalize_items error string
+    - set_todo_list after save does NOT clobber pending_supervisor_tasks
+    - save → clear → save cycle leaves only the latest state visible
+    - resume when no pending state returns error string
+    """
+
+    def _tools(self) -> tuple[Any, Any, Any]:
+        from app.adk.tools.todo_list_tools import (
+            clear_pending_supervisor_tasks,
+            resume_pending_supervisor_tasks,
+            save_pending_supervisor_tasks,
+        )
+
+        return save_pending_supervisor_tasks, resume_pending_supervisor_tasks, clear_pending_supervisor_tasks
+
+    def _sample_remaining(self) -> list[dict]:
+        return [
+            {
+                "item_id": "budget_update",
+                "text": "Apply approved budget increases",
+                "assignee": "meta_ads_specialist",
+                "query": "apply changes",
+                "criteria": "requires_approval; budgets updated",
+                "depends_on": ["synthesis"],
+                "result_key": "budget_update_result",
+            }
+        ]
+
+    def _sample_completed(self) -> dict:
+        return {"ga_result": "data", "synthesis_result": "recommendations"}
+
+    def test_save_writes_exact_shape(self) -> None:
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        result = _run(save(ctx, self._sample_remaining(), self._sample_completed()))
+        assert result == "OK: pending supervisor tasks saved."
+        pending = ctx.state["pending_supervisor_tasks"]
+        assert isinstance(pending, dict)
+        assert "remaining" in pending
+        assert "completed_results" in pending
+        assert "saved_at" in pending
+        # remaining is normalized (has all TodoItem fields)
+        assert len(pending["remaining"]) == 1
+        item = pending["remaining"][0]
+        assert item["item_id"] == "budget_update"
+        assert item["text"] == "Apply approved budget increases"
+        assert "completed" in item  # normalized fields
+        assert pending["completed_results"] == self._sample_completed()
+        assert "T" in pending["saved_at"]  # ISO-8601
+
+    def test_resume_returns_saved_structure_and_clears_key(self) -> None:
+        import json
+
+        save, resume, _ = self._tools()
+        ctx = _fake_ctx()
+        _run(save(ctx, self._sample_remaining(), self._sample_completed()))
+        result = _run(resume(ctx))
+        # Returns JSON string
+        parsed = json.loads(result)
+        assert "remaining" in parsed
+        assert "completed_results" in parsed
+        assert parsed["completed_results"] == self._sample_completed()
+        # Key is cleared after resume (single-shot)
+        assert ctx.state.get("pending_supervisor_tasks") is None
+
+    def test_clear_is_idempotent(self) -> None:
+        save, _, clear = self._tools()
+        ctx = _fake_ctx()
+        _run(save(ctx, self._sample_remaining(), self._sample_completed()))
+        result1 = _run(clear(ctx))
+        assert result1 == "OK: pending supervisor tasks cleared."
+        assert ctx.state.get("pending_supervisor_tasks") is None
+        # Second clear on already-absent key succeeds silently
+        result2 = _run(clear(ctx))
+        assert result2 == "OK: pending supervisor tasks cleared."
+
+    def test_resume_and_clear_against_real_adk_state(self) -> None:
+        """Regression: resume/clear must work against the real ADK ``State``.
+
+        ADK 2.0's ``google.adk.sessions.state.State`` (what ``ToolContext.state``
+        returns in production) implements ``__setitem__``/``get`` but NOT
+        ``__delitem__`` or ``pop`` — so the original ``del``/``.pop()`` raised
+        ``AttributeError`` on the resume path while CI stayed green, because the
+        ``_fake_ctx`` ``.state`` is a plain dict that *does* support them (T-5:
+        the dict fake hid the incompatibility). Drive the tools through a real
+        ``State`` so the round-trip is exercised the way production runs it.
+        """
+        import json
+
+        from google.adk.sessions.state import State
+
+        save, resume, clear = self._tools()
+        ctx = SimpleNamespace(state=State({}, {}))
+
+        assert _run(
+            save(ctx, self._sample_remaining(), self._sample_completed())
+        ) == "OK: pending supervisor tasks saved."
+        assert isinstance(ctx.state.get("pending_supervisor_tasks"), dict)
+
+        # resume returns the saved structure and clears via the None sentinel
+        # (would have raised AttributeError on `del` before the fix).
+        parsed = json.loads(_run(resume(ctx)))
+        assert parsed["completed_results"] == self._sample_completed()
+        assert ctx.state.get("pending_supervisor_tasks") is None
+
+        # A second resume with no live checkpoint returns the error string.
+        assert _run(resume(ctx)) == "ERROR: no pending supervisor tasks to resume."
+
+        # clear is idempotent against real State (would have raised on `.pop`).
+        _run(save(ctx, self._sample_remaining(), self._sample_completed()))
+        assert _run(clear(ctx)) == "OK: pending supervisor tasks cleared."
+        assert ctx.state.get("pending_supervisor_tasks") is None
+        assert _run(clear(ctx)) == "OK: pending supervisor tasks cleared."
+
+    def test_non_dict_completed_results_rejected(self) -> None:
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        result = _run(save(ctx, self._sample_remaining(), "not a dict"))  # type: ignore[arg-type]
+        assert result.startswith("ERROR:")
+        assert "completed_results" in result
+        assert ctx.state.get("pending_supervisor_tasks") is None
+
+    def test_invalid_remaining_propagates_normalize_error(self) -> None:
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        # Missing 'text' field — _normalize_items will reject it
+        bad_remaining = [{"item_id": "x"}]
+        result = _run(save(ctx, bad_remaining, {}))
+        assert result.startswith("ERROR:")
+        assert "text" in result
+        assert ctx.state.get("pending_supervisor_tasks") is None
+
+    def test_save_bounds_oversized_non_string_values(self) -> None:
+        """Large non-string values are bounded by serialized size, not just strings."""
+        from app.adk.tools.todo_list_tools import _MAX_COMPLETED_RESULT_VALUE_LEN
+
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        # A nested list whose JSON serialization far exceeds the per-entry cap —
+        # this escaped the old str-only truncation entirely.
+        oversized = {"big": ["x" * 1000 for _ in range(200)]}
+        _run(save(ctx, self._sample_remaining(), oversized))
+        stored = ctx.state["pending_supervisor_tasks"]["completed_results"]["big"]
+        assert isinstance(stored, str)
+        assert stored.endswith("... [truncated]")
+        assert len(stored) <= _MAX_COMPLETED_RESULT_VALUE_LEN + len("... [truncated]")
+
+    def test_save_keeps_small_structured_values_intact(self) -> None:
+        """A small nested structure stays a structure (only oversized ones stringify)."""
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        small = {"nested": {"a": [1, 2, 3], "b": "ok"}}
+        _run(save(ctx, self._sample_remaining(), small))
+        stored = ctx.state["pending_supervisor_tasks"]["completed_results"]["nested"]
+        assert stored == {"a": [1, 2, 3], "b": "ok"}
+
+    def test_set_todo_list_does_not_clobber_pending_supervisor_tasks(self) -> None:
+        """set_todo_list writes to todo_lists; pending_supervisor_tasks is independent."""
+        set_todo_list, _ = _get_tools()
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        _run(save(ctx, self._sample_remaining(), self._sample_completed()))
+        _run(
+            set_todo_list(
+                ctx,
+                list_id="supervisor_ledger",
+                title="A new ledger",
+                items=[{"text": "some task"}],
+            )
+        )
+        # Pending checkpoint survives
+        assert ctx.state.get("pending_supervisor_tasks") is not None
+        # But todo_lists was also written
+        assert "supervisor_ledger" in ctx.state.get("todo_lists", {})
+
+    def test_save_clear_save_cycle_leaves_only_latest(self) -> None:
+        save, _, clear = self._tools()
+        ctx = _fake_ctx()
+        first_remaining = [{"item_id": "task1", "text": "First task", "depends_on": []}]
+        second_remaining = [{"item_id": "task2", "text": "Second task", "depends_on": []}]
+
+        _run(save(ctx, first_remaining, {"first": "result"}))
+        _run(clear(ctx))
+        assert ctx.state.get("pending_supervisor_tasks") is None
+        _run(save(ctx, second_remaining, {"second": "result2"}))
+        pending = ctx.state["pending_supervisor_tasks"]
+        assert pending["remaining"][0]["item_id"] == "task2"
+        assert pending["completed_results"] == {"second": "result2"}
+
+    def test_resume_when_no_pending_returns_error(self) -> None:
+        _, resume, _ = self._tools()
+        ctx = _fake_ctx()
+        result = _run(resume(ctx))
+        assert result.startswith("ERROR:")
+        assert "no pending supervisor tasks" in result.lower()
+
+    def test_save_remaining_normalized_includes_supervisor_fields(self) -> None:
+        """Saved remaining items include all normalized TodoItem fields."""
+        save, _, _ = self._tools()
+        ctx = _fake_ctx()
+        _run(save(ctx, self._sample_remaining(), {}))
+        item = ctx.state["pending_supervisor_tasks"]["remaining"][0]
+        assert item["assignee"] == "meta_ads_specialist"
+        assert item["criteria"] == "requires_approval; budgets updated"
+        assert item["result_key"] == "budget_update_result"
+
+    def test_registry_wiring_for_three_new_tools(self) -> None:
+        """All three new tools are retrievable from the function-tool registry."""
+        from google.adk.tools.function_tool import FunctionTool
+
+        from app.adk.tools.registry.function_tool_registry import get_function_tool
+
+        for name in (
+            "save_pending_supervisor_tasks",
+            "resume_pending_supervisor_tasks",
+            "clear_pending_supervisor_tasks",
+        ):
+            tool = get_function_tool(name)
+            assert isinstance(tool, FunctionTool), f"{name!r} not in registry"
+            assert tool.name == name
+
+
+# ---------------------------------------------------------------------------
 # TestRegistryWiring — AC-5
 # ---------------------------------------------------------------------------
 

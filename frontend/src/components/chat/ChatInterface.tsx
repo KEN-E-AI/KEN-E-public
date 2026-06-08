@@ -379,22 +379,27 @@ export function ChatInterface({
           liveThoughtsRef.current = collectedThoughts;
           setLiveThoughts(collectedThoughts);
         } else if (event.type === "artifacts") {
+          // Attach artifacts to the last assistant bubble. The artifacts event
+          // arrives once per turn just before [DONE]. AH-143: use targetId
+          // fallback so supervisor turns (where currentAssistantId may be null
+          // when the event fires) still attach to the correct bubble.
           if (event.artifacts.length > 0) {
+            const targetId = currentAssistantId ?? assistantId;
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === currentAssistantId
+                m.id === targetId
                   ? {
                       ...m,
                       chartArtifacts: [
                         ...(m.chartArtifacts ?? []),
-                        ...event.artifacts,
+                        ...(event.artifacts as Artifact[]),
                       ],
                     }
                   : m,
               ),
             );
           }
-        } else if (event.type === "text") {
+        } else {
           const incomingAuthor = event.author ?? "model";
           if (!authorBubbleMap.has(incomingAuthor)) {
             // First time seeing this author in the turn.

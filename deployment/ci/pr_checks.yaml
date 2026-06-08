@@ -211,6 +211,13 @@ steps:
   # agent.{name} registry + ctx.run_node concurrency contract. AH-98 shipped
   # without CI coverage of this directory; AH-119 closes the gap and makes
   # the parallel-search AC #9 merge gate CI-enforced.
+  # AH-PRD-05 Wave-2: the supervisor-orchestration tests (orchestration/tests/,
+  # tools/tests/, tools/function_tools/, test_agent_tool_billing.py,
+  # test_supervisor_e2e_artifacts.py) were added without CI coverage; the paths
+  # below close that gap so the new regression guards actually run. The e2e
+  # artifact test is @pytest.mark.llm but uses deterministic fakes (no creds /
+  # no network), so it runs in the credential-less CI image like the GA e2e
+  # files already listed here.
   # -m "not slow": deselects @pytest.mark.slow tests (e.g. test_mcp_pool_stress.py
   # p95-latency assertion) on PRs — concurrent api steps on a shared 8-vCPU machine
   # can inflate latencies and cause false-positive failures (AH-151 D6 / AH-150).
@@ -224,6 +231,7 @@ steps:
         set -euo pipefail
         uv run --no-sync pytest \
           app/adk/agents/agent_factory/tests/ \
+          app/adk/agents/orchestration/tests/ \
           app/adk/agents/utils/ \
           app/adk/agents/models/ \
           app/adk/agents/tests/test_chat_callbacks.py \
@@ -231,10 +239,14 @@ steps:
           app/adk/agents/tests/test_ga_oauth_reauth_callback.py \
           app/adk/agents/tests/test_google_analytics_specialist_e2e.py \
           app/adk/agents/tests/test_user_built_ga_agent_e2e.py \
+          app/adk/agents/tests/test_agent_tool_billing.py \
+          app/adk/agents/tests/test_supervisor_e2e_artifacts.py \
           app/adk/mcp_config/tests/ \
           app/adk/security/tests/ \
           app/adk/tracking/tests/ \
           app/adk/tools/agent_tools/tests/ \
+          app/adk/tools/tests/ \
+          app/adk/tools/function_tools/ \
           shared/tests/test_artifact_models.py \
           -m "not slow" \
           -q

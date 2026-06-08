@@ -734,6 +734,19 @@ class TestMultiTurnRouting:
 # ---------------------------------------------------------------------------
 
 
+def _collect_tools_recursive(agent: Any) -> list[Any]:
+    """Walk an agent tree and collect all tool objects (recursive).
+
+    Covers ``.tools`` on each node and recurses into ``.sub_agents``.  Used by
+    both ``TestNoAgentToolInGate`` and ``TestNoAgentToolInSupervisorPath`` so
+    any future ADK tool-attachment surface only needs to be added once.
+    """
+    tools: list[Any] = list(getattr(agent, "tools", None) or [])
+    for sub in getattr(agent, "sub_agents", None) or []:
+        tools.extend(_collect_tools_recursive(sub))
+    return tools
+
+
 class TestNoAgentToolInGate:
     """Regression guard: no AgentTool must be present in the parity-gate topology.
 
@@ -749,11 +762,8 @@ class TestNoAgentToolInGate:
     """
 
     def _collect_tools(self, agent: LlmAgent) -> list[Any]:
-        """Walk agent tree and collect all tool objects (recursive)."""
-        tools: list[Any] = list(getattr(agent, "tools", None) or [])
-        for sub in getattr(agent, "sub_agents", None) or []:
-            tools.extend(self._collect_tools(sub))
-        return tools
+        """Delegate to module-level _collect_tools_recursive."""
+        return _collect_tools_recursive(agent)
 
     def _build_mode_a_topology(self) -> LlmAgent:
         """Mode A: root with sub_agents=[specialist] as in _capture_mode_a_events."""
@@ -843,6 +853,224 @@ class TestNoAgentToolInGate:
                 f"'google_search'. Found: {named_search}. "
                 "agent.google_search is deferred to AH-PRD-15 (prod-cutover gate)."
             )
+
+
+# ---------------------------------------------------------------------------
+# TestNoAgentToolInSupervisorPath — AH-146 / AH-PRD-05 §7 AC-9 regression guard.
+#
+# The supervisor dispatch path (coordinator(mode='chat') + mode='task' specialist)
+# is the second dispatch surface alongside transfer_to_agent. Any AgentTool
+# introduced here — other than the two sanctioned isolation leaves (google_search,
+# numerical_analyst) — silently re-introduces the AH-75 / GitHub #3984 billing drop:
+# AgentTool.run_async discards inner sub-agent events so the leaf's
+# gemini-2.5-flash tokens go uncounted. This guard walks the coordinator +
+# specialist tree and enforces the allow-list of exactly two sanctioned leaves,
+# each of which must carry the capture_agent_tool_usage billing callback.
+#
+# Three test methods mirror TestNoAgentToolInGate's pattern:
+#   test_no_unsanctioned_agent_tool_in_supervisor_topology — allow-list check
+#   test_sanctioned_agent_tool_carries_billing_callback — callback contract check
+#   test_unsanctioned_agent_tool_in_supervisor_topology_is_flagged — regression
+#     triangulation (red→green→red): proves the guard fires on an unsanctioned leaf
+#
+# Skip-on-import for AgentTool (D6): matches TestNoAgentToolInGate:792 — keeps
+# the guard green on the strategy-tree ADK 1.34.x CI matrix.
+# ---------------------------------------------------------------------------
+
+
+class TestNoAgentToolInSupervisorPath:
+    """AH-146 / AH-PRD-05 §7 AC-9 (re-planned, AH-121) regression guard.
+
+    Verifies that a supervisor-orchestration topology (coordinator mode='chat' +
+    task-mode specialist) contains no *isolation-leaf* AgentTool except the two
+    sanctioned ones (google_search, numerical_analyst), each of which must carry
+    the capture_agent_tool_usage billing callback to recover the usage_metadata
+    that AgentTool.run_async drops (#3984).
+
+    Important ADK 2.0 distinction — two AgentTool subclasses, two behaviours:
+      ``AgentTool`` (exact class)  — isolation-leaf pattern; uses a private inner
+          Runner and drops inner events (#3984). Only the two sanctioned leaves
+          may use this; each must carry the billing callback. <<< WHAT WE CHECK >>>
+      ``_TaskAgentTool`` (subclass) — ADK 2.0's task delegation mechanism; injected
+          automatically into coordinator.tools for every mode='task' sub_agent.
+          Dispatches via ctx.run_node, properly propagates events, needs NO billing
+          callback. <<< EXCLUDED FROM THE CHECK (type(t) is AgentTool, not isinstance) >>>
+
+    Delegates the tree walk to module-level ``_collect_tools_recursive`` —
+    shared with TestNoAgentToolInGate: if ADK 2.0 introduces a new
+    tool-attachment surface not covered by (.tools + .sub_agents), both guards
+    fail together at the single update point, making the gap visible.
+    """
+
+    _SANCTIONED_NAMES: frozenset[str] = frozenset({"google_search", "numerical_analyst"})
+
+    def _collect_isolation_leaf_agent_tools(
+        self, agent: LlmAgent, AgentTool: type
+    ) -> list[Any]:
+        """Return only exact-AgentTool instances (not _TaskAgentTool subclasses).
+
+        Uses ``type(t) is AgentTool`` (exact class check) to exclude
+        ``_TaskAgentTool`` (ADK 2.0 task delegation), which IS a subclass of
+        AgentTool but uses ctx.run_node and does not have the #3984 billing gap.
+        Only the isolation-leaf AgentTool pattern (own inner Runner) is checked.
+
+        Delegates the recursive tree walk to the module-level
+        ``_collect_tools_recursive`` — shared with TestNoAgentToolInGate to
+        form a single point of update for new ADK tool-attachment surfaces.
+        """
+        return [t for t in _collect_tools_recursive(agent) if type(t) is AgentTool]
+
+    def _build_supervisor_topology(self, specialist_tools: list[Any]) -> LlmAgent:
+        """Build coordinator(mode='chat') + task-mode specialist with given tools.
+
+        Constructs the topology with stub LlmAgent instances directly (D2) — the
+        supervisor builder (AH-141+) is mid-implementation; decoupling the
+        verification from the builder keeps this test at est=1 and shipable in
+        parallel. The invariant under test is a topology property, not a builder
+        internal.
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        specialist = LlmAgent(
+            name="ga_specialist",
+            model=_CanonicalStubLlm(),
+            mode="task",
+            instruction="GA specialist",
+            tools=specialist_tools,
+            disallow_transfer_to_parent=True,
+        )
+        return LlmAgent(
+            name="coordinator",
+            model=_RouterStubLlm(),
+            mode="chat",
+            instruction="Coordinator",
+            sub_agents=[specialist],
+        )
+
+    def test_no_unsanctioned_agent_tool_in_supervisor_topology(self) -> None:
+        """Supervisor topology with the two sanctioned leaves must pass the allow-list.
+
+        Walks the coordinator → specialist tree collecting exact-AgentTool
+        instances (excludes _TaskAgentTool subclasses — those are ADK 2.0 task
+        delegation and correctly propagate events). Every isolation-leaf AgentTool
+        found must be named in _SANCTIONED_NAMES.
+        """
+        try:
+            from google.adk.tools.agent_tool import AgentTool
+        except ImportError:
+            pytest.skip("AgentTool not importable — skip guard (ADK version check)")
+
+        from app.adk.tools.agent_tools.google_search import (
+            create_google_search_agent_tool,
+        )
+
+        coordinator = self._build_supervisor_topology([create_google_search_agent_tool()])
+
+        isolation_tools = self._collect_isolation_leaf_agent_tools(coordinator, AgentTool)
+        unsanctioned = [
+            t for t in isolation_tools if t.name not in self._SANCTIONED_NAMES
+        ]
+
+        assert unsanctioned == [], (
+            f"Supervisor topology contains unsanctioned isolation-leaf AgentTool(s): "
+            f"{[getattr(t, 'name', repr(t)) for t in unsanctioned]}. "
+            f"Only {sorted(self._SANCTIONED_NAMES)!r} are sanctioned isolation leaves. "
+            "Any other AgentTool silently re-introduces the AH-75/#3984 billing drop "
+            "(AgentTool.run_async discards inner events → uncounted tokens). "
+            "(_TaskAgentTool subclass is excluded from this check — it dispatches via "
+            "ctx.run_node and properly propagates events.) "
+            "See AH-PRD-15 §7.7 and AH-PRD-05 §7 AC-9 (re-planned, AH-121)."
+        )
+
+    def test_sanctioned_agent_tool_carries_billing_callback(self) -> None:
+        """Every isolation-leaf AgentTool in the supervisor topology carries
+        capture_agent_tool_usage.
+
+        The billing callback on the leaf is the ONLY mechanism that recovers the
+        usage_metadata that AgentTool.run_async drops (#3984). An AgentTool without
+        it silently under-bills the leaf's tokens — the exact AH-75 defect.
+
+        _TaskAgentTool instances are excluded (dispatches via ctx.run_node,
+        properly propagates events, needs no billing callback).
+        """
+        try:
+            from google.adk.tools.agent_tool import AgentTool
+        except ImportError:
+            pytest.skip("AgentTool not importable — skip guard (ADK version check)")
+
+        from app.adk.agents.agent_tool_billing import capture_agent_tool_usage
+        from app.adk.tools.agent_tools.google_search import (
+            create_google_search_agent_tool,
+        )
+
+        coordinator = self._build_supervisor_topology([create_google_search_agent_tool()])
+
+        isolation_tools = self._collect_isolation_leaf_agent_tools(coordinator, AgentTool)
+
+        for tool in isolation_tools:
+            leaf = tool.agent
+            cb = getattr(leaf, "after_model_callback", None)
+            has_callback = cb is capture_agent_tool_usage or (
+                isinstance(cb, (list, tuple)) and capture_agent_tool_usage in cb
+            )
+            assert has_callback, (
+                f"Isolation-leaf AgentTool {tool.name!r} in the supervisor topology is "
+                "missing capture_agent_tool_usage on its wrapped leaf. "
+                "AgentTool.run_async drops the leaf's usage_metadata (#3984) — "
+                "without this callback those tokens go unbilled (AH-75 defect). "
+                "See app/adk/agents/agent_tool_billing.py and AH-PRD-15 §5."
+            )
+
+    def test_unsanctioned_agent_tool_in_supervisor_topology_is_flagged(self) -> None:
+        """Regression triangulation: an unsanctioned isolation-leaf AgentTool is detected.
+
+        Extends the topology with a fake AgentTool (exact class, not a subclass)
+        not in _SANCTIONED_NAMES and confirms the allow-list guard fires. Mirrors
+        TestNoAgentToolInGate's red→green→red pattern so a future refactor cannot
+        accidentally hollow out the guard to a vacuous pass.
+
+        Verifies that the exact-type check (type(t) is AgentTool) still catches a
+        directly-constructed unsanctioned AgentTool while skipping _TaskAgentTool.
+        """
+        try:
+            from google.adk.tools.agent_tool import AgentTool
+        except ImportError:
+            pytest.skip("AgentTool not importable — skip guard (ADK version check)")
+
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        # Build a fake AgentTool (exact class) not in the sanctioned set — simulates
+        # a future mistaken addition of a built-in-tool leaf outside the two
+        # sanctioned ones. Uses LlmAgent as the leaf (any agent name works here;
+        # AgentTool.name mirrors agent.name).
+        stub_leaf = LlmAgent(
+            name="unsanctioned_leaf",
+            model=_CanonicalStubLlm(),
+            instruction="Unsanctioned stub leaf",
+        )
+        unsanctioned_tool = AgentTool(agent=stub_leaf)
+
+        coordinator = self._build_supervisor_topology([unsanctioned_tool])
+
+        isolation_tools = self._collect_isolation_leaf_agent_tools(coordinator, AgentTool)
+        unsanctioned = [
+            t for t in isolation_tools if t.name not in self._SANCTIONED_NAMES
+        ]
+
+        assert len(unsanctioned) >= 1, (
+            "Regression triangulation FAILED: the topology built with an unsanctioned "
+            "isolation-leaf AgentTool ('unsanctioned_leaf') was not detected by the "
+            "allow-list check. Either _collect_isolation_leaf_agent_tools is not walking "
+            "the tree correctly, or _SANCTIONED_NAMES was widened to include "
+            "'unsanctioned_leaf'. If this is intentional, update the triangulation test "
+            "to use a different unsanctioned name."
+        )
 
 
 # ---------------------------------------------------------------------------

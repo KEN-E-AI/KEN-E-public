@@ -226,7 +226,14 @@ class TestRootOnlyBuild:
         root = _run_build_hierarchy(_E2E_DOCS)
         tool_names = {getattr(t, "name", None) for t in root.tools}
         # Only supervisor tools — no per-specialist additions.
-        assert tool_names == {"set_todo_list", "update_todo_list"}
+        # AH-144 added save/resume/clear pending tools.
+        assert tool_names == {
+            "set_todo_list",
+            "update_todo_list",
+            "save_pending_supervisor_tasks",
+            "resume_pending_supervisor_tasks",
+            "clear_pending_supervisor_tasks",
+        }
 
     def test_single_firestore_read_for_root_config(self) -> None:
         """build_hierarchy reads only the root config, not all specialist configs."""

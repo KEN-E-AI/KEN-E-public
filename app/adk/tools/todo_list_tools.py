@@ -8,12 +8,13 @@ are no direct Firestore writes here. ``tool_context.state["todo_lists"]`` is a
 dict-of-dicts keyed by ``list_id``; each value matches the ``TodoList`` shape
 in ``api/src/kene_api/models/chat.py``.
 
-Registration: both tools call ``register_function_tool`` at module-bottom so the
+Registration: all tools call ``register_function_tool`` at module-bottom so the
 side-effect fires when ``hierarchy.py`` imports this module at startup.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -57,10 +58,16 @@ _SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
     "apikey",
 )
 
+# Session-state key for the approval-checkpoint continuation (AH-144). Defined
+# here — the module that owns save/resume/clear — as the single source of truth;
+# supervisor.py imports it rather than re-declaring the literal.
+_PENDING_SUPERVISOR_TASKS_KEY: str = "pending_supervisor_tasks"
+
 _RESERVED_STATE_KEYS: frozenset[str] = frozenset(
     {
         "account_id",
         "organization_context",
+        _PENDING_SUPERVISOR_TASKS_KEY,  # AH-144: prevent result_key collision with checkpoint
         "todo_lists",
         "user_id",
         "app_name",
@@ -332,8 +339,150 @@ async def update_todo_list(
 
 
 # ---------------------------------------------------------------------------
+# Pending supervisor tasks — approval-checkpoint continuation (AH-144)
+# ---------------------------------------------------------------------------
+
+# Maximum number of completed-result entries and per-value string length.
+# These bounds prevent session-state bloat from unbounded specialist output.
+# 12 mirrors MAX_LEDGER_ITEMS in supervisor.py (same cap, no circular import needed).
+_MAX_COMPLETED_RESULTS_ENTRIES: int = 12
+_MAX_COMPLETED_RESULT_VALUE_LEN: int = 65_536  # 64 KiB soft cap per entry
+
+
+def _bound_result_value(value: Any) -> Any:
+    """Bound one completed-result value to ``_MAX_COMPLETED_RESULT_VALUE_LEN``.
+
+    Strings are truncated directly. Non-string values (nested dict/list/number)
+    are bounded by their *serialized* size so a large structure cannot slip past
+    the per-entry cap; an oversized value is replaced with a truncation marker
+    and an unserializable one with a placeholder, since neither can be stored
+    partially. This keeps the cap meaningful regardless of value shape.
+    """
+    if isinstance(value, str):
+        if len(value) <= _MAX_COMPLETED_RESULT_VALUE_LEN:
+            return value
+        return value[:_MAX_COMPLETED_RESULT_VALUE_LEN]
+    try:
+        serialized = json.dumps(value)
+    except (TypeError, ValueError):
+        return "[unserializable value omitted]"
+    if len(serialized) <= _MAX_COMPLETED_RESULT_VALUE_LEN:
+        return value
+    return serialized[:_MAX_COMPLETED_RESULT_VALUE_LEN] + "... [truncated]"
+
+
+async def save_pending_supervisor_tasks(
+    tool_context: Any,
+    remaining: list[dict[str, Any]],
+    completed_results: Any,
+) -> str:
+    """Save pending supervisor tasks when an approval checkpoint is reached.
+
+    Stores the remaining tasks and the completed results collected so far in
+    ``session.state["pending_supervisor_tasks"]`` so the coordinator can resume
+    on the next user turn after the user approves.  The key is plain (no
+    ``temp:`` prefix) so it survives across ADK invocations within the same
+    session.
+
+    Args:
+        tool_context: ADK ToolContext (carries ``.state``).
+        remaining: List of not-yet-executed ``TodoItem`` dicts.
+        completed_results: Dict mapping ``result_key`` → specialist output for
+            tasks already completed in this turn.
+
+    Returns:
+        ``"OK: pending supervisor tasks saved."`` on success.
+        ``"ERROR: ..."`` string on validation failure.
+    """
+    if not isinstance(completed_results, dict):
+        return "ERROR: completed_results must be a JSON object."
+
+    if len(completed_results) > _MAX_COMPLETED_RESULTS_ENTRIES:
+        return (
+            f"ERROR: completed_results exceeds {_MAX_COMPLETED_RESULTS_ENTRIES} entries."
+        )
+
+    # Validate each completed_result key (same naming convention as result_key).
+    for cr_key in completed_results:
+        if not isinstance(cr_key, str):
+            return "ERROR: completed_results keys must be strings."
+        if any(s in cr_key.lower() for s in _SENSITIVE_KEY_SUBSTRINGS):
+            return (
+                f"ERROR: completed_results key {cr_key!r} matches a sensitive "
+                "key pattern and cannot be stored."
+            )
+
+    normalized = _normalize_items(remaining)
+    if isinstance(normalized, str):
+        return normalized  # propagate item-level validation error
+
+    # Bound every value at write time (strings by length, structures by
+    # serialized size) so session-state cannot bloat from large specialist output.
+    bounded_results: dict[str, Any] = {
+        k: _bound_result_value(v) for k, v in completed_results.items()
+    }
+
+    tool_context.state[_PENDING_SUPERVISOR_TASKS_KEY] = {
+        "remaining": normalized,
+        "completed_results": bounded_results,
+        "saved_at": _now_iso(),
+    }
+    return "OK: pending supervisor tasks saved."
+
+
+async def resume_pending_supervisor_tasks(tool_context: Any) -> str:
+    """Read and clear the pending supervisor tasks checkpoint.
+
+    Returns the saved structure as a JSON string and removes the state key in
+    one atomic call (single-shot continuation) — the coordinator cannot
+    accidentally read without clearing.
+
+    Args:
+        tool_context: ADK ToolContext (carries ``.state``).
+
+    Returns:
+        JSON string of ``{remaining, completed_results, saved_at}`` on success.
+        ``"ERROR: no pending supervisor tasks to resume."`` when no checkpoint
+        is saved.
+    """
+    pending = tool_context.state.get(_PENDING_SUPERVISOR_TASKS_KEY)
+    if not pending:
+        return "ERROR: no pending supervisor tasks to resume."
+
+    # Clear on read — single-shot continuation. Assign the ``None`` sentinel
+    # rather than ``del``: ADK 2.0's ``State`` has no ``__delitem__``, and only a
+    # ``__setitem__`` mutation is recorded in the session delta and persisted.
+    # The provider treats a falsy value as "no checkpoint" (renders nothing).
+    tool_context.state[_PENDING_SUPERVISOR_TASKS_KEY] = None
+    return json.dumps(pending)
+
+
+async def clear_pending_supervisor_tasks(tool_context: Any) -> str:
+    """Idempotently clear the pending supervisor tasks checkpoint.
+
+    Called when the user rejects the pending workflow, changes topic, or after
+    a resumed workflow completes (success or failure).
+
+    Args:
+        tool_context: ADK ToolContext (carries ``.state``).
+
+    Returns:
+        ``"OK: pending supervisor tasks cleared."`` always (idempotent).
+    """
+    # Assign the ``None`` sentinel rather than ``.pop``: ADK 2.0's ``State`` has
+    # no ``pop``/``__delitem__``, and only a ``__setitem__`` mutation is committed
+    # to the session delta. Idempotent — setting ``None`` when already ``None`` is
+    # a no-op.
+    tool_context.state[_PENDING_SUPERVISOR_TASKS_KEY] = None
+    return "OK: pending supervisor tasks cleared."
+
+
+# ---------------------------------------------------------------------------
 # Registry wiring (side-effect on import)
 # ---------------------------------------------------------------------------
 
 register_function_tool("set_todo_list", set_todo_list)
 register_function_tool("update_todo_list", update_todo_list)
+register_function_tool("save_pending_supervisor_tasks", save_pending_supervisor_tasks)
+register_function_tool("resume_pending_supervisor_tasks", resume_pending_supervisor_tasks)
+register_function_tool("clear_pending_supervisor_tasks", clear_pending_supervisor_tasks)

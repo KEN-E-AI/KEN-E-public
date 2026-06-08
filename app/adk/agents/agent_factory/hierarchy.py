@@ -210,6 +210,7 @@ def build_hierarchy(
     from app.adk.agents.orchestration.supervisor import (
         SUPERVISOR_INSTRUCTION_FRAGMENT,
         get_supervisor_function_tools,
+        pending_supervisor_state_provider,
     )
     from app.adk.tools.registry.agent_tool_registry import (
         resolve_agent_subagents,
@@ -246,11 +247,14 @@ def build_hierarchy(
     root_agent_subagents = _root_roster.sub_agents
 
     def _compose_root_instruction_suffix(ctx: Any) -> str:
-        return (
-            available_specialists_provider(ctx).rstrip()
-            + "\n\n"
-            + SUPERVISOR_INSTRUCTION_FRAGMENT
-        )
+        parts = [
+            available_specialists_provider(ctx).rstrip(),
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+        ]
+        pending_block = pending_supervisor_state_provider(ctx)
+        if pending_block:
+            parts.append(pending_block)
+        return "\n\n".join(parts)
 
     root_agent = build_agent(
         root_config,

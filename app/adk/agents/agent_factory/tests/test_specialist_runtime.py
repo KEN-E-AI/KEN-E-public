@@ -5585,3 +5585,169 @@ class TestTaskModePerTurnDispatch:
         assert total > 0, (
             f"AMENDED AC-2b: specialist billable tokens must be > 0; got {total}"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestBranchFailureSentinelCallbackWiring (AH-141)
+# ---------------------------------------------------------------------------
+
+
+class TestBranchFailureSentinelCallbackWiring:
+    """AH-141: ``_build_specialist`` wires the branch-failure sentinel callback
+    onto task-mode specialists but NOT onto chat-mode specialists.
+
+    (a) Task-mode single-pass: sentinel callback is the last ``after_agent_callback``.
+    (b) Chat-mode single-pass: no sentinel callback is attached.
+    (c) Sentinel callback no-ops when no supervisor_ledger is in state
+        (single-specialist ``transfer_to_agent`` turns unaffected).
+    (d) Sentinel callback writes sentinel to result_key when the specialist
+        completed without writing it.
+    """
+
+    def _build_with_mode(self, mode: str | None) -> Any:
+        """Build a specialist via _build_specialist with the given mode,
+        using the standard mock stack from _patch_specialist_runtime_externals.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        stack, _, _ = _patch_specialist_runtime_externals()
+        config = _make_merged_config("v1")
+        with stack:
+            return sr._build_specialist(config, "stub_specialist", None, mode=mode)
+
+    def test_task_mode_single_pass_has_sentinel_callback(self) -> None:
+        """(a) Task-mode specialist must carry the sentinel callback."""
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode requires ADK 2.0+")
+
+        agent = self._build_with_mode("task")
+        callbacks = _as_callback_list_for_test(agent.after_agent_callback)
+        # Identify callbacks that are sentinel-pattern closures by calling each
+        # with a fake state proxy that would trigger a sentinel write.  The
+        # sentinel callback writes to the live state_obj via __setitem__; all
+        # other callbacks (AH-35 span, Weave) either skip dict-shaped states or
+        # raise silently.
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": [
+                    {
+                        "assignee": "stub_specialist",
+                        "status": "pending",
+                        "result_key": "stub_result",
+                    }
+                ]
+            }
+        }
+        # Use a plain dict as the state_obj — the sentinel callback falls through
+        # to the `isinstance(state_obj, dict)` branch and writes directly.
+        ctx = _FakeCallbackCtx(state)
+        found_sentinel = False
+        for cb in callbacks:
+            try:
+                cb(ctx)
+            except Exception:
+                continue
+            if str(state.get("stub_result", "")).startswith("ERROR: "):
+                found_sentinel = True
+                break
+
+        assert found_sentinel, (
+            "Task-mode specialist built by _build_specialist must carry the "
+            "branch-failure sentinel after_agent_callback (AH-141). "
+            f"after_agent_callback chain: {callbacks!r}"
+        )
+
+    def test_chat_mode_single_pass_no_sentinel_callback(self) -> None:
+        """(b) Chat-mode specialist must NOT carry the sentinel callback."""
+        agent = self._build_with_mode(None)
+        callbacks = _as_callback_list_for_test(agent.after_agent_callback)
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": [
+                    {
+                        "assignee": "stub_specialist",
+                        "status": "pending",
+                        "result_key": "stub_result",
+                    }
+                ]
+            }
+        }
+        ctx = _FakeCallbackCtx(state)
+        for cb in callbacks:
+            try:
+                cb(ctx)
+            except Exception:
+                pass
+        assert not state.get("stub_result"), (
+            "Chat-mode specialist must NOT write the sentinel (no sentinel callback "
+            "should be attached for mode=None). "
+            f"state after all callbacks: {state!r}"
+        )
+
+    def test_sentinel_callback_noop_when_no_ledger(self) -> None:
+        """(c) Sentinel callback is a no-op when supervisor_ledger is absent."""
+        from app.adk.agents.orchestration.supervisor import (
+            make_branch_failure_sentinel_after_agent_callback,
+        )
+
+        cb = make_branch_failure_sentinel_after_agent_callback("any_specialist")
+        state: dict[str, Any] = {}
+        ctx = _FakeCallbackCtx(state)
+        cb(ctx)  # must not raise, must not write anything
+        assert state == {}
+
+    def test_sentinel_callback_writes_sentinel_on_missing_result_key(self) -> None:
+        """(d) Sentinel callback writes the sentinel when result_key is absent."""
+        from app.adk.agents.orchestration.supervisor import (
+            BRANCH_ERROR_SENTINEL_PREFIX,
+            make_branch_failure_sentinel_after_agent_callback,
+        )
+
+        cb = make_branch_failure_sentinel_after_agent_callback("stub_specialist")
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": [
+                    {
+                        "assignee": "stub_specialist",
+                        "status": "pending",
+                        "result_key": "stub_result",
+                    }
+                ]
+            }
+        }
+        ctx = _FakeCallbackCtx(state)
+        cb(ctx)
+        assert "stub_result" in state, (
+            "Sentinel callback must write to result_key when absent from state"
+        )
+        assert str(state["stub_result"]).startswith(BRANCH_ERROR_SENTINEL_PREFIX), (
+            f"sentinel value must start with {BRANCH_ERROR_SENTINEL_PREFIX!r}; "
+            f"got {state['stub_result']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers for TestBranchFailureSentinelCallbackWiring
+# ---------------------------------------------------------------------------
+
+
+class _FakeCallbackCtx:
+    """Minimal callback_context stub for sentinel callback tests.
+
+    Uses a plain dict as the state_obj so the callback's
+    ``isinstance(state_obj, dict)`` branch fires and writes directly.
+    """
+
+    def __init__(self, state: dict[str, Any]) -> None:
+        self.state = state
+
+
+def _as_callback_list_for_test(value: Any) -> list[Any]:
+    """Normalise after_agent_callback (None | callable | list) to a list."""
+    if value is None:
+        return []
+    if callable(value):
+        return [value]
+    return list(value)

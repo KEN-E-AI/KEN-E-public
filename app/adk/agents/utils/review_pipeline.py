@@ -90,11 +90,21 @@ _EXCLUDED_WORKER_FIELDS = {"parent_agent", "sub_agents"}
 # Fields the factory sets explicitly on the worker; copy from specialist would
 # clobber the factory's intended values.
 _OVERRIDDEN_WORKER_FIELDS = {"name", "instruction", "tools", "output_key"}
-# Fields that must NOT be propagated to the worker: output_schema enables
-# structured-output mode in ADK and disables tool use. A worker with
-# output_schema would lose its MCP/function tools and could not write a
-# free-form text draft for the reviewer's {prefix}_draft template.
-_DROPPED_WORKER_FIELDS = {"output_schema"}
+# Fields that must NOT be propagated to the worker:
+#
+# ``output_schema`` enables structured-output mode in ADK and disables tool
+# use. A worker with output_schema would lose its MCP/function tools and could
+# not write a free-form text draft for the reviewer's {prefix}_draft template.
+#
+# ``mode``: a ``mode='task'`` specialist wrapped by build_review_pipeline()
+# would have FinishTaskTool re-injected into the worker by
+# LlmAgent.model_post_init (google.adk.agents.llm.task._finish_task_tool).
+# Dropping mode keeps the worker at mode=None so model_post_init does NOT
+# re-inject FinishTaskTool.  Note: FinishTaskTool that is already present in
+# specialist.tools (injected when the specialist itself was constructed) is
+# separately stripped in the worker_tools filter below — dropping mode here
+# prevents a second injection on the worker's own construction path.
+_DROPPED_WORKER_FIELDS = {"output_schema", "mode"}
 
 _SENTINEL_TOKENS = ("<<<CRITERIA_START>>>", "<<<CRITERIA_END>>>")
 
@@ -504,14 +514,23 @@ def build_review_pipeline(
         specialist.instruction, acceptance_criteria, output_key_prefix
     )
 
-    # Strip exit_loop from worker tools (attribute-based to survive future
-    # wrappers like FunctionTool) so only the reviewer can terminate the loop.
+    # Strip exit_loop and finish_task from worker tools (attribute-based to
+    # survive future wrappers like FunctionTool) so only the reviewer can
+    # terminate the loop and the worker cannot short-circuit the task.
+    #
+    # ``finish_task`` is injected into a specialist's tools by
+    # LlmAgent.model_post_init when mode='task'. Dropping ``mode`` from the
+    # worker (via _DROPPED_WORKER_FIELDS) prevents re-injection in the worker's
+    # own model_post_init, but the tool is still present in specialist.tools and
+    # would be copied here unless explicitly filtered. A worker that carries
+    # finish_task could call it mid-loop and hand control back to the coordinator
+    # before the reviewer evaluates the draft.
     worker_tools = [
         t
         for t in list(specialist.tools or [])
         if not (
-            getattr(t, "name", None) == "exit_loop"
-            or getattr(t, "__name__", None) == "exit_loop"
+            getattr(t, "name", None) in {"exit_loop", "finish_task"}
+            or getattr(t, "__name__", None) in {"exit_loop", "finish_task"}
         )
     ]
 

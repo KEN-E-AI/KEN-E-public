@@ -8,6 +8,7 @@ synthetic ``llm_response`` objects shaped like ADK's ``LlmResponse``
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 from types import SimpleNamespace
 
@@ -153,3 +154,77 @@ def test_numerical_analyst_isolation_leaf_carries_billing_callback_and_no_functi
     # Code execution only — no function tools alongside the built-in code executor.
     assert not leaf.tools
     assert leaf.code_executor is not None
+
+
+# ---------------------------------------------------------------------------
+# Real asyncio.gather parallel-additivity tests (AH-146 / AH-PRD-05 §7 AC-9)
+#
+# The supervisor fan-out path dispatches multiple AgentTool branches via
+# ctx.run_node + asyncio.gather. The existing test
+# test_parallel_appends_in_copied_context_share_one_sink covers the
+# contextvars.copy_context().run() simulation, but NOT the real event-loop
+# scheduling that asyncio.gather uses. These tests verify that real parallel
+# branches under gather accumulate additively in the same turn sink (no clobber,
+# no under-count) — a real event-loop policy change that the copy_context
+# simulation would miss is caught here.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_parallel_capture_under_asyncio_gather_accumulates_additively():
+    """Real asyncio.gather branches accumulate additively in the turn sink.
+
+    Models the supervisor fan-out path: N concurrent AgentTool leaf callbacks
+    (each triggered by asyncio.gather inside ctx.run_node) must each append to
+    the same sink bucket under one outer invocation_id. The drain must equal the
+    sum of all branch contributions — no clobber, no under-count.
+
+    Complements test_parallel_appends_in_copied_context_share_one_sink (which
+    uses contextvars.copy_context().run()) by exercising the production
+    asyncio.gather primitive directly. A future event-loop policy change
+    (e.g., a change to how gather copies contexts) that the copy_context
+    simulation would miss will be caught here.
+    """
+    set_outer_turn_id("inv-gather-additivity")
+
+    async def branch(prompt: int) -> None:
+        await asyncio.sleep(0)  # yield to the event loop, then capture
+        capture_agent_tool_usage(None, _llm_response(prompt=prompt, candidates=1))
+
+    await asyncio.gather(*(branch(p) for p in (10, 20, 30, 40)))
+
+    drained = drain_turn_billing("inv-gather-additivity")
+    # input = sum([10, 20, 30, 40]) = 100 (prompt - cached=0)
+    # output = 4 * 1 = 4 (candidates)
+    assert (drained.input, drained.output) == (100, 4), (
+        f"asyncio.gather branches must accumulate additively. "
+        f"Got input={drained.input}, output={drained.output}, expected (100, 4). "
+        "Likely cause: gather branches are writing to separate sinks or clobbering "
+        "each other. Check _BILLING_SINK thread safety and _OUTER_TURN_ID context "
+        "propagation under asyncio.gather."
+    )
+
+
+@pytest.mark.asyncio
+async def test_gather_branches_without_turn_id_are_noop():
+    """asyncio.gather branches without an outer turn id contribute nothing.
+
+    No-op guard: if set_outer_turn_id is not called before gather, no branch
+    should write to any sink. Guards against a regression where a gather branch
+    somehow inherits a stale turn id from a previous test (the autouse
+    _isolate_sink fixture resets the ContextVar between tests, so this must
+    stay at zero).
+    """
+    # Deliberately skip set_outer_turn_id — branches must be no-ops.
+    async def branch(prompt: int) -> None:
+        await asyncio.sleep(0)
+        capture_agent_tool_usage(None, _llm_response(prompt=prompt, candidates=1))
+
+    await asyncio.gather(*(branch(p) for p in (10, 20, 30)))
+
+    assert drain_turn_billing("inv-gather-noop").total_billable == 0, (
+        "Gather branches without a prior set_outer_turn_id must not write to any "
+        "sink bucket. Check that _isolate_sink (autouse fixture) calls reset_for_tests "
+        "before each test — a non-zero result means a stale turn id leaked from a "
+        "prior test or set_outer_turn_id was called unexpectedly."
+    )

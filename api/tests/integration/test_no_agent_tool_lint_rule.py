@@ -12,18 +12,46 @@ Covers six lint-rule cases:
   (d) Test files excluded               → exit 0
   (e) Docstring / comment mentions      → exit 0  (not flagged)
   (f) Import line (no constructor)      → exit 0  (not flagged)
+
+Also covers:
+  (g) ISOLATION_ALLOWLIST leaf-billing-callback companion (AH-146 / AH-PRD-05 §7 AC-9)
 """
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LINT_SCRIPT = (
     REPO_ROOT / "api" / "scripts" / "lint" / "check_no_agent_tool_in_chat_tree.py"
 )
+
+# ---------------------------------------------------------------------------
+# Load ISOLATION_ALLOWLIST from the lint script at import time.
+# Using importlib.util so we can reference the frozenset defined there without
+# adding api/scripts/ to sys.path or importing it as a top-level module.
+#
+# Guard against spec_from_file_location returning None (e.g. when the script
+# is absent in a stripped CI image): module_from_spec(None) raises TypeError
+# which would crash pytest collection for the entire module, taking the six
+# pre-existing test classes with it.  A None spec produces an empty frozenset;
+# test_allowlist_matches_known_sanctioned_names will then fail with an
+# actionable message rather than silently being skipped.
+# ---------------------------------------------------------------------------
+_lint_spec = importlib.util.spec_from_file_location(
+    "_no_agent_tool_lint_check", LINT_SCRIPT
+)
+if _lint_spec is not None:
+    _lint_mod = importlib.util.module_from_spec(_lint_spec)
+    _lint_spec.loader.exec_module(_lint_mod)  # type: ignore[union-attr]
+    _ISOLATION_ALLOWLIST: frozenset[str] = _lint_mod.ISOLATION_ALLOWLIST
+else:
+    _ISOLATION_ALLOWLIST: frozenset[str] = frozenset()  # type: ignore[no-redef]
 
 # A constructor call that the lint must detect.
 _VIOLATION_LINE = "x = AgentTool(agent=some_agent)"
@@ -288,4 +316,128 @@ class TestImportNotFlagged:
         assert result.returncode == 0, (
             f"isinstance(x, AgentTool) must not trigger the lint.\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# (g) ISOLATION_ALLOWLIST leaf-billing-callback companion (AH-146 / AH-PRD-05 §7 AC-9)
+#
+# The lint allow-list (ISOLATION_ALLOWLIST) is the source of truth for which files
+# may construct an AgentTool. This class ties each allow-listed file to its factory
+# and verifies the factory's leaf carries the capture_agent_tool_usage billing
+# callback — so an AgentTool can never be added to the allow-list without its
+# billing. Mirrors AH-PRD-15 §7 AC-4 (amended) at the supervisor-path level.
+#
+# Convention enforced (D5):
+#   tools/agent_tools/<name>.py  →  module app.adk.tools.agent_tools.<name>
+#                                →  factory create_<name>_agent_tool()
+#
+# Adding a file to ISOLATION_ALLOWLIST without a billing-callback-carrying factory
+# that follows the convention causes the parametrized test to fail with an explicit,
+# actionable error — the companion test documents this contract for future maintainers.
+# ---------------------------------------------------------------------------
+
+
+def _load_agent_tool_factory(allowlist_entry: str) -> object:
+    """Derive and invoke the factory for an allow-list entry.
+
+    Convention: ``tools/agent_tools/<name>.py`` →
+        module ``app.adk.tools.agent_tools.<name>``,
+        factory ``create_<name>_agent_tool``.
+
+    Raises ImportError or AttributeError if the module or factory does not
+    exist — surfaces a violated convention loudly at test time so future
+    maintainers see *exactly* which factory is missing.
+    """
+    # Make app.adk.* importable by appending the workspace root to sys.path.
+    # append (not insert(0, ...)) so the workspace never shadows stdlib or
+    # installed packages in the test-runner process.
+    repo_root_str = str(REPO_ROOT)
+    if repo_root_str not in sys.path:
+        sys.path.append(repo_root_str)
+
+    name = Path(allowlist_entry).stem  # e.g. "google_search"
+    module_path = f"app.adk.tools.agent_tools.{name}"
+    factory_name = f"create_{name}_agent_tool"
+
+    module = importlib.import_module(module_path)
+    factory = getattr(module, factory_name)
+    return factory()
+
+
+class TestIsolationAllowlistLeafCallbacks:
+    """Guard: every file in ISOLATION_ALLOWLIST must have a factory whose leaf
+    carries capture_agent_tool_usage (AH-146 / AH-PRD-15 §7 AC-4 amended).
+
+    Ties the allow-list (source of truth for which files may construct an
+    AgentTool) to the billing-callback contract so an AgentTool can never be
+    reintroduced without its billing. Adding a new file to ISOLATION_ALLOWLIST
+    without a billing-callback-carrying factory that follows the
+    create_<name>_agent_tool convention fails the parametrized test with an
+    explicit, named error — the contract is self-documenting.
+    """
+
+    @pytest.mark.parametrize("entry", sorted(_ISOLATION_ALLOWLIST))
+    def test_each_allowlist_entry_factory_has_billing_callback(
+        self, entry: str
+    ) -> None:
+        """Each allow-listed file has a factory whose leaf carries capture_agent_tool_usage.
+
+        Parametrized over the live ISOLATION_ALLOWLIST imported from the lint script —
+        a new entry in the allow-list is automatically picked up here without any
+        change to this test. Each entry is an independent test node so a broken
+        ``numerical_analyst`` leaf is caught even when ``google_search`` still passes.
+        The assertion names both the entry and the missing callback so the failure
+        is immediately actionable.
+        """
+        tool = _load_agent_tool_factory(entry)
+        from app.adk.agents.agent_tool_billing import (
+            capture_agent_tool_usage,
+        )
+
+        leaf = tool.agent
+        cb = getattr(leaf, "after_model_callback", None)
+        has_callback = cb is capture_agent_tool_usage or (
+            isinstance(cb, (list, tuple)) and capture_agent_tool_usage in cb
+        )
+        assert has_callback, (
+            f"Allow-listed file {entry!r}: the factory's wrapped leaf is missing "
+            "capture_agent_tool_usage as its after_model_callback. "
+            "AgentTool.run_async drops the leaf's usage_metadata (GitHub #3984) — "
+            "without this callback those tokens go unbilled (AH-75 defect). "
+            f"Convention: create_{Path(entry).stem}_agent_tool() must build a leaf "
+            "with after_model_callback=capture_agent_tool_usage. "
+            "See app/adk/agents/agent_tool_billing.py and AH-PRD-15 §5 / §7.7."
+        )
+
+    def test_missing_factory_raises_with_actionable_error(self) -> None:
+        """A synthetic allow-list entry without a matching factory fails explicitly.
+
+        Documents the create_<name>_agent_tool convention: if someone adds a new
+        file to ISOLATION_ALLOWLIST without creating a factory that follows the
+        naming convention, the companion test above raises ImportError or
+        AttributeError — not a silent pass. This negative-guard sibling proves
+        the failure mode is explicit and actionable, not obscure.
+        """
+        fake_entry = "tools/agent_tools/nonexistent_isolation_tool.py"
+        with pytest.raises((ImportError, AttributeError)):
+            _load_agent_tool_factory(fake_entry)
+
+    def test_allowlist_matches_known_sanctioned_names(self) -> None:
+        """ISOLATION_ALLOWLIST matches the expected set of two sanctioned leaves.
+
+        Pins the allow-list content so an inadvertent addition or removal is
+        caught by a minimal assertion. The expected set mirrors _SANCTIONED_NAMES
+        in TestNoAgentToolInSupervisorPath (app/adk) — both must be updated in
+        tandem when a new sanctioned leaf is introduced.
+        """
+        expected_names = {"google_search", "numerical_analyst"}
+        actual_names = {Path(e).stem for e in _ISOLATION_ALLOWLIST}
+        assert actual_names == expected_names, (
+            f"ISOLATION_ALLOWLIST names {actual_names!r} != expected {expected_names!r}. "
+            "If a new sanctioned leaf was added, update this assertion AND "
+            "TestNoAgentToolInSupervisorPath._SANCTIONED_NAMES in "
+            "app/adk/agents/agent_factory/tests/test_chat_billing_parity.py, AND "
+            "update the leaf billing tests in app/adk/agents/tests/test_agent_tool_billing.py. "
+            "If a leaf was removed, remove it from both allow-lists and the billing tests."
         )

@@ -131,7 +131,7 @@ describe("ChatInterface — artifacts SSE integration", () => {
     mockStreamChatCompletion.mockReturnValueOnce(
       makeStream([
         { type: "text", text: "Here is the chart:" },
-        { type: "artifacts", artifacts: [sampleArtifact], author: "model" },
+        { type: "artifacts", artifacts: [sampleArtifact] },
       ]) as any,
     );
 
@@ -155,7 +155,6 @@ describe("ChatInterface — artifacts SSE integration", () => {
         {
           type: "artifacts",
           artifacts: [sampleArtifact, sampleArtifact2],
-          author: "model",
         },
       ]) as any,
     );
@@ -220,7 +219,7 @@ describe("ChatInterface — artifacts SSE integration", () => {
     mockStreamChatCompletion.mockReturnValueOnce(
       makeStream([
         { type: "text", text: "Here is the analysis:" },
-        { type: "artifacts", artifacts: [sampleArtifact], author: "model" },
+        { type: "artifacts", artifacts: [sampleArtifact] },
       ]) as any,
     );
 
@@ -261,7 +260,6 @@ describe("ChatInterface — artifacts SSE integration", () => {
         {
           type: "artifacts",
           artifacts: [sampleArtifact, sampleArtifact2],
-          author: "model",
         },
       ]) as any,
     );
@@ -293,9 +291,7 @@ describe("ChatInterface — artifacts SSE integration", () => {
 
   test("settings popover opens on Chart settings button click", async () => {
     mockStreamChatCompletion.mockReturnValueOnce(
-      makeStream([
-        { type: "artifacts", artifacts: [sampleArtifact], author: "model" },
-      ]) as any,
+      makeStream([{ type: "artifacts", artifacts: [sampleArtifact] }]) as any,
     );
 
     render(<ChatInterface />);
