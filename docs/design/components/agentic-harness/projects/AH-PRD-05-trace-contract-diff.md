@@ -91,7 +91,12 @@ KEN-E root agent invocation (root span)
 
 **AH-99 probe-1 and probe-4 confirmed:** task-mode sub-agent `usage_metadata` appears on the outer `Runner.run_async` event stream natively. The existing `extract_billable_tokens(event)` helper (`shared/token_accounting.py`) reads `usage_metadata` from each event and works unchanged for supervisor-orchestrated turns.
 
-No custom event bridge is needed. MER-E extracts token counts from the same event stream — the task-mode boundary adds span structure but does not change event-level `usage_metadata` placement.
+No custom event bridge is needed **at the task-mode boundary**. MER-E extracts token counts from the same event stream — the task-mode boundary adds span structure but does not change event-level `usage_metadata` placement.
+
+**Carry-forward for MER-E — isolated `AgentTool` built-in-tool leaves (AH-121 re-plan):** a specialist's built-in-tool leaves (`google_search` grounding, `numerical_analyst` code-execution) **must** stay `AgentTool`-isolated — they cannot be task-mode sub-agents (the injected `FinishTaskTool` / `transfer_to_agent` sibling triggers Gemini `400 "Multiple tools must all be search tools"`; see [AH-PRD-15](./AH-PRD-15-agenttool-migration-cutover.md)). `AgentTool.run_async` drops their inner events (`#3984`), so:
+
+- **MER-E should expect NO inner grounded-search / code-exec spans for these leaves** — the same class of accepted gap as the `google.genai` autopatch carry-forward in §2.1. The `AgentTool`'s `function_call` / `function_response` are visible in the outer trace, but the leaf's inner steps are not.
+- **Their `usage_metadata` does NOT appear as leaf-level events.** It is captured by a leaf `after_model_callback` off-state sink (AH-PRD-15 `agent_tool_billing.py`, keyed by the outer `invocation_id`) and folded into the turn delta. Token totals stay correct via `extract_billable_tokens` + the drained sink, but the per-leaf span detail is absent **by design** — extractors must not treat its absence as missing data.
 
 ---
 
