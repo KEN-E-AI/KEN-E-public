@@ -148,6 +148,15 @@ def _compose_worker_instruction(
     # by both paths; only how the feedback value itself is filled in differs.
     criteria_block = (
         "\n\n"
+        "## Drafting Rules\n"
+        "Your draft must be a clean, standalone, user-facing answer. "
+        "You must not reference, acknowledge, quote, or argue with the reviewer "
+        "or these acceptance criteria in your draft. "
+        "Address feedback by changing the answer itself — never by adding "
+        "meta-commentary that explains, justifies, or argues against the feedback. "
+        "If a criterion does not apply to this answer (for example, a 'provide the "
+        "formula' criterion when the value is a direct platform metric, not a derived "
+        "calculation), silently omit that element. Do not justify its absence in prose.\n\n"
         "## Acceptance Criteria\n"
         "Your response must satisfy all of the following criteria:\n"
         "<<<CRITERIA_START>>>\n"
@@ -375,7 +384,14 @@ def build_review_pipeline(
         "Check each criterion above against the draft text. "
         "If criteria pass, invoke the `exit_loop` tool. "
         "Do not write 'calling exit_loop' or any approval text. "
-        "If criteria are NOT all met, provide specific feedback on what needs to be improved."
+        "If criteria are NOT all met, provide specific feedback on what needs to be improved. "
+        "When applying a 'provide the formula' or 'show the calculation' criterion, "
+        "note that this applies only to derived metrics (metrics computed from other "
+        "values, e.g. CTR = clicks / impressions, CPC = spend / clicks, "
+        "ROAS = revenue / spend). Direct platform metrics reported as raw counts or "
+        "aggregates by the platform itself (e.g. Google Analytics 'Total active users', "
+        "'Sessions', 'New users') have no formula; their absence is not a defect and "
+        "must not be flagged as missing."
     )
 
     reviewer = LlmAgent(

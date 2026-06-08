@@ -1,6 +1,7 @@
 """Tests for build_review_pipeline() factory and extract_iterations()."""
 
 import asyncio
+import os
 import re
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +15,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import exit_loop
 from google.genai import types as genai_types
+from google.genai.errors import ClientError
 
 from . import review_pipeline as _rp
 from .review_pipeline import (
@@ -331,6 +333,58 @@ class TestWorkerInstructionAndKeys:
         assert (
             "Do not write 'calling exit_loop' or any approval text"
             in reviewer.instruction
+        )
+
+    def test_worker_instruction_forbids_reviewer_meta_commentary(self, simple_specialist):
+        """Worker instruction (string path) contains the no-meta-commentary clause."""
+        pipeline = build_review_pipeline(
+            simple_specialist, "Crit.", output_key_prefix="p"
+        )
+        worker, _ = pipeline.sub_agents
+        assert (
+            "must not reference, acknowledge, quote, or argue with the reviewer"
+            in worker.instruction
+        )
+
+    def test_worker_instruction_documents_direct_metric_carveout(self, simple_specialist):
+        """Worker instruction (string path) instructs silent omission for non-applicable criteria."""
+        pipeline = build_review_pipeline(
+            simple_specialist, "Crit.", output_key_prefix="p"
+        )
+        worker, _ = pipeline.sub_agents
+        assert "silently omit" in worker.instruction
+
+    def test_reviewer_instruction_distinguishes_derived_from_direct_metrics(
+        self, simple_specialist
+    ):
+        """Reviewer instruction contains the derived-vs-direct metrics carve-out clause."""
+        pipeline = build_review_pipeline(
+            simple_specialist, "Crit.", output_key_prefix="p"
+        )
+        _, reviewer = pipeline.sub_agents
+        assert "derived metrics" in reviewer.instruction
+        assert "Direct platform metrics" in reviewer.instruction
+
+    def test_drafting_rules_precede_criteria_sentinel_in_worker_instruction(
+        self, simple_specialist
+    ):
+        """Security regression guard (PR #919 review): the Drafting Rules block
+        MUST appear before the acceptance-criteria sentinel region.
+
+        Placement matters — injected ``acceptance_criteria`` content lives inside
+        ``<<<CRITERIA_START>>>``/``<<<CRITERIA_END>>>``. If the Drafting Rules
+        moved after that region, a ``## Drafting Rules`` heading inside the
+        injected criteria could precede and shadow the real rules. The
+        presence-only assertions above would stay green through such a reorder;
+        this ordering check is what actually locks the security fix.
+        """
+        pipeline = build_review_pipeline(
+            simple_specialist, "Crit.", output_key_prefix="p"
+        )
+        worker, _ = pipeline.sub_agents
+        instruction = worker.instruction
+        assert instruction.index("## Drafting Rules") < instruction.index(
+            "<<<CRITERIA_START>>>"
         )
 
 
@@ -724,6 +778,43 @@ class TestCallableInstructionValidation:
         object.__setattr__(specialist, "instruction", 42)
         with pytest.raises(TypeError, match="Callable"):
             build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
+
+    def test_callable_worker_instruction_forbids_reviewer_meta_commentary(self):
+        """Worker callable (callable path) renders the no-meta-commentary clause."""
+        specialist = LlmAgent(
+            name="closure_specialist",
+            model="gemini-2.5-pro",
+            instruction=lambda ctx: "Dynamic instruction",
+        )
+        pipeline = build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
+        worker, _ = pipeline.sub_agents
+        stub_ctx = MagicMock()
+        stub_ctx.state = {}
+        rendered = worker.instruction(stub_ctx)
+        assert (
+            "must not reference, acknowledge, quote, or argue with the reviewer"
+            in rendered
+        )
+
+    def test_callable_drafting_rules_precede_criteria_sentinel(self):
+        """Security regression guard (PR #919 review), callable path: the Drafting
+        Rules block must render before the criteria sentinel region in the
+        production (factory-callable) instruction path too — both paths share the
+        same ``criteria_block``, and this locks that ordering for the live path.
+        """
+        specialist = LlmAgent(
+            name="closure_specialist",
+            model="gemini-2.5-pro",
+            instruction=lambda ctx: "Dynamic instruction",
+        )
+        pipeline = build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
+        worker, _ = pipeline.sub_agents
+        stub_ctx = MagicMock()
+        stub_ctx.state = {}
+        rendered = worker.instruction(stub_ctx)
+        assert rendered.index("## Drafting Rules") < rendered.index(
+            "<<<CRITERIA_START>>>"
+        )
 
     def test_callable_sentinel_strip_removes_injected_token_and_logs_warning(
         self, caplog: pytest.LogCaptureFixture
@@ -1825,3 +1916,117 @@ class TestIsReviewerAuthor:
 
     def test_non_string_list(self):
         assert is_reviewer_author([]) is False  # type: ignore[arg-type]
+
+
+# ── Live-Gemini behavioral regression (AH-155) ────────────────────────────────
+#
+# The instruction-text assertions above prove the guardrails are *present*; they
+# cannot prove a real model *obeys* them. This opt-in test closes that gap (the
+# behavioral verification deferred per PR #919 plan Decision 4). It is skipped in
+# default CI lanes (no credentials) and is the gate to run before closing AH-155:
+#
+#     pytest -m llm app/adk/agents/utils/test_review_pipeline.py
+#
+# Requires GOOGLE_API_KEY (AI Studio) or GOOGLE_CLOUD_PROJECT (Vertex) with
+# gemini-2.5-flash enabled.
+
+_GEMINI_CREDS_AVAILABLE = bool(
+    os.environ.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+)
+
+
+@pytest.mark.parametrize("trial", [1, 2, 3])
+@pytest.mark.llm
+@pytest.mark.skipif(
+    not _GEMINI_CREDS_AVAILABLE,
+    reason=(
+        "Live Gemini credentials not configured — set GOOGLE_API_KEY or "
+        "GOOGLE_CLOUD_PROJECT to run the AH-155 behavioral regression"
+    ),
+)
+@pytest.mark.asyncio
+async def test_live_worker_omits_reviewer_appeasement_for_direct_metric(
+    trial: int,
+) -> None:
+    """AH-155: against a real Gemini model, the worker's draft for a *direct*
+    platform metric must not bake reviewer-appeasement prose into the answer.
+
+    Sets up the exact bug condition: a "provide the formula" acceptance
+    criterion applied to a direct platform metric (GA "Total active users" — a
+    raw count with no formula). Before the fix the worker argued with the
+    reviewer inline (e.g. "'Total active users' is a direct metric ... and does
+    not involve a calculation with a formula."). After the fix it silently omits
+    the formula and answers cleanly. We assert on the worker's terminal draft
+    (``{prefix}_draft``), not the reviewer output.
+
+    Nondeterministic by nature: parametrized over 3 trials and gated to manual
+    runs so transient model variance never breaks CI.
+    """
+    specialist = LlmAgent(
+        name="marketing_specialist",
+        model="gemini-2.5-flash",
+        instruction=(
+            "You are a marketing analyst. Answer the user's question directly "
+            "and concisely using only the figures they provide. State the "
+            "number plainly."
+        ),
+    )
+    pipeline = build_review_pipeline(
+        specialist,
+        "If you report a metric, provide the formula used to calculate it.",
+        output_key_prefix="ga_review",
+        max_iterations=2,
+    )
+
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="ah155_live", user_id="u1"
+    )
+    runner = Runner(
+        agent=pipeline, app_name="ah155_live", session_service=session_service
+    )
+    question = (
+        "Our Google Analytics report shows 12,345 total active users this "
+        "week. What is the total active users figure?"
+    )
+    try:
+        async for _ in runner.run_async(
+            user_id="u1",
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user", parts=[genai_types.Part(text=question)]
+            ),
+        ):
+            pass
+    except ClientError as exc:
+        if exc.code in (403, 404):
+            pytest.skip(
+                f"Gemini unavailable in this project/region (HTTP {exc.code}); "
+                f"run where gemini-2.5-flash is enabled. {exc!s:.160}"
+            )
+        raise
+
+    final = await session_service.get_session(
+        app_name="ah155_live", user_id="u1", session_id=session.id
+    )
+    draft = str(final.state.get("ga_review_draft", ""))
+    lowered = draft.lower()
+
+    assert draft, f"[trial {trial}] worker produced no draft"
+    # It actually answered the direct-metric question...
+    assert "12,345" in draft or "12345" in draft, (
+        f"[trial {trial}] draft did not report the figure: {draft!r}"
+    )
+    # ...without leaking the review process or justifying a missing formula.
+    # For a raw-count metric a clean answer never needs the word "formula"; its
+    # presence is the AH-155 appeasement symptom.
+    assert "reviewer" not in lowered, (
+        f"[trial {trial}] draft references the reviewer: {draft!r}"
+    )
+    assert "formula" not in lowered, (
+        f"[trial {trial}] draft discusses a formula for a direct metric "
+        f"(AH-155 appeasement symptom): {draft!r}"
+    )
+    assert "acceptance criteria" not in lowered, (
+        f"[trial {trial}] draft references the acceptance criteria: {draft!r}"
+    )
