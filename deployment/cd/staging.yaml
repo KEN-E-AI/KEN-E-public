@@ -12,7 +12,157 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# ---------------------------------------------------------------------------
+# AH-156: Staging-deploy serialization contract
+#
+# Problem: a burst of pushes to main fires concurrent staging builds, each
+# calling agent_engines.update() against the single shared staging chat
+# engine.  Concurrent LROs on one engine amplify Vertex transient 500s and
+# produce false-red CD signals for green commits.
+#
+# Solution (Options 1 + 2 from AH-156):
+#
+#   1. supersede-redundant-builds  — at build start, cancels only
+#      STRICTLY-OLDER WORKING/QUEUED cd-pipeline builds (ordered by
+#      createTime), reducing the in-flight blast radius without ever
+#      cancelling a newer/tip build.  Best-effort: cancellation failures are
+#      warned, not fatal.  Cancellation kills Cloud Build containers but does
+#      NOT abort an in-flight Vertex LRO — the tip-commit guard below is the
+#      authoritative safety net.
+#
+#   2. tip-commit-guard  — reads origin/main's tip via `git ls-remote`
+#      (read-only — no /workspace/.git mutation, so it cannot race the
+#      concurrent decide-chat-loadtest fetch) and writes
+#      /workspace/proceed_with_deploy.flag = "true"|"false".  A stale
+#      build's flag is "false"; its five gated deploy steps below exit 0
+#      immediately with a [AH-156] log line.  Fails OPEN on ls-remote failure
+#      so an infra glitch never silently skips a real deploy.
+#
+# Gated steps (read /workspace/proceed_with_deploy.flag):
+#   • deploy-strategy-supervisor-staging  (agent_engines.update — strategy)
+#   • deploy-ken-e-agent-staging          (agent_engines.update — chat)
+#   • deploy-api-to-cloud-run             (Cloud Run API service)
+#   • deploy-react-cloud-run              (Cloud Run frontend service)
+#   • trigger-prod-deployment             (prod-trigger fan-out)
+#
+# Ungated steps (container builds/pushes, load tests, export):
+#   Content-addressed images are safe to build on stale commits.
+#   Load tests exercise the already-deployed API, not this build's image.
+#
+# Operator override / residual-race notes: see
+#   deployment/runbooks/staging-cd-supersession.md
+# ---------------------------------------------------------------------------
+
 steps:
+  # -------------------------------------------------------------------------
+  # AH-156 Step 1: Cancel strictly-older in-flight staging builds (never the tip).
+  # Runs at build start (waitFor: ['-']) in parallel with tip-commit-guard.
+  # -------------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/gcloud
+    id: supersede-redundant-builds
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -uo pipefail
+        echo "[AH-156] Listing WORKING/QUEUED 'cd-pipeline' builds (id + epoch createTime) to supersede only strictly-older builds..."
+        # Two passes (WORKING, QUEUED) to avoid dependency on OR-filter support
+        # across all gcloud versions in this image.  createTime is requested as
+        # epoch seconds via date('%s') so the ordering comparison is purely
+        # numeric (no locale / RFC3339 fractional-second pitfalls) and depends
+        # only on cloudbuild.builds.list — NOT builds.get/describe, which the
+        # cicd-runner SA may not hold.
+        TMPFILE=$$(mktemp)
+        for STATUS in WORKING QUEUED; do
+          gcloud builds list \
+            --project="${PROJECT_ID}" \
+            --filter="status=$$STATUS AND substitutions.TRIGGER_NAME='cd-pipeline'" \
+            --format="value(id,createTime.date('%s'))" \
+            --page-size=50 2>/dev/null >> "$$TMPFILE" \
+            || echo "[AH-156][WARN] builds list for status $$STATUS failed — continuing."
+        done
+        # Resolve THIS build's epoch createTime from the same list (it is WORKING
+        # now, so it appears in the WORKING pass).  read -r ID EPOCH splits the
+        # tab-separated value() output; id/epoch carry no embedded whitespace.
+        SELF_EPOCH=""
+        while read -r ID EPOCH; do
+          if [ "$$ID" = "${BUILD_ID}" ]; then SELF_EPOCH="$$EPOCH"; break; fi
+        done < "$$TMPFILE"
+        # Fail SAFE: if we cannot establish our own ordering, cancel nobody.  The
+        # tip-commit-guard is the authoritative safety net — skipping supersession
+        # only forgoes best-effort blast-radius reduction; it never risks
+        # cancelling the tip build.
+        if ! printf '%s' "$$SELF_EPOCH" | grep -qE '^[0-9]+$$'; then
+          echo "[AH-156][WARN] Could not resolve this build's createTime from the list — skipping supersession."
+          rm -f "$$TMPFILE"
+          exit 0
+        fi
+        echo "[AH-156] This build ${BUILD_ID} createTime(epoch)=$$SELF_EPOCH — cancelling only strictly-older builds."
+        CANCELLED=0
+        KEPT=0
+        FAILED=0
+        while read -r ID EPOCH; do
+          [ -z "$$ID" ] && continue
+          [ "$$ID" = "${BUILD_ID}" ] && continue
+          # Cancel only builds strictly OLDER than this one (smaller epoch).  A
+          # newer/same/unparsable epoch is KEPT so a stale build can never cancel
+          # the tip — the review gap this change closes.
+          if printf '%s' "$$EPOCH" | grep -qE '^[0-9]+$$' && [ "$$EPOCH" -lt "$$SELF_EPOCH" ]; then
+            echo "[AH-156] Cancelling superseded older build: $$ID (epoch=$$EPOCH)"
+            CANCEL_OUT=$$(gcloud builds cancel "$$ID" --project="${PROJECT_ID}" 2>&1) \
+              && CANCEL_RC=0 || CANCEL_RC=$$?
+            if [ "$$CANCEL_RC" -eq 0 ]; then
+              CANCELLED=$$((CANCELLED + 1))
+            else
+              SAFE_OUT=$$(printf '%s' "$$CANCEL_OUT" | tr -d '\000-\010\013\014\016-\037' | head -c 500)
+              echo "[AH-156][WARN] Cancel returned non-zero for $$ID (may be terminal): $$SAFE_OUT"
+              FAILED=$$((FAILED + 1))
+            fi
+            sleep 0.2   # stay under the ~10 req/s Cloud Build cancel quota (matches AH-154 script)
+          else
+            echo "[AH-156] Keeping $$ID (epoch=$$EPOCH not strictly older than $$SELF_EPOCH)."
+            KEPT=$$((KEPT + 1))
+          fi
+        done < "$$TMPFILE"
+        rm -f "$$TMPFILE"
+        echo "[AH-156] Supersession complete: $$CANCELLED cancelled, $$KEPT kept, $$FAILED failed."
+
+  # -------------------------------------------------------------------------
+  # AH-156 Step 2: Write proceed_with_deploy.flag = true|false.
+  # Runs at build start (waitFor: ['-']) in parallel with supersede step.
+  # Fails OPEN on git ls-remote failure so an infra glitch never silently drops
+  # a real deploy.
+  # -------------------------------------------------------------------------
+  - name: gcr.io/cloud-builders/gcloud
+    id: tip-commit-guard
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -uo pipefail
+        # Use ls-remote (read-only) rather than `git fetch origin main`, so this
+        # step never writes to the shared /workspace/.git — which would otherwise
+        # race the concurrent decide-chat-loadtest fetch (both run at
+        # waitFor: ['-'] against the same checkout). ls-remote returns the remote
+        # tip without touching FETCH_HEAD or .git/shallow.
+        TIP=$$(git ls-remote origin refs/heads/main 2>/dev/null | cut -f1) \
+          || { echo "[AH-156] WARN: git ls-remote failed — failing open (will proceed with deploy)."; echo "true" > /workspace/proceed_with_deploy.flag; exit 0; }
+        # Validate that the SHA is a 40-character hex string before using it.
+        if ! printf '%s' "$$TIP" | grep -qE '^[0-9a-f]{40}$$'; then
+          echo "[AH-156] WARN: git ls-remote returned non-SHA value — failing open."
+          echo "true" > /workspace/proceed_with_deploy.flag
+          exit 0
+        fi
+        if [ "${COMMIT_SHA}" = "$$TIP" ]; then
+          echo "[AH-156] tip-commit-guard: ${COMMIT_SHA} IS the tip of origin/main — proceeding with deploy."
+          echo "true" > /workspace/proceed_with_deploy.flag
+        else
+          echo "[AH-156] tip-commit-guard: ${COMMIT_SHA} is superseded (tip is $$TIP) — deploy steps will skip."
+          echo "false" > /workspace/proceed_with_deploy.flag
+        fi
+
   - name: "python:3.11-slim"
     id: install-dependencies
     entrypoint: /bin/bash
@@ -40,10 +190,15 @@ steps:
   # strategy.txt header.
   - name: "python:3.12-slim"
     id: deploy-strategy-supervisor-staging
+    waitFor: ['install-dependencies', 'tip-commit-guard']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+        if [ "$(cat /workspace/proceed_with_deploy.flag 2>/dev/null)" != "true" ]; then
+          echo "[AH-156] tip-commit-guard: superseded — skipping deploy-strategy-supervisor-staging"
+          exit 0
+        fi
         cd app/adk
         pip install uv --user
         uv venv .venv-adk1
@@ -68,10 +223,15 @@ steps:
   # own .venv-adk1 (1.34.1) and does not interfere with this step.
   - name: "python:3.12-slim"
     id: deploy-ken-e-agent-staging
+    waitFor: ['deploy-strategy-supervisor-staging', 'tip-commit-guard']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+        if [ "$(cat /workspace/proceed_with_deploy.flag 2>/dev/null)" != "true" ]; then
+          echo "[AH-156] tip-commit-guard: superseded — skipping deploy-ken-e-agent-staging"
+          exit 0
+        fi
         cd app/adk
         uv sync --frozen
         uv run python deploy_ken_e.py --env staging
@@ -197,11 +357,15 @@ steps:
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: deploy-api-to-cloud-run
-    waitFor: ['push-api-image']
+    waitFor: ['push-api-image', 'tip-commit-guard']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+          if [ "$(cat /workspace/proceed_with_deploy.flag 2>/dev/null)" != "true" ]; then
+            echo "[AH-156] tip-commit-guard: superseded — skipping deploy-api-to-cloud-run"
+            exit 0
+          fi
           set -e
           set -x
 
@@ -364,21 +528,21 @@ steps:
         echo "_________________________________________________________________________"
 
   # Trigger Prod Deployment
+  # AH-156: gated — stale staging builds must not queue prod-trigger fan-outs.
   - name: gcr.io/cloud-builders/gcloud
     id: trigger-prod-deployment
-    entrypoint: gcloud
+    entrypoint: /bin/bash
     args:
-      - "beta"
-      - "builds"
-      - "triggers"
-      - "run"
-      - "deploy-to-prod-pipeline"
-      - "--region"
-      - "$LOCATION"
-      - "--project"
-      - "$PROJECT_ID"
-      - "--sha"
-      - $COMMIT_SHA
+      - "-c"
+      - |
+        if [ "$(cat /workspace/proceed_with_deploy.flag 2>/dev/null)" != "true" ]; then
+          echo "[AH-156] tip-commit-guard: superseded — skipping trigger-prod-deployment"
+          exit 0
+        fi
+        gcloud beta builds triggers run deploy-to-prod-pipeline \
+          --region ${LOCATION} \
+          --project ${PROJECT_ID} \
+          --sha ${COMMIT_SHA}
 
   - name: gcr.io/cloud-builders/gcloud
     id: echo-view-build-trigger-link
@@ -425,17 +589,24 @@ steps:
       - push
       - "gcr.io/${PROJECT_ID}/kene-frontend-staging:${COMMIT_SHA}"
 
+  # AH-156: gated — stale staging builds must not deploy to the frontend service.
   - name: "gcr.io/cloud-builders/gcloud"
     id: deploy-react-cloud-run
+    waitFor: ['push-react-image', 'tip-commit-guard']
+    entrypoint: /bin/bash
     args:
-      - "run"
-      - "deploy"
-      - "kene-frontend-staging"
-      - "--image=gcr.io/${PROJECT_ID}/kene-frontend-staging:${COMMIT_SHA}"
-      - "--region=${_REGION}"
-      - "--allow-unauthenticated"
-      - "--memory=1Gi"
-      - "--project=${_STAGING_PROJECT_ID}"
+      - "-c"
+      - |
+        if [ "$(cat /workspace/proceed_with_deploy.flag 2>/dev/null)" != "true" ]; then
+          echo "[AH-156] tip-commit-guard: superseded — skipping deploy-react-cloud-run"
+          exit 0
+        fi
+        gcloud run deploy kene-frontend-staging \
+          --image=gcr.io/${PROJECT_ID}/kene-frontend-staging:${COMMIT_SHA} \
+          --region=${_REGION} \
+          --allow-unauthenticated \
+          --memory=1Gi \
+          --project=${_STAGING_PROJECT_ID}
 
   # (API build/deploy chain moved earlier in the file — see the steps right
   # before validate-loadtest-vars.  chat-sidebar-load-test waitFors
