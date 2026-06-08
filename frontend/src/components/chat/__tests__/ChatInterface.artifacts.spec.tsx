@@ -26,10 +26,17 @@ vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
-vi.mock("react-vega", () => ({
-  VegaEmbed: ({ spec }: { spec: unknown }) => (
-    <div data-testid="vega-embed" data-spec={JSON.stringify(spec)} />
+// ─── VegaEmbed mock: a vi.fn() so individual tests can override behaviour ───
+// Default: render a labelled div (no chart rendering, no errors).
+const mockVegaEmbed = vi.fn(
+  (props: { spec: unknown; onError?: (e: unknown) => void }) => (
+    <div data-testid="vega-embed" data-spec={JSON.stringify(props.spec)} />
   ),
+);
+
+vi.mock("react-vega", () => ({
+  VegaEmbed: (props: { spec: unknown; onError?: (e: unknown) => void }) =>
+    mockVegaEmbed(props),
 }));
 
 vi.mock("@/lib/chatApi", async () => {
@@ -192,6 +199,96 @@ describe("ChatInterface — artifacts SSE integration", () => {
     });
 
     expect(screen.queryByTestId("chat-artifact-renderer")).toBeNull();
+  });
+
+  // AC-2: text content still renders when VegaEmbed reports a render error via onError.
+  test("text renders when chart reports an error via onError", async () => {
+    // Make VegaEmbed call onError immediately on mount (simulates a malformed spec).
+    // This is the same pattern used in ChatArtifactRenderer.spec.tsx test 5.
+    mockVegaEmbed.mockImplementationOnce(
+      (props: { spec: unknown; onError?: (e: unknown) => void }) => {
+        if (props.onError) props.onError("Vega render failed: bad spec");
+        return (
+          <div
+            data-testid="vega-embed"
+            data-spec={JSON.stringify(props.spec)}
+          />
+        );
+      },
+    );
+
+    mockStreamChatCompletion.mockReturnValueOnce(
+      makeStream([
+        { type: "text", text: "Here is the analysis:" },
+        { type: "artifacts", artifacts: [sampleArtifact], author: "model" },
+      ]) as any,
+    );
+
+    render(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText(/ask me anything/i);
+    await userEvent.type(textarea, "show me a chart");
+    await userEvent.keyboard("{Enter}");
+
+    // Wait for the fallback to appear.
+    await waitFor(() => {
+      expect(screen.getByText("Could not render chart")).toBeInTheDocument();
+    });
+
+    // The message text must still be visible alongside the fallback.
+    expect(screen.getByText("Here is the analysis:")).toBeInTheDocument();
+  });
+
+  // AC-3: in a mixed two-artifact response, the valid chart renders and only the
+  // malformed one shows the SpecFallback — order preserved.
+  test("mixed valid and malformed artifacts: valid chart renders, malformed falls back", async () => {
+    // First VegaEmbed call triggers onError (first artifact is "malformed").
+    // Second VegaEmbed call uses the default implementation (second artifact is valid).
+    mockVegaEmbed.mockImplementationOnce(
+      (props: { spec: unknown; onError?: (e: unknown) => void }) => {
+        if (props.onError) props.onError("bad spec encoding");
+        return (
+          <div
+            data-testid="vega-embed"
+            data-spec={JSON.stringify(props.spec)}
+          />
+        );
+      },
+    );
+
+    mockStreamChatCompletion.mockReturnValueOnce(
+      makeStream([
+        {
+          type: "artifacts",
+          artifacts: [sampleArtifact, sampleArtifact2],
+          author: "model",
+        },
+      ]) as any,
+    );
+
+    render(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText(/ask me anything/i);
+    await userEvent.type(textarea, "show me two charts");
+    await userEvent.keyboard("{Enter}");
+
+    // Both artifact wrappers must mount.
+    await waitFor(() => {
+      expect(screen.getAllByTestId("chat-artifact-renderer")).toHaveLength(2);
+    });
+
+    // Exactly one fallback (for the first artifact).
+    expect(screen.getAllByText("Could not render chart")).toHaveLength(1);
+
+    // Exactly one vega-embed still visible (the second artifact rendered normally).
+    // The first artifact's VegaEmbed mock called onError synchronously during
+    // render, which triggered a React state update inside VisualizationRenderer
+    // that replaced it with SpecFallback; that unmounts the vega-embed stub.
+    expect(screen.getAllByTestId("vega-embed")).toHaveLength(1);
+
+    // The second artifact's spec contains "bar" — verify list order is preserved.
+    const vegaEmbeds = screen.getAllByTestId("vega-embed");
+    expect(vegaEmbeds[0].getAttribute("data-spec")).toContain('"bar"');
   });
 
   test("settings popover opens on Chart settings button click", async () => {

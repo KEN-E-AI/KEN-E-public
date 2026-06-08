@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { VegaEmbed } from "react-vega";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { Artifact } from "@/lib/chatApi";
@@ -195,7 +196,7 @@ function VisualizationRenderer({
   );
 }
 
-function SpecFallback({
+export function SpecFallback({
   spec,
   error,
 }: {
@@ -221,15 +222,52 @@ function SpecFallback({
         Show spec
       </button>
       <p className="text-[0.625rem] text-[var(--color-error-text)] mt-1">
-        {error}
+        {error.length > 200 ? error.slice(0, 200) + "…" : error}
       </p>
       {open && (
-        <pre className="mt-1 p-1.5 bg-[var(--color-bg-secondary)] rounded overflow-auto max-h-32 text-[0.625rem]">
+        <pre
+          data-testid="spec-json"
+          className="mt-1 p-1.5 bg-[var(--color-bg-secondary)] rounded overflow-auto max-h-32 text-[0.625rem]"
+        >
           {JSON.stringify(spec, null, 2)}
         </pre>
       )}
     </div>
   );
+}
+
+type ChartErrorBoundaryProps = {
+  spec: Record<string, unknown>;
+  children: ReactNode;
+};
+
+type ChartErrorBoundaryState = {
+  error: string | null;
+};
+
+class ChartErrorBoundary extends Component<
+  ChartErrorBoundaryProps,
+  ChartErrorBoundaryState
+> {
+  constructor(props: ChartErrorBoundaryProps) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: unknown): ChartErrorBoundaryState {
+    return { error: String(error) };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo): void {
+    console.error("[ChartErrorBoundary]", error, info.componentStack);
+  }
+
+  render(): ReactNode {
+    if (this.state.error !== null) {
+      return <SpecFallback spec={this.props.spec} error={this.state.error} />;
+    }
+    return this.props.children;
+  }
 }
 
 type ChatArtifactRendererProps = {
@@ -259,11 +297,15 @@ export function ChatArtifactRenderer({
 
   return (
     <div data-testid="chat-artifact-renderer">
-      <VisualizationRenderer
-        spec={effectiveSpec}
-        color={color}
-        showDataLabels={showDataLabels}
-      />
+      {/* key resets the boundary when viewOverride changes, allowing a fresh
+          render attempt instead of permanently showing the fallback. */}
+      <ChartErrorBoundary key={viewOverride ?? ""} spec={effectiveSpec}>
+        <VisualizationRenderer
+          spec={effectiveSpec}
+          color={color}
+          showDataLabels={showDataLabels}
+        />
+      </ChartErrorBoundary>
     </div>
   );
 }

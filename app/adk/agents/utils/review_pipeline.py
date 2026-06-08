@@ -25,6 +25,19 @@ from app.utils.weave_observability import safe_weave_op
 
 logger = logging.getLogger(__name__)
 
+# Threshold for summarizing spec.data.values before injecting into the reviewer
+# context.  Specs with strictly more than this many rows are truncated to
+# _DATA_VALUES_SAMPLE_SIZE rows plus a _data_summary annotation.
+# AH-138 / AH-PRD-04 §7 AC-7 + §9 Risks row 1.
+_DATA_VALUES_THRESHOLD: int = 1000
+_DATA_VALUES_SAMPLE_SIZE: int = 10
+# Per-field string truncation applied to sampled data rows before the JSON
+# snapshot reaches the reviewer prompt.  marketing-platform API responses
+# (GA4 page titles, campaign names, URLs) can contain user-influenced strings;
+# capping at 500 characters is well above any legitimate dimension value while
+# preventing oversized injection payloads (AH-138 security note).
+_MAX_FIELD_STR_LEN: int = 500
+
 # Default reviewer model for the Generator-Critic review loop.
 # Configurable per-specialist via ``MergedAgentConfig.reviewer_model``
 # (AH-92 / AH-PRD-09); callers that omit the parameter continue to get this.
@@ -223,6 +236,74 @@ def _make_review_exit_loop(feedback_key: str) -> Callable[[ToolContext], None]:
     return exit_loop
 
 
+def _summarize_artifact_for_reviewer(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Return a reviewer-safe copy of *artifact* with large data.values summarized.
+
+    When ``spec.data.values`` contains strictly more than ``_DATA_VALUES_THRESHOLD``
+    rows, returns a new artifact dict with ``spec.data.values`` truncated to the
+    first ``_DATA_VALUES_SAMPLE_SIZE`` rows and a ``_data_summary`` sibling field
+    (at the top level of the returned dict, not inside ``spec``) describing the
+    truncation.  String values within the sampled rows are capped at
+    ``_MAX_FIELD_STR_LEN`` characters to prevent marketing-platform dimension
+    values (campaign names, page titles, URLs) from carrying prompt-injection
+    payloads into the reviewer context.  All other fields — ``type``, ``metadata``,
+    and the remainder of ``spec`` (``$schema``, ``mark``, ``encoding``, spec-level
+    ``title``) — pass through untouched so the reviewer can evaluate chart type,
+    axes, and title (AC-5/AC-6).
+
+    When ``spec.data.values`` is absent, not a list, or has ``<= _DATA_VALUES_THRESHOLD``
+    rows, returns the input dict unchanged (identity — no copy).
+
+    The returned dict is reviewer-prompt-internal only.  It is never re-validated
+    through ``Artifact.model_validate`` (``Artifact`` uses ``extra="forbid"`` and
+    would reject the ``_data_summary`` key).  The live ``Artifact`` objects in
+    ``response_artifacts`` and the API-shipped ``ChatResponse.artifacts`` are
+    never touched.
+
+    Only top-level ``spec.data.values`` is summarized.  Nested-data Vega-Lite
+    compositions (layer / concat / facet / lookup with ``data.values`` at
+    non-root levels) are not produced by any current specialist and are not in
+    scope for AH-138.
+    """
+    spec = artifact.get("spec")
+    if not isinstance(spec, dict):
+        return artifact
+    data = spec.get("data")
+    if not isinstance(data, dict):
+        return artifact
+    values = data.get("values")
+    if not isinstance(values, list):
+        return artifact
+    if len(values) <= _DATA_VALUES_THRESHOLD:
+        return artifact
+
+    original_count = len(values)
+    sampled = [
+        {
+            k: (v[:_MAX_FIELD_STR_LEN] if isinstance(v, str) else v)
+            for k, v in row.items()
+        }
+        if isinstance(row, dict)
+        else row
+        for row in values[:_DATA_VALUES_SAMPLE_SIZE]
+    ]
+    new_data = {**data, "values": sampled}
+    new_spec = {**spec, "data": new_data}
+    return {
+        **artifact,
+        "spec": new_spec,
+        "_data_summary": {
+            "summarized": True,
+            "original_row_count": original_count,
+            "sampled_rows": _DATA_VALUES_SAMPLE_SIZE,
+            "note": (
+                f"data.values truncated from {original_count} to {_DATA_VALUES_SAMPLE_SIZE} rows "
+                "for reviewer token budget; metadata and spec structure are complete."
+            ),
+        },
+    }
+
+
 def _make_artifacts_projector_callback(
     output_key_prefix: str,
 ) -> Callable[[Any], None]:
@@ -255,14 +336,13 @@ def _make_artifacts_projector_callback(
     (each iteration's charts only) is ever needed, the seam is here in the
     projector without changing the template or state-key contract.
 
-    **Size / sanitization (AH-138 seam):** AH-138 will replace the ``json.dumps``
-    call below with a size-aware summariser that collapses ``data.values`` arrays
-    exceeding 1,000 rows and sanitizes leaf-string values against prompt-injection
-    patterns (``spec.data.values`` originate from marketing-platform APIs and may
-    contain user-influenced strings).  Until AH-138 ships, each entry is
-    re-validated against ``Artifact`` before serialization so malformed /
-    non-Artifact dicts in session state are silently dropped rather than coerced
-    to ``str()`` and injected into the reviewer prompt.
+    **Size / sanitization:** Each entry is re-validated against ``Artifact`` before
+    serialization so malformed / non-Artifact dicts in session state are silently
+    dropped rather than coerced to ``str()`` and injected into the reviewer prompt.
+    Validated entries then pass through ``_summarize_artifact_for_reviewer``, which
+    collapses ``spec.data.values`` arrays exceeding ``_DATA_VALUES_THRESHOLD`` rows
+    to a first-``_DATA_VALUES_SAMPLE_SIZE``-row sample plus a ``_data_summary``
+    annotation — capping reviewer token usage on large chart series (AH-138).
 
     The projector is appended LAST in the worker's callback chain so any
     specialist-propagated callbacks (tracing, billing, state-write) fire first
@@ -287,7 +367,8 @@ def _make_artifacts_projector_callback(
             valid: list[dict[str, Any]] = []
             for entry in raw:
                 try:
-                    valid.append(_Artifact.model_validate(entry).model_dump())
+                    validated = _Artifact.model_validate(entry).model_dump()
+                    valid.append(_summarize_artifact_for_reviewer(validated))
                 except (ValidationError, Exception):
                     logger.warning(
                         "[REVIEW-LOOP] _projector for '%s': dropping invalid "
@@ -510,7 +591,17 @@ def build_review_pipeline(
         "'title' — axis labels must be present and the title must describe the data; "
         "(c) the text narrative in the draft references the chart accurately — "
         "the direction of change, peaks, and data values described in prose must be "
-        "consistent with the data points in the artifact spec."
+        "consistent with the data points in the artifact spec. "
+        "When the '## Artifacts (if any)' section above is empty or missing, check "
+        "whether the acceptance criteria explicitly require a visualization — look for "
+        "signal words such as 'chart', 'graph', 'plot', 'visualization', or explicit "
+        "references to axis labels. "
+        "If the criteria explicitly require a chart or graph and no artifact is present, "
+        "reject the draft with feedback that names the missing visualization (e.g., "
+        "'The acceptance criteria require a line chart of daily sessions; no artifact "
+        "was provided.'). "
+        "If the acceptance criteria contain no visualization requirement, the absence "
+        "of artifacts is not a defect and must not be flagged as missing."
     )
 
     reviewer = LlmAgent(

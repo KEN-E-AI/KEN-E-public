@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 // ─── Import component AFTER mocks are registered ─────────────────────────────
-import { ChatArtifactRenderer } from "../ChatArtifactRenderer";
+import { ChatArtifactRenderer, SpecFallback } from "../ChatArtifactRenderer";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 const sampleArtifact: Artifact = {
@@ -147,5 +147,99 @@ describe("ChatArtifactRenderer", () => {
     expect(
       screen.queryByRole("button", { name: /chart settings/i }),
     ).not.toBeInTheDocument();
+  });
+
+  // SpecFallback: clicking "Show spec" toggles the collapsible JSON block
+  test("SpecFallback toggles <pre> block open and closed on Show spec click", () => {
+    const spec = {
+      mark: "line",
+      $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+    };
+    render(<SpecFallback spec={spec} error="render failed" />);
+
+    // Pre block not visible initially
+    expect(screen.queryByTestId("spec-json")).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole("button", { name: /show spec/i });
+    fireEvent.click(toggle);
+
+    // Pre block now visible and contains spec JSON
+    const pre = screen.getByTestId("spec-json");
+    expect(pre).toBeInTheDocument();
+    expect(pre.textContent).toContain('"line"');
+
+    // Clicking again collapses
+    fireEvent.click(toggle);
+    expect(screen.queryByTestId("spec-json")).not.toBeInTheDocument();
+  });
+
+  // SpecFallback: error text and JSON content are rendered correctly when open
+  test("SpecFallback renders error text and serialised spec JSON when open", () => {
+    const spec = { mark: "bar", data: { values: [{ x: 1 }] } };
+    const errorMsg = "Error: Unknown encoding channel";
+    render(<SpecFallback spec={spec} error={errorMsg} />);
+
+    // Error text always visible
+    expect(screen.getByText(errorMsg)).toBeInTheDocument();
+    expect(screen.getByText("Could not render chart")).toBeInTheDocument();
+
+    // Open the spec block
+    fireEvent.click(screen.getByRole("button", { name: /show spec/i }));
+
+    const pre = screen.getByTestId("spec-json");
+    expect(pre).toBeInTheDocument();
+    expect(pre.textContent).toContain(JSON.stringify(spec, null, 2));
+  });
+
+  // ChartErrorBoundary: sync throw inside VisualizationRenderer is caught and
+  // shows SpecFallback; the outer data-testid wrapper remains mounted.
+  test("ChartErrorBoundary catches sync render throw and shows SpecFallback; wrapper stays mounted", () => {
+    // Replace VegaEmbed with a component that throws synchronously during render.
+    // mockImplementation (not mockImplementationOnce) is used because React 18's
+    // dev-mode error-replay consumes the once-queue when it re-renders the
+    // offending subtree for stack-trace capture — the permanent implementation
+    // survives the replay and ensures the boundary commits its fallback.
+    const ThrowOnRender = () => {
+      throw new Error("synthetic sync throw");
+    };
+    mockVegaEmbed.mockImplementation(() => <ThrowOnRender />);
+
+    const consoleSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    // Prevent React 18 dev-mode window error events from failing the test.
+    const errorHandler = (e: ErrorEvent) => e.preventDefault();
+    window.addEventListener("error", errorHandler);
+
+    try {
+      render(<ChatArtifactRenderer artifact={sampleArtifact} />);
+
+      // Fallback text is present
+      expect(screen.getByText("Could not render chart")).toBeInTheDocument();
+
+      // The outer wrapper is still mounted (boundary is scoped to the chart subtree)
+      expect(screen.getByTestId("chat-artifact-renderer")).toBeInTheDocument();
+
+      // componentDidCatch called console.error; componentStack may be null in some
+      // environments so expect.anything() is used for the third argument.
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "[ChartErrorBoundary]",
+        expect.any(Error),
+        expect.anything(),
+      );
+    } finally {
+      consoleSpy.mockRestore();
+      window.removeEventListener("error", errorHandler);
+      // Explicitly restore the default implementation so subsequent tests are
+      // unaffected (documents intent; vi.clearAllMocks does not reset implementations).
+      mockVegaEmbed.mockImplementation(
+        (props: { spec: unknown; onError?: (e: unknown) => void }) => (
+          <div
+            data-testid="vega-embed"
+            data-spec={JSON.stringify(props.spec)}
+          />
+        ),
+      );
+    }
   });
 });

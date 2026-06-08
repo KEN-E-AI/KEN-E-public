@@ -330,3 +330,153 @@ class TestScenario4HallucinatedApproval:
             "Hallucinated approval" in r.message and r.levelno == logging.WARNING
             for r in caplog.records
         )
+
+
+# ── Scenario 5: Required-Visualization Loop Contract (AH-137) ─────────────────
+
+
+class TestScenario5RequiredVisualization:
+    """AH-137 — Required-visualization loop contract (FakeLlm plumbing test).
+
+    Validates the loop state-transition machinery under the AH-137 contract:
+      - Positive case: reviewer rejects text-only draft (iteration 1); specialist
+        seeds response_artifacts (iteration 2); projector writes <prefix>_artifacts;
+        reviewer approves (iteration 2). Loop terminates approved=True.
+      - Negative case: ACs have no visualization requirement; reviewer approves
+        text-only draft on iteration 1 (artifact absence alone is not a defect).
+
+    NOTE: These tests use FakeLlm (scripted reviewer responses) so they validate
+    loop plumbing and state-transition machinery, NOT actual LLM judgment of
+    missing visualizations. True LLM-judgment validation lives in AH-140
+    (E2E / @pytest.mark.llm). The test names and fixture comments explicitly
+    document this plumbing-vs-judgement distinction.
+    """
+
+    @staticmethod
+    def _make_artifact_entry() -> dict:
+        """Minimal Artifact dict for seeding response_artifacts."""
+        from shared.artifact_models import Artifact, ArtifactMetadata
+
+        return Artifact(
+            type="visualization",
+            spec={
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "line",
+                "encoding": {
+                    "x": {"field": "date", "type": "temporal"},
+                    "y": {"field": "sessions", "type": "quantitative"},
+                },
+                "data": {"values": [{"date": "2026-01-01", "sessions": 100}]},
+            },
+            metadata=ArtifactMetadata(
+                chart_type_suggestion="line",
+                title="Daily Sessions",
+                data_source="google_analytics",
+            ),
+        ).model_dump()
+
+    def test_reject_then_approve_when_artifact_added_on_iteration_2(self):
+        """Positive case: iteration 1 rejects (no artifact), iteration 2 approves (artifact seeded).
+
+        AH-137 contract: loop runs 2 iterations, ends approved=True, and the
+        projector callback populates <prefix>_artifacts before the reviewer fires
+        on iteration 2.
+
+        The reviewer responses are scripted via FakeLlm — this test documents the
+        plumbing contract (reject→continue→approve→exit), not LLM judgment.
+        """
+        # Scripted queue: worker1 → reviewer1-rejects → worker2 → reviewer2-approves.
+        _fake_response_queue.extend(
+            [
+                _text("Here are the GA metrics for the past 7 days."),
+                _text(
+                    "Acceptance criteria require a line chart of daily sessions; "
+                    "the draft contains no visualization."
+                ),
+                _text("Here are the GA metrics with a chart attached."),
+                _exit_loop_response(),
+            ]
+        )
+
+        # before_agent_callback that seeds response_artifacts on the second
+        # specialist invocation (iteration 2). Seeding directly proves the
+        # projector→reviewer path without simulating a full create_visualization
+        # function-call event (which would double the test surface — see
+        # implementation plan Decision §3).
+        _call_counts = {"count": 0}
+        artifact_entry = self._make_artifact_entry()
+
+        def _seed_artifact_on_iter2(callback_context):
+            _call_counts["count"] += 1
+            if _call_counts["count"] >= 2:
+                state = callback_context.state
+                existing = list(state.get("response_artifacts") or [])
+                existing.append(artifact_entry)
+                state["response_artifacts"] = existing
+
+        specialist = LlmAgent(
+            name="news",
+            model="fake-it-worker",
+            instruction="You are helpful.",
+            before_agent_callback=_seed_artifact_on_iter2,
+        )
+
+        # dispatch_to_company_news is used (not GA) because it is the canonical
+        # FakeLlm fixture for review-loop transition tests (Scenarios 1-4). The
+        # goal is loop plumbing, not specialist routing - the dispatch function
+        # used does not affect the reject->approve state machine under test.
+        with (
+            _registry_ctx(specialist),
+            _pipeline_shim_ctx(),
+            patch("adk.agents.utils.dispatch_handlers.emit_iteration_span"),
+            patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs"),
+            patch.object(_rp_module, "_emit_hallucination_span"),
+        ):
+            result = dispatch_to_company_news(
+                "Show me traffic trends for the past week",
+                acceptance_criteria=(
+                    "Include a line chart showing daily sessions with labeled axes."
+                ),
+            )
+
+        assert result["status"] == "success"
+        assert result["approved"] is True
+        assert "warning" not in result
+        # Confirm the full reject→approve queue was consumed (2 iterations ran).
+        assert not _fake_response_queue
+
+    def test_text_only_draft_approved_when_no_visualization_required(self):
+        """Negative case: artifact absence alone is not a defect when ACs don't require a chart.
+
+        AH-137 carve-out: reviewer approves on iteration 1 even though no artifact
+        was produced. The reviewer response is scripted to exit_loop immediately.
+        """
+        # Scripted queue: worker text-only → reviewer exits immediately.
+        _fake_response_queue.extend(
+            [
+                _text(
+                    "Sessions increased 12% week-over-week, driven by organic search."
+                ),
+                _exit_loop_response(),
+            ]
+        )
+
+        specialist = _stub_specialist("news")
+
+        with (
+            _registry_ctx(specialist),
+            _pipeline_shim_ctx(),
+            patch("adk.agents.utils.dispatch_handlers.emit_iteration_span"),
+            patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs"),
+            patch.object(_rp_module, "_emit_hallucination_span"),
+        ):
+            result = dispatch_to_company_news(
+                "What drove traffic growth last week?",
+                acceptance_criteria=(
+                    "Explain the primary driver of the week-over-week traffic change."
+                ),
+            )
+
+        assert result["status"] == "success"
+        assert result["approved"] is True
+        assert "warning" not in result

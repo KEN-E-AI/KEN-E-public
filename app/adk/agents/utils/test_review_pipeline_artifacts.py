@@ -7,6 +7,10 @@ AH-136 / AH-PRD-04 §7 AC-5 — verifies:
         (chart type / axes+title / narrative consistency).
   AC-3: Template variable name is parameterized by output_key_prefix (no
         literal step_N hardcoding).
+
+AH-138 / AH-PRD-04 §7 AC-7 — verifies:
+  AC-7: Spec with >1,000 data.values rows is summarized to metadata + first-N
+        sample points; spec with ≤1,000 rows passes through unchanged.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from google.adk.agents import LlmAgent
 
 from app.adk.agents.utils.review_pipeline import (
     _make_artifacts_projector_callback,
+    _summarize_artifact_for_reviewer,
     build_review_pipeline,
 )
 from shared.artifact_models import Artifact, ArtifactMetadata
@@ -364,3 +369,489 @@ class TestDistinctPrefixesProduceDistinctArtifactKeys:
         # Both hold valid JSON
         assert isinstance(json.loads(ctx_news.state["news_review_artifacts"]), list)
         assert isinstance(json.loads(ctx_ga.state["ga_review_artifacts"]), list)
+
+
+# ── Reviewer instruction: required-visualization detection ────────────────────
+
+
+class TestReviewerInstructionRequiredVisualization:
+    """AC-6: reviewer instruction contains required-visualization detection guidance.
+
+    Verifies the AH-137 additions to the reviewer instruction string in
+    build_review_pipeline(). Each test checks a specific substring of the new
+    clauses that implement the reject-when-required-visualization-absent and
+    absence-is-not-a-defect-when-not-required behaviors.
+    """
+
+    def test_reviewer_instruction_contains_required_visualization_clause(self):
+        """New clause: when ACs require a viz and artifacts are absent, reject."""
+        pipeline = build_review_pipeline(
+            _make_specialist(), "Be accurate.", output_key_prefix="ga_review"
+        )
+        _, reviewer = pipeline.sub_agents
+        instr = reviewer.instruction
+        # The instruction must tell the reviewer to reject when a required
+        # visualization is missing. Accept any wording that conveys this.
+        assert any(
+            phrase in instr
+            for phrase in [
+                "explicitly require",
+                "required visualization",
+                "required chart",
+                "require a visualization",
+                "require a chart",
+            ]
+        ), (
+            "reviewer instruction must tell the reviewer to detect a required "
+            "visualization that is absent"
+        )
+
+    def test_reviewer_instruction_contains_signal_words_list(self):
+        """New clause: signal words are listed so the reviewer knows what 'requires a viz' looks like."""
+        pipeline = build_review_pipeline(
+            _make_specialist(), "Be accurate.", output_key_prefix="ga_review"
+        )
+        _, reviewer = pipeline.sub_agents
+        instr = reviewer.instruction
+        # All four canonical signal words must appear in the instruction.
+        for word in ("chart", "graph", "plot", "visualization"):
+            assert word in instr, (
+                f"reviewer instruction must mention the signal word '{word}' so "
+                "the reviewer can detect a visualization requirement in the ACs"
+            )
+
+    def test_reviewer_instruction_contains_absence_is_not_defect_carveout(self):
+        """New clause: absence of artifacts alone must not cause rejection when not required."""
+        pipeline = build_review_pipeline(
+            _make_specialist(), "Be accurate.", output_key_prefix="ga_review"
+        )
+        _, reviewer = pipeline.sub_agents
+        instr = reviewer.instruction
+        # The carve-out must be explicit.
+        assert any(
+            phrase in instr
+            for phrase in [
+                "absence",
+                "not a defect",
+                "does not require",
+                "no visualization requirement",
+                "without requiring",
+            ]
+        ), (
+            "reviewer instruction must contain a carve-out stating that absent "
+            "artifacts alone do not cause rejection when ACs don't require one"
+        )
+
+    def test_reviewer_instruction_new_clauses_sit_inside_instructions_block(self):
+        """New guidance must appear after the '## Instructions' heading."""
+        pipeline = build_review_pipeline(
+            _make_specialist(), "Be accurate.", output_key_prefix="ga_review"
+        )
+        _, reviewer = pipeline.sub_agents
+        instr = reviewer.instruction
+        instructions_idx = instr.index("## Instructions")
+        # At least one of the required-viz signal words must appear after the
+        # ## Instructions heading (not before it).
+        signal_positions = [
+            instr.find(word, instructions_idx)
+            for word in ("chart", "graph", "plot", "visualization")
+            if instr.find(word, instructions_idx) != -1
+        ]
+        assert signal_positions, (
+            "signal words for required-visualization detection must appear inside "
+            "the '## Instructions' block (after '## Instructions')"
+        )
+
+    def test_reviewer_instruction_missing_viz_trigger_bounded_to_empty_section(self):
+        """New clause: trigger fires only when artifacts section is 'empty or missing'.
+
+        The clause must explicitly condition on the Artifacts section being empty
+        or missing, so the required-visualization check and the artifact-quality
+        check (AH-136) are mutually exclusive rather than layered.
+        """
+        pipeline = build_review_pipeline(
+            _make_specialist(), "Be accurate.", output_key_prefix="ga_review"
+        )
+        _, reviewer = pipeline.sub_agents
+        instr = reviewer.instruction
+        assert any(
+            phrase in instr
+            for phrase in [
+                "empty or missing",
+                "is empty",
+                "section is empty",
+                "absent",
+            ]
+        ), (
+            "reviewer instruction must bound the required-visualization trigger "
+            "to when the '## Artifacts (if any)' section is empty or missing, "
+            "keeping it mutually exclusive with the artifact-quality checks"
+        )
+
+
+# ── Large-spec summarization (AH-138) ─────────────────────────────────────────
+
+
+def _make_artifact_with_rows(n: int) -> dict:
+    """Return an Artifact.model_dump() dict whose spec.data.values has n rows."""
+    return Artifact(
+        type="visualization",
+        spec={
+            "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+            "title": "Daily Sessions",
+            "mark": "line",
+            "encoding": {
+                "x": {"field": "date", "type": "temporal", "title": "Date"},
+                "y": {"field": "sessions", "type": "quantitative", "title": "Sessions"},
+            },
+            "data": {"values": [{"date": f"2026-01-{i % 28 + 1:02d}", "sessions": i} for i in range(n)]},
+        },
+        metadata=ArtifactMetadata(
+            chart_type_suggestion="line",
+            title="Daily Sessions",
+            data_source="google_analytics",
+            description="Session trend",
+        ),
+    ).model_dump()
+
+
+class TestSummarizeArtifactForReviewer:
+    """AH-138 / AC-7: large Vega-Lite specs are summarized before reviewer context."""
+
+    # ── (a) 1,001-row spec is reduced to 10 rows with _data_summary ────────────
+
+    def test_over_threshold_reduces_values_to_sample_size(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert len(result["spec"]["data"]["values"]) == 10
+
+    def test_over_threshold_adds_data_summary_with_summarized_true(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert "_data_summary" in result
+        assert result["_data_summary"]["summarized"] is True
+
+    def test_over_threshold_data_summary_records_original_row_count(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["_data_summary"]["original_row_count"] == 1001
+
+    def test_over_threshold_data_summary_records_sampled_rows(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["_data_summary"]["sampled_rows"] == 10
+
+    def test_over_threshold_data_summary_has_note(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert isinstance(result["_data_summary"]["note"], str)
+        assert len(result["_data_summary"]["note"]) > 0
+
+    # ── (b/c) Boundary: ≤1,000 rows pass through unchanged ───────────────────
+
+    def test_exactly_1000_rows_passes_through_unchanged(self):
+        artifact = _make_artifact_with_rows(1000)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result is artifact  # same object — no copy made
+        assert "_data_summary" not in result
+
+    def test_999_rows_passes_through_unchanged(self):
+        artifact = _make_artifact_with_rows(999)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result is artifact
+        assert "_data_summary" not in result
+
+    def test_1_row_passes_through_unchanged(self):
+        artifact = _make_artifact_with_rows(1)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result is artifact
+
+    # ── (d) Metadata + spec fields survive summarization intact ───────────────
+
+    def test_metadata_fields_preserved_after_summarization(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["metadata"]["chart_type_suggestion"] == "line"
+        assert result["metadata"]["title"] == "Daily Sessions"
+        assert result["metadata"]["data_source"] == "google_analytics"
+        assert result["metadata"]["description"] == "Session trend"
+
+    def test_spec_mark_preserved_after_summarization(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["spec"]["mark"] == "line"
+
+    def test_spec_encoding_preserved_after_summarization(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert "x" in result["spec"]["encoding"]
+        assert "y" in result["spec"]["encoding"]
+
+    def test_spec_schema_preserved_after_summarization(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["spec"]["$schema"] == "https://vega.github.io/schema/vega-lite/v6.json"
+
+    def test_spec_title_preserved_after_summarization(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["spec"]["title"] == "Daily Sessions"
+
+    def test_artifact_type_preserved_after_summarization(self):
+        artifact = _make_artifact_with_rows(1001)
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result["type"] == "visualization"
+
+    # ── (e) Pass-through for missing / non-list data.values ───────────────────
+
+    def test_no_spec_data_passes_through_unchanged(self):
+        artifact = {
+            "type": "visualization",
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {},
+                # no "data" key
+            },
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result is artifact
+
+    def test_non_list_data_values_passes_through_unchanged(self):
+        artifact = {
+            "type": "visualization",
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {},
+                "data": {"values": "not-a-list"},
+            },
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result is artifact
+
+    def test_missing_spec_key_passes_through_unchanged(self):
+        artifact = {
+            "type": "visualization",
+            "spec": "not-a-dict",
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        result = _summarize_artifact_for_reviewer(artifact)
+        assert result is artifact
+
+    # ── Input immutability: summarizer does not mutate the input dict ─────────
+
+    def test_summarizer_does_not_mutate_input(self):
+        artifact = _make_artifact_with_rows(1001)
+        original_row_count = len(artifact["spec"]["data"]["values"])
+        _ = _summarize_artifact_for_reviewer(artifact)
+        assert len(artifact["spec"]["data"]["values"]) == original_row_count
+        assert "_data_summary" not in artifact
+
+    def test_summarizer_preserves_first_n_rows_in_order(self):
+        artifact = _make_artifact_with_rows(1001)
+        original_first_10 = artifact["spec"]["data"]["values"][:10]
+        result = _summarize_artifact_for_reviewer(artifact)
+        # Original rows have short string values, so they survive truncation intact.
+        assert result["spec"]["data"]["values"] == original_first_10
+
+    # ── Per-field string truncation (security: prompt-injection prevention) ───
+
+    def test_long_string_field_truncated_in_sampled_rows(self):
+        """String values longer than _MAX_FIELD_STR_LEN are truncated."""
+        long_string = "A" * 10_000  # far above 500-char cap
+        artifact = {
+            "type": "visualization",
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {"x": {"field": "name"}, "y": {"field": "v"}},
+                "data": {
+                    "values": [{"name": long_string, "v": i} for i in range(1001)]
+                },
+            },
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        result = _summarize_artifact_for_reviewer(artifact)
+        for row in result["spec"]["data"]["values"]:
+            assert len(row["name"]) == 500
+
+    def test_short_string_field_unchanged_in_sampled_rows(self):
+        """String values at or below _MAX_FIELD_STR_LEN are not modified."""
+        short_string = "Campaign Name"
+        artifact = {
+            "type": "visualization",
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {"x": {"field": "name"}, "y": {"field": "v"}},
+                "data": {
+                    "values": [{"name": short_string, "v": i} for i in range(1001)]
+                },
+            },
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        result = _summarize_artifact_for_reviewer(artifact)
+        for row in result["spec"]["data"]["values"]:
+            assert row["name"] == short_string
+
+    def test_non_string_fields_in_rows_are_not_affected(self):
+        """Numeric, bool, and None values in rows pass through unchanged."""
+        artifact = {
+            "type": "visualization",
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {},
+                "data": {
+                    "values": [{"n": i, "f": 1.5, "b": True, "null": None} for i in range(1001)]
+                },
+            },
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        result = _summarize_artifact_for_reviewer(artifact)
+        for row in result["spec"]["data"]["values"]:
+            assert isinstance(row["f"], float)
+            assert isinstance(row["b"], bool)
+            assert row["null"] is None
+
+    def test_per_field_truncation_does_not_mutate_input(self):
+        """String truncation must not modify the original row dicts."""
+        long_string = "B" * 10_000
+        artifact = {
+            "type": "visualization",
+            "spec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {},
+                "data": {
+                    "values": [{"name": long_string, "v": i} for i in range(1001)]
+                },
+            },
+            "metadata": {
+                "chart_type_suggestion": "bar",
+                "title": "Test",
+                "data_source": "ga",
+                "description": None,
+            },
+        }
+        _ = _summarize_artifact_for_reviewer(artifact)
+        # Original rows are untouched.
+        for row in artifact["spec"]["data"]["values"]:
+            assert len(row["name"]) == 10_000
+
+
+class TestArtifactsProjectorCallbackSummarization:
+    """(f) Projector applies summarization: >1,000 rows → _data_summary in JSON output."""
+
+    def test_projector_output_contains_data_summary_when_over_threshold(self):
+        artifact = _make_artifact_with_rows(1001)
+        ctx = _CallbackContext({"response_artifacts": [artifact]})
+
+        projector = _make_artifacts_projector_callback("ga_review")
+        projector(ctx)
+
+        result_json = ctx.state.get("ga_review_artifacts")
+        assert isinstance(result_json, str)
+        parsed = json.loads(result_json)
+        assert len(parsed) == 1
+        assert "_data_summary" in parsed[0]
+        assert parsed[0]["_data_summary"]["summarized"] is True
+        assert parsed[0]["_data_summary"]["original_row_count"] == 1001
+        assert len(parsed[0]["spec"]["data"]["values"]) == 10
+
+    def test_projector_output_no_data_summary_when_under_threshold(self):
+        artifact = _make_artifact_with_rows(100)
+        ctx = _CallbackContext({"response_artifacts": [artifact]})
+
+        projector = _make_artifacts_projector_callback("ga_review")
+        projector(ctx)
+
+        result_json = ctx.state.get("ga_review_artifacts")
+        parsed = json.loads(result_json)
+        assert "_data_summary" not in parsed[0]
+        assert len(parsed[0]["spec"]["data"]["values"]) == 100
+
+    def test_projector_does_not_mutate_response_artifacts_in_state(self):
+        """response_artifacts in state must be untouched so API ships full spec."""
+        artifact = _make_artifact_with_rows(1001)
+        ctx = _CallbackContext({"response_artifacts": [artifact]})
+
+        projector = _make_artifacts_projector_callback("ga_review")
+        projector(ctx)
+
+        # The original artifact in response_artifacts must still have all rows.
+        original_in_state = ctx.state["response_artifacts"][0]
+        assert len(original_in_state["spec"]["data"]["values"]) == 1001
+        assert "_data_summary" not in original_in_state
+
+    def test_projector_truncates_long_string_fields_in_reviewer_output(self):
+        """Per-field string truncation applies through the projector path.
+
+        We need 1001 rows to trigger row-count summarization, but the spec must
+        stay under the 512 KB Artifact validation limit.  Use 600-char strings in
+        only the first 10 rows (the sample) and short strings in the remaining 991
+        rows — total spec JSON well under 512 KB.
+        """
+        long_str = "Y" * 600  # above _MAX_FIELD_STR_LEN=500, but only 10 rows have it
+        rows = [{"name": long_str, "v": i} for i in range(10)] + [
+            {"name": "short", "v": i} for i in range(991)
+        ]
+        artifact = Artifact(
+            type="visualization",
+            spec={
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "mark": "bar",
+                "encoding": {"x": {"field": "name"}, "y": {"field": "v", "type": "quantitative"}},
+                "data": {"values": rows},
+            },
+            metadata=ArtifactMetadata(
+                chart_type_suggestion="bar",
+                title="Long Field Test",
+                data_source="google_analytics",
+                description=None,
+            ),
+        ).model_dump()
+
+        ctx = _CallbackContext({"response_artifacts": [artifact]})
+        projector = _make_artifacts_projector_callback("ga_review")
+        projector(ctx)
+
+        assert "ga_review_artifacts" in ctx.state, "projector should have written the key"
+        parsed = json.loads(ctx.state["ga_review_artifacts"])
+        for row in parsed[0]["spec"]["data"]["values"]:
+            assert len(row["name"]) == 500
+        # Original artifact in state untouched.
+        assert len(artifact["spec"]["data"]["values"][0]["name"]) == 600
