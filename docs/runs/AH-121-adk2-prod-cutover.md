@@ -167,11 +167,11 @@ uv run --no-sync python deployment/ci/scripts/verify_deploy_tree.py
 
 ## §2 — Production Deploy
 
-> Prod deploys via the **approval-gated** `deploy-to-prod-pipeline` trigger. A `main`-push auto-creates a PENDING prod build (and an automatic staging deploy). The cutover is: approve the **right** PENDING prod build after a GO — cancel racing/stale ones first.
+> Prod deploys via the **approval-gated** `deploy-to-prod-pipeline` trigger. Since AH-154, the trigger is **manual-invocation only** — it no longer fires automatically on `main` pushes. Operators invoke prod deploys explicitly after staging is green; a second operator approves the pending build before it runs.
 
 ### 2.0 — Capture pre-cutover engine ID (REQUIRED for rollback §5)
 
-Before approving any prod build, record the current engine ID so rollback has a known target:
+Before triggering any prod build, record the current engine ID so rollback has a known target:
 
 ```bash
 PREV_ENGINE_ID=$(gcloud secrets versions access latest \
@@ -180,21 +180,23 @@ echo "Pre-cutover engine ID: ${PREV_ENGINE_ID}"
 # Paste this value into the §5 rollback table row "Prior engine ID restored" now
 ```
 
-### 2.1 — Path A: approve the auto-created prod build (canonical)
+### 2.1 — Canonical prod deploy path (manual trigger + approval)
 
 ```bash
-# 1) List recent prod builds; identify the PENDING build for the Wave-3 merge commit
+# 1) Trigger the prod build manually against main.
+#    This creates exactly one PENDING build awaiting approval — no stale-build cleanup needed.
+gcloud builds triggers run deploy-to-prod-pipeline \
+  --branch=main --project=ken-e-cicd
+
+# 2) Identify the newly-created PENDING build ID.
 gcloud builds list --project=ken-e-cicd \
-  --filter='substitutions.BRANCH_NAME=main' --limit=10 \
-  --format='table(id,status,substitutions.COMMIT_SHA,createTime)'
+  --filter='substitutions.TRIGGER_NAME=deploy-to-prod-pipeline status=PENDING' \
+  --format='table(id,status,substitutions.COMMIT_SHA,createTime)' \
+  --limit=5
 
-# 2) Cancel any STALE/duplicate PENDING prod builds (the push-to-main swarm creates several)
-gcloud builds cancel <STALE_BUILD_ID> --project=ken-e-cicd
-
-# 3) Approve the ONE prod build for the correct commit.
-#    NOTE: `gcloud builds approve` is not installed in this env — approve via REST.
+# 3) Approve the PENDING build via REST (gcloud builds approve not installed in this env).
 ACCESS_TOKEN=$(gcloud auth print-access-token)
-PROD_BUILD_ID=<the correct PENDING prod build id>
+PROD_BUILD_ID=<the PENDING build id from step 2>
 curl -s -X POST \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Type: application/json" \
   -d '{"approvalResult":{"decision":"APPROVED"}}' \
@@ -204,13 +206,15 @@ curl -s -X POST \
 gcloud builds log ${PROD_BUILD_ID} --project=ken-e-cicd --stream
 ```
 
-### 2.2 — Path B: manual fallback (force a fresh prod deploy)
+### 2.2 — Emergency bypass (trigger broken or unavailable)
 
-If no correct PENDING build exists (e.g. the merge was path-filtered out), submit the prod CD config directly. Source must be uploaded (the config references repo lock files):
+Use only if `gcloud builds triggers run` fails (e.g. the trigger resource itself is broken). Submits the prod CD config directly — skips the trigger, still requires operator credentials on `ken-e-cicd`:
 
 ```bash
 gcloud builds submit --config deployment/cd/deploy-to-prod.yaml --project=ken-e-cicd .
 ```
+
+> **Note:** `gcloud builds submit` bypasses the approval gate. Use only in a declared emergency and record the bypass decision in the AH-121 comment thread.
 
 **Retry policy:** the `500 INTERNAL` SIGTERM on `agent_engines.update()` is a known transient (AH-PRD-13 §9 / memory). Retry up to **2×**. A 3rd failure → NO-GO, roll back per §5, file a bug. On opaque `400/500 "...failed to be updated"`, read the real error from ReasoningEngine logs:
 

@@ -91,17 +91,38 @@ resource "google_cloudbuild_trigger" "cd_pipeline" {
 
 }
 
-# c. Create Deploy to production trigger
+# c. Deploy to production trigger — MANUAL INVOCATION ONLY (AH-154)
+#
+# This trigger does NOT fire automatically on main-branch pushes. Operators
+# invoke prod deploys explicitly via:
+#   gcloud builds triggers run deploy-to-prod-pipeline --branch=main --project=ken-e-cicd
+# after staging is green. The approval gate (approval_required = true) then
+# requires a second operator to approve before the build runs — two-person rule.
+#
+# See docs/runs/AH-121-adk2-prod-cutover.md §2.1 for the canonical deploy flow.
 resource "google_cloudbuild_trigger" "deploy_to_prod_pipeline" {
   name            = "deploy-to-prod-pipeline"
   project         = var.cicd_runner_project_id
   location        = var.region
-  description     = "Trigger for deployment to production"
+  description     = "Trigger for deployment to production — manual invocation only"
   service_account = resource.google_service_account.cicd_runner_sa.id
-  repository_event_config {
+
+  # Manual-invocation surface: no repository_event_config (which fires on every
+  # push to the connected repo's default branch). source_to_build + git_file_source
+  # make this a pure manual trigger invocable via `gcloud builds triggers run`.
+  source_to_build {
     repository = "projects/${var.cicd_runner_project_id}/locations/${var.region}/connections/${var.host_connection_name}/repositories/${var.repository_name}"
+    ref        = "refs/heads/main"
+    repo_type  = "GITHUB"
   }
-  filename = "deployment/cd/deploy-to-prod.yaml"
+
+  git_file_source {
+    path       = "deployment/cd/deploy-to-prod.yaml"
+    revision   = "refs/heads/main"
+    repository = "projects/${var.cicd_runner_project_id}/locations/${var.region}/connections/${var.host_connection_name}/repositories/${var.repository_name}"
+    repo_type  = "GITHUB"
+  }
+
   approval_config {
     approval_required = true
   }
@@ -114,5 +135,4 @@ resource "google_cloudbuild_trigger" "deploy_to_prod_pipeline" {
     _REDIS_HOST_PROD = google_redis_instance.production.host
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
-
 }
