@@ -2079,4 +2079,41 @@ Within R7, `DM-PRD-09` sequences first; `AH-PRD-11` (EU Agent Engine) is the har
 
 ---
 
+## Review 47 — AH-PRD-15 re-plan: AgentTool isolation replaces the task-mode migration (AH-121 prod incident)
+
+**Date:** 2026-06-07
+**Scope:** Reverses the core mechanism of [AH-PRD-15](components/agentic-harness/projects/AH-PRD-15-agenttool-migration-cutover.md) after the ADK 2.0 prod cutover failed. Supersedes the agent-as-tool decisions in Reviews 44 (§6 carry-forward) and 45 (the "AgentTool → task-mode migration" framing). Does **not** change the supervisor-orchestration `mode='task'` *specialist* model (Review 44) — that is a separate, still-valid use of task mode.
+
+### Summary
+
+AH-PRD-15 planned to migrate `agent.google_search` (and `agent.numerical_analyst`) from an `AgentTool` to a `mode='task'` sub-agent to fix the GitHub `#3984` billing under-count (`AgentTool.run_async` drops inner events → the search leaf's tokens go uncounted). That migration shipped (AH-114–120) and was cut over to production (AH-121), where `agent.google_search` **400'd on every web-search turn**: `400 INVALID_ARGUMENT: "Multiple tools are supported only when they are all search tools."`
+
+**Root cause (verified against ADK 2.0 source + a live staging engine).** The built-in `google_search` grounding tool — and `numerical_analyst`'s built-in code executor — must be the **only** tool in their LLM request. Every in-hierarchy sub-agent mode injects a sibling function tool next to it: `mode='task'` → `FinishTaskTool` (`llm_agent.py` `model_post_init`); `mode='chat'` → `transfer_to_agent` (`AutoFlow`), suppressible only by stranding the session on the leaf. **Only `AgentTool` isolates such a leaf** (own sub-runner, no injected sibling). The task-mode premise was therefore fundamentally unworkable for built-in-tool leaves — a constraint not known when Reviews 44/45 were written, and not caught earlier because the AC #1–#6 suites mock the LLM (the 400 is a server-side composition error only a real Gemini call surfaces).
+
+### Decision
+
+1. **`google_search` and `numerical_analyst` stay isolated `AgentTool`s** (a restore to the pre-AH-114 / AH-98 mechanism — prod had always run this path until the cutover). They register on a new **isolated-AgentTool lane** in `agent_tool_registry.py` and route into `RosterResolution.tools`, not `sub_agents`. The task-mode lane is retained but dormant for a future multi-tool agent-tool that can tolerate the injected delegation tool.
+2. **Billing (#3984) is recovered without task-mode** via a leaf `after_model_callback` (`capture_agent_tool_usage`) that parks the leaf's `usage_metadata` in an **off-state per-turn sink** keyed by the outer `invocation_id` (a `ContextVar`), which the root `chat_after_agent_callback` drains into the turn delta. Off-state (module-global, not session state) is load-bearing: `AgentTool.run_async` deep-copies session state into the child, the same reason `tool_trace_context.py` exists. No double-count — the leaf events never reach `session.events`.
+3. **AC re-scoping.** AC #2 (inner grounded-search trace spans) is dropped — those spans are unrecoverable under `AgentTool` (the same `#3984` drop), a documented known gap of the AH-88 class. A new AC adds a **mandatory live-Gemini staging smoke** (`smoke_google_search_live.py`) before any prod re-deploy — the gate the original cutover lacked. The AC #4 no-`AgentTool` guard is amended to a 2-file allow-list + an `isolation-required` marker + a companion test asserting the billing callback.
+4. **Prod cutover re-executed** 2026-06-07 (direct `deploy_ken_e.py --env prod`; the gated pipeline remains blocked by the orthogonal `deploy-strategy-supervisor-prod` 500 — [AH-152](https://linear.app/ken-e/issue/AH-152)). §3 smoke PASS — the prod 400 does not recur; production web search restored.
+
+### Consequences
+
+- **Task mode is off the table for any built-in grounding / code-execution leaf.** The supervisor `mode='task'` *specialist* model (Review 44) is unaffected — specialists carry function/MCP tools, not a lone built-in tool.
+- A live-Gemini smoke is now a **hard prod-cutover precondition** for any agent using a built-in tool; mock-LLM ACs cannot catch tool-composition 400s.
+- Operational debt surfaced and tracked: [AH-152](https://linear.app/ken-e/issue/AH-152) (strategy-supervisor 500), [AH-153](https://linear.app/ken-e/issue/AH-153) (missing `ga-tenant-credentials` secret), [AH-154](https://linear.app/ken-e/issue/AH-154) (stale PENDING prod builds).
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/components/agentic-harness/projects/AH-PRD-15-agenttool-migration-cutover.md` | §2/§5/§7 re-planned (AgentTool isolation + leaf-callback billing; AC re-scope; live-smoke AC) |
+| `docs/runs/AH-121-adk2-prod-cutover.md` | §5 rollback re-based (Tier 1 un-assign; no single pre-fix commit) |
+| `docs/design/components/agentic-harness/README.md` | AH-PRD-15 line re-titled "AgentTool isolation" (the agent-as-tool framing only) |
+| `docs/design/components/agentic-harness/projects/AH-PRD-13-adk2-foundation.md` | `agent.google_search` cutover-blocker notes updated to the isolation outcome; prod-on-2.0 status noted |
+| `docs/design/components/agentic-harness/mcp-architecture.md` | New "ADK 2.0 agent-as-tool & tool-composition constraints" section (the verified-internals lesson) |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 47) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

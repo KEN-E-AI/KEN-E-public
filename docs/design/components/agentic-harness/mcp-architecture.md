@@ -234,3 +234,22 @@ AH-99 probe-5 (2026-06-01) validated that `VertexAiSessionService` accepts ADK 2
 
 **Consequence for the MCP/toolset story:** The MCP architecture documented in this file is **unaffected by the ADK 2.0 supervisor-orchestration adoption**. `McpToolset` construction, `McpToolsetPool` lifecycle, the `cloud_run` / `zapier` `McpServerKind` paths, and OAuth header injection all continue to operate identically under the supervisor model. Per-task specialists (`mode='task'`) receive their `McpToolset` from the pool via the same `specialist_runtime.resolve_agent` path as single-specialist turns.
 *Reference: `docs/spike-adk2-supervisor-orchestration-live.md` §1 probe-5 result; [AH-PRD-05](./projects/AH-PRD-05-multi-step-workflows.md) §3 Dependencies.*
+
+### ADK 2.0 agent-as-tool & tool-composition constraints (verified — AH-121 / AH-PRD-15 re-plan)
+
+Hard-won lessons from the AH-121 prod cutover (a task-mode migration that 400'd in production). Verified against ADK 2.0 source and a live staging engine. These are the non-obvious rules for exposing a sub-agent as a tool and for any agent carrying a **built-in** Gemini tool (web-search grounding or code execution).
+
+**1. A built-in tool must be the ONLY tool in its agent's LLM request.** Gemini rejects any function declaration sharing the request with a grounding (`google_search`) or code-execution tool: `400 INVALID_ARGUMENT: "Multiple tools are supported only when they are all search tools."` This is a server-side composition error — it appears only on a **real** model call, never with a mocked LLM. (Observed on `gemini-2.5-flash`; `gemini-2.0-flash` masks it by silently disabling AFC.)
+
+**2. Every in-hierarchy sub-agent mode injects a sibling tool next to the leaf — so a built-in-tool leaf cannot be a sub-agent.**
+- `mode='task'` → `LlmAgent.model_post_init` appends `FinishTaskTool` to the leaf's tools.
+- `mode='chat'` → `AutoFlow` injects `transfer_to_agent`, suppressible only by setting `disallow_transfer_to_parent` + `disallow_transfer_to_peers` + no `sub_agents` (→ `SingleFlow`) — which strands the session on the leaf (it can't hand control back). Not viable.
+- **Only `AgentTool` runs the leaf in its own sub-runner with no injected sibling** → the leaf keeps just its built-in tool → no 400. For a built-in-tool leaf, `AgentTool` is the *only* mechanism. (The same constraint applies to `numerical_analyst`'s `BuiltInCodeExecutor`.)
+
+**3. `AgentTool` drops the leaf's inner events (`#3984`) → bill it with a leaf callback, off-state.** `AgentTool.run_async` runs the leaf in a private inner `Runner`/session and never appends its events (incl. `usage_metadata`) to the outer `session.events`, so the engine meter (`chat_after_agent_callback` → `_gather_turn_events`) never sees the leaf's tokens. Recover them with an `after_model_callback` on the leaf that parks the usage in a **module-global off-state sink** keyed by the outer `invocation_id` (carried via a `ContextVar` set in the root `before_agent_callback`), drained at end-of-turn. Off-state is mandatory: `AgentTool.run_async` **deep-copies** parent session state into the child session (the same reason `app/adk/tracking/tool_trace_context.py` exists — a live CM in state once broke every agent-as-tool call). See `app/adk/agents/agent_tool_billing.py`.
+
+**4. The inner trace spans are also dropped — accept it.** The leaf's grounded-search / code-exec spans cannot reach the outer trace under `AgentTool` (same `#3984` drop). The `AgentTool` `function_call`/`function_response` is visible; the inner steps are a known gap of the AH-88 class.
+
+**5. Process rule: a live-Gemini smoke is mandatory for any built-in-tool agent before prod.** The AC suites mock the LLM and structurally cannot catch the composition 400. `app/adk/agents/scripts/smoke_google_search_live.py` drives a real grounded turn against a deployed engine and asserts no `error_code`. The companion CI test `app/adk/agents/tests/test_agent_tool_billing_integration.py` drives a *real* `AgentTool` inner runner (stub models, offline) to prove the billing propagation independent of the live model.
+
+*Reference: [DESIGN-REVIEW-LOG Review 47](../../DESIGN-REVIEW-LOG.md#review-47--ah-prd-15-re-plan-agenttool-isolation-replaces-the-task-mode-migration-ah-121-prod-incident); [AH-PRD-15](./projects/AH-PRD-15-agenttool-migration-cutover.md) §2/§5; `google/adk-python#3984` (OPEN).*

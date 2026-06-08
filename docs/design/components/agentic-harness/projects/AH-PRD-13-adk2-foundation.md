@@ -52,7 +52,7 @@ ADK 2.0 went GA 2026-05-19. [AH-96](https://linear.app/ken-e/issue/AH-96) (stati
 ### Out of scope
 - Supervisor-orchestration features — coordinator, `mode='task'`, `ctx.run_node` fan-out (**AH-PRD-05**).
 - Contract-preservation enhancements — sub-call token capture, `chat.py` SSE author-tagging, `TodoItem` widening, synthesizer config (**AH-PRD-14**).
-- `agent.google_search` `AgentTool` → task-mode migration (**AH-PRD-15**) — but **prod cutover is gated on it** (§3, §9).
+- `agent.google_search` agent-as-tool **isolation** + leaf-callback billing (**AH-PRD-15**; the planned task-mode migration was re-planned to AgentTool isolation — DESIGN-REVIEW-LOG Review 47) — but **prod cutover is gated on it** (§3, §9). *(Cut over to prod 2026-06-07.)*
 - Migrating `strategy_agent` to 2.0 — stays 1.34.1; removed in a later release (tracker TBD; KG-PRD-05 refactors its write path but does not remove it).
 - **Production cutover** — a separate go/no-go after AH-PRD-15 lands.
 
@@ -63,7 +63,7 @@ ADK 2.0 went GA 2026-05-19. [AH-96](https://linear.app/ken-e/issue/AH-96) (stati
 | Dependency | Nature | Reference |
 |---|---|---|
 | **AH-96 / AH-99 spikes** | Empirical GO basis (task-mode + dynamic-graph propagation, session round-trip, LoopAgent). | `docs/spike-adk2-supervisor-orchestration-live.md` |
-| **AH-PRD-15 (AgentTool → task-mode migration)** | **Hard prerequisite for *prod cutover*, not for dev/staging validation.** The chat tree exposes `agent.google_search` as an `AgentTool` (AH-98), now per-turn-assignable to the root (AH-100). Under GitHub `#3984` (still OPEN) the `AgentTool.run_async` path drops inner events on 2.0 — the search sub-agent's tokens would go uncounted and its steps would vanish from traces (the AH-75 defect). Foundation validates 2.0 with `agent.google_search` **unassigned/disabled**; prod cannot cut over until AH-PRD-15 migrates it. | [AH-98](https://linear.app/ken-e/issue/AH-98), [AH-100](https://linear.app/ken-e/issue/AH-100), `#3984` |
+| **AH-PRD-15 (agent-as-tool isolation + billing)** | **Hard prerequisite for *prod cutover*, not for dev/staging validation.** The chat tree exposes `agent.google_search` as an `AgentTool` (AH-98), now per-turn-assignable to the root (AH-100). Under GitHub `#3984` (still OPEN) the `AgentTool.run_async` path drops inner events on 2.0 — the search sub-agent's tokens go uncounted (the AH-75 defect). Foundation validated 2.0 with `agent.google_search` **unassigned/disabled**. **Re-planned (Review 47):** the built-in search tool cannot be a task-mode sub-agent (it 400s alongside the injected `FinishTaskTool`), so it stays an isolated `AgentTool` and the dropped tokens are recovered by a leaf `after_model_callback`. **Cut over to prod 2026-06-07** (§3 smoke PASS). | [AH-98](https://linear.app/ken-e/issue/AH-98), [AH-100](https://linear.app/ken-e/issue/AH-100), `#3984` |
 | **MER-E / AH-PRD-14 trace contract** | Foundation preserves the current single-specialist span shape, so day-0 traces are unchanged; coordination is only needed for span-shape deltas surfaced by the audit. | [`AH-PRD-05-trace-contract-diff.md`](./AH-PRD-05-trace-contract-diff.md) |
 | **Deploy infra** | The chat + strategy deploy trees and `requirements.txt` packaging must decouple cleanly by ADK major. | `app/adk/deploy_ken_e.py`, `app/adk/deploy_with_sys_version.py` |
 
@@ -96,7 +96,7 @@ Audit every cross-package `app.adk.*` import shared between the chat tree and th
 ### 5.3 AH-100 re-validation (embedded evaluation — see §9 of the AH-100 issue)
 AH-100 added a `before_agent_callback` that mutates **`root.tools`** per turn (hot-reloading `ken_e_chatbot.tool_ids`), mirroring how `sub_agent_attacher` reconciles `root.sub_agents`. Its correctness rests on a **1.x-specific guarantee**: *"ADK recomputes `canonical_tools` per invocation (cached per-invocation since 1.26); the before-agent callback runs at invocation start, so a `root.tools` mutation is picked up the same turn."* Under 2.0's `BaseNode`/graph engine, node tool-binding may differ. **This PRD must probe it** (a runnable assertion analogous to AH-96/99: edit `root.tools` in a `before_agent_callback`, assert the tool is honoured on the *same* invocation on 2.0). If it does not hold, implement AH-100's documented fallback (a toolset that re-resolves per turn, or rebuild/swap the root agent on config change). The sibling per-turn callbacks AH-101 (security tests) and AH-102 (`sub_agents` fingerprint) are in the same callback family and are covered by the §2 callback re-validation.
 
-> **AH-100 × supervisor design.** AH-98/AH-100 let the **root** carry `agent.google_search` (an `AgentTool`). AH-PRD-05's coordinator design states the `mode='chat'` coordinator carries only ledger tools. The reconciliation — *does the coordinator hot-reload root `tool_ids`, and if so how do agent-as-tool entries become `mode='task'`?* — is owned by **AH-PRD-15** (migration) and noted forward in AH-PRD-05 §2. Foundation only needs the mechanism to keep working; the AgentTool *correctness* on 2.0 is AH-PRD-15.
+> **AH-100 × supervisor design.** AH-98/AH-100 let the **root** carry `agent.google_search` (an `AgentTool`). AH-PRD-05's coordinator design states the `mode='chat'` coordinator carries only ledger tools. The reconciliation — *how does the per-turn root-tools hot-reload dispatch agent-as-tool entries?* — is owned by **AH-PRD-15** and noted forward in AH-PRD-05 §2. **Resolved (Review 47):** the entries stay isolated `AgentTool`s in `root.tools` (a built-in-tool leaf cannot be a task-mode sub-agent), reconciled by the same per-turn `root_tools_attacher` hot-reload. Foundation only needs the mechanism to keep working; the AgentTool *billing* correctness on 2.0 is AH-PRD-15.
 
 ---
 
@@ -132,7 +132,7 @@ No HTTP API change. `ChatResponse` and all chat endpoints are unchanged.
 
 | Risk | Mitigation |
 |---|---|
-| **`agent.google_search` AgentTool regresses billing/traces on 2.0** (`#3984` open) | Validate Foundation with `agent.google_search` **unassigned**; **gate prod cutover on AH-PRD-15**. Document the coupling in PROJECT-PLANNER. |
+| **`agent.google_search` AgentTool regresses billing/traces on 2.0** (`#3984` open) | Validated Foundation with `agent.google_search` **unassigned**; gated prod cutover on AH-PRD-15. **Resolved (Review 47, prod cutover 2026-06-07):** stays an isolated `AgentTool`; billing recovered by a leaf `after_model_callback` (the inner trace spans remain a known `#3984`/AH-88 gap). |
 | **AH-100 per-turn `root.tools` mutation may not hold under the graph engine** | Probe first (§5.3); if it fails, implement the re-resolving-toolset / agent-swap fallback. |
 | **Deploy-tree coupling** forces both trees to one ADK major | §5.2 cross-package import audit + per-tree import smoke check. |
 | **Weave autopatch fragility** under the 2.0 event shape | Re-validate; the `google.genai` LLM-call span may remain absent (known carry-forward) — record, don't block. |

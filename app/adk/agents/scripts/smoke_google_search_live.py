@@ -324,12 +324,14 @@ def run_smoke(
         before_eff = before_total or 0
         if after_total is None:
             print(
-                "SKIP (3): no chat_sessions side-table doc was written for this "
-                "session — the engine→internal-API side-table write path is not "
-                "functional in this env (it is OIDC-gated and not wired in dev/staging "
-                "by default; see chat-status-dots OIDC wiring). Billing is validated by "
-                "the CI propagation test + the §4 prod Weave-vs-meter reconciliation, "
-                "NOT this live check."
+                "SKIP (3): no chat_sessions side-table doc to read for this session. "
+                "EXPECTED for a direct engine-probe: the side-table doc is created by "
+                "the API's session-create path, NOT by engine.create_session, so the "
+                "engine callback's doc.update() 404s (and in dev/staging the OIDC write "
+                "path may also be unwired). This is a probe limitation, not a billing "
+                "defect — the engine callback DOES fire and post the delta (incl. the "
+                "leaf tokens). Validate billing via an API-driven turn (runbook §3.1), "
+                "the CI propagation test, or the §4 prod reconciliation — not this probe."
             )
         elif stream_caller_tokens == 0:
             print(
