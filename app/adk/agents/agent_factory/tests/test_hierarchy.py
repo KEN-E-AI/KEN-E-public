@@ -184,15 +184,28 @@ class TestRootAgentConstruction:
     def test_root_agent_has_no_specialist_dispatch_tool(self) -> None:
         """AH-75: root carries no specialist-dispatch tool. Specialists are
         reached via ADK's native transfer_to_agent + sub_agents populated
-        per-turn by attach_specialists_before_agent_callback."""
+        per-turn by attach_specialists_before_agent_callback.
+
+        AH-133: supervisor function tools (set_todo_list, update_todo_list)
+        ARE present on the root — they are the coordinator's ledger-management
+        surface, not specialist-dispatch tools.
+        """
         docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        assert root.tools == []
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
+        # Still no specialist-dispatch tool.
+        assert "dispatch_to_" not in " ".join(n or "" for n in tool_names)
 
     def test_root_agent_tool_count_unchanged_with_extra_configs(self) -> None:
         """Extra specialist configs in Firestore must not add tools to the root
-        — specialists are resolved per-turn, not at deploy time."""
+        — specialists are resolved per-turn, not at deploy time.
+
+        AH-133: only the two supervisor function tools are present on the root;
+        extra specialist configs do not expand that set.
+        """
         extra_spec = {
             "instruction": "You are specialist A.",
             "model": "gemini-2.0-flash",
@@ -206,17 +219,16 @@ class TestRootAgentConstruction:
         }
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        # Still 0 tools regardless of how many specialist configs exist.
-        assert root.tools == []
+        # Only the two supervisor tools — no per-specialist additions.
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        assert tool_names == {"set_todo_list", "update_todo_list"}
 
     def test_root_agent_instruction_suffix_provider_wired(self) -> None:
-        """build_hierarchy must pass instruction_suffix_provider=available_specialists_provider
-        to build_agent, NOT a static instruction_suffix string."""
+        """build_hierarchy must pass a composed instruction_suffix_provider that
+        produces both the Available Specialists block and the supervisor
+        decomposition fragment (AH-133)."""
         import app.adk.agents.agent_factory.builder as b
         import app.adk.agents.agent_factory.hierarchy as h
-        from app.adk.agents.agent_factory.specialist_runtime import (
-            available_specialists_provider,
-        )
 
         docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
         fake_db = _FakeFirestoreDb(docs)
@@ -230,6 +242,7 @@ class TestRootAgentConstruction:
             captured["instruction_suffix"] = kwargs.get("instruction_suffix", "")
             return original_build_agent(config, name=name, tools=tools, **kwargs)
 
+        _canned_specialists = "## Available Specialists\n\n- None registered."
         with (
             _PATCH_BEFORE_AGENT,
             _PATCH_AFTER_AGENT,
@@ -239,11 +252,104 @@ class TestRootAgentConstruction:
                 "app.adk.agents.agent_factory.hierarchy.build_agent",
                 side_effect=_spy,
             ),
+            patch(
+                "app.adk.agents.agent_factory.specialist_runtime"
+                ".available_specialists_provider",
+                return_value=_canned_specialists,
+            ),
         ):
             h.build_hierarchy(db=fake_db)
 
-        assert captured["instruction_suffix_provider"] is available_specialists_provider
+        provider = captured["instruction_suffix_provider"]
+        assert callable(provider), "instruction_suffix_provider must be callable"
         assert not captured["instruction_suffix"]
+
+        ctx = _make_context({})
+        suffix = provider(ctx)
+        assert "## Available Specialists" in suffix
+        assert "## Multi-Task Decomposition" in suffix
+
+    def test_composed_suffix_available_specialists_before_decomposition(self) -> None:
+        """The Available Specialists block must precede the supervisor fragment."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        fake_db = _FakeFirestoreDb(docs)
+        captured: dict[str, Any] = {}
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured["instruction_suffix_provider"] = kwargs.get(
+                "instruction_suffix_provider"
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        _canned_specialists = "## Available Specialists\n\n- None registered."
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_spy,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.specialist_runtime"
+                ".available_specialists_provider",
+                return_value=_canned_specialists,
+            ),
+        ):
+            h.build_hierarchy(db=fake_db)
+
+        provider = captured["instruction_suffix_provider"]
+        ctx = _make_context({})
+        suffix = provider(ctx)
+        specialists_pos = suffix.index("## Available Specialists")
+        decomp_pos = suffix.index("## Multi-Task Decomposition")
+        assert specialists_pos < decomp_pos
+
+    def test_composed_suffix_with_empty_specialists_block(self) -> None:
+        """When available_specialists_provider returns '' (no specialists), the
+        composed suffix still starts correctly with the supervisor fragment
+        (no leading double-newline before the fragment heading)."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        fake_db = _FakeFirestoreDb(docs)
+        captured: dict[str, Any] = {}
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured["instruction_suffix_provider"] = kwargs.get(
+                "instruction_suffix_provider"
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_spy,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.specialist_runtime"
+                ".available_specialists_provider",
+                return_value="",
+            ),
+        ):
+            h.build_hierarchy(db=fake_db)
+
+        provider = captured["instruction_suffix_provider"]
+        ctx = _make_context({})
+        suffix = provider(ctx)
+        # Supervisor fragment must be present even when no specialists block.
+        assert "## Multi-Task Decomposition" in suffix
 
 
 # ---------------------------------------------------------------------------

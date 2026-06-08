@@ -10,13 +10,16 @@ Three public entry points:
 * ``resolve_config`` — TTL-cached ``MergedAgentConfig`` fetch via
   ``get_cached_merged_config``.
 * ``resolve_agent`` — LRU-cached specialist ``BaseAgent`` keyed by
-  ``(doc_id, account_id, content_hash)``.  Returns either a raw
+  ``(doc_id, account_id, content_hash, mode)``.  Returns either a raw
   ``LlmAgent`` or a review-pipeline-wrapped ``LoopAgent`` (when
   ``config.default_acceptance_criteria`` is set) — both share the same
   ``.name == doc_id`` contract so ADK's ``transfer_to_agent`` resolves
   to either form through ``root.find_agent``. Content-hash invalidation
   means any field change to the Firestore config drops the stale agent
-  and triggers a rebuild on next access.
+  and triggers a rebuild on next access.  The ``mode`` slot (AH-135)
+  distinguishes chat-mode and task-mode variants so the supervisor model
+  can cache both independently; existing call sites pass ``mode=None``
+  and are unaffected.
 * ``available_specialists_provider`` — ``InstructionProvider``-compatible
   callable ``(ReadonlyContext) -> str``; returns the "## Available Specialists"
   Markdown block for injection into the root agent's system prompt.
@@ -25,7 +28,9 @@ Design notes:
 * ``_AgentCache`` is a plain ``collections.OrderedDict``-backed LRU capped at
   256 entries with its own ``threading.Lock``.  The lock is separate from the
   config-cache stripe lock: config reads and agent construction are independent
-  critical sections.
+  critical sections.  The cache key is the 4-tuple
+  ``(doc_id, account_id | None, content_hash, mode | None)`` — the ``mode``
+  element (AH-135) separates chat-mode and task-mode variants.
 * Content hash: ``sha256(MergedAgentConfig.model_dump_json().encode()).hexdigest()``.
   Any field change produces a new hash; the stale agent entry is evicted
   on next LRU access via natural ``OrderedDict`` displacement rather than explicit
@@ -162,10 +167,15 @@ def _resolve_reviewer_model(config: MergedAgentConfig) -> str:
 class _AgentCache:
     """Thread-safe LRU cache for resolved specialist ``BaseAgent`` objects.
 
-    Keyed by ``(doc_id, account_id | None, content_hash)``.  Capped at
-    ``maxsize`` entries; the least-recently-used entry is evicted when at
-    capacity.  Uses a dedicated ``threading.Lock`` — separate from the
-    config-cache stripe locks — because agent construction (the critical
+    Keyed by ``(doc_id, account_id | None, content_hash, mode | None)``.
+    The ``mode`` slot (AH-135) distinguishes chat-mode and task-mode variants
+    of the same config so the supervisor model can cache both independently.
+    Existing call sites pass ``mode=None`` and land on the same key as before
+    (the 4th element ``None`` is the default).
+
+    Capped at ``maxsize`` entries; the least-recently-used entry is evicted
+    when at capacity.  Uses a dedicated ``threading.Lock`` — separate from
+    the config-cache stripe locks — because agent construction (the critical
     section on miss) is independent of config fetches.
 
     Entries are typed as ``BaseAgent`` rather than ``LlmAgent`` because
@@ -180,12 +190,12 @@ class _AgentCache:
 
     def __init__(self, maxsize: int = _AGENT_CACHE_MAX) -> None:
         self._maxsize = maxsize
-        self._store: collections.OrderedDict[tuple[str, str | None, str], BaseAgent] = (
-            collections.OrderedDict()
-        )
+        self._store: collections.OrderedDict[
+            tuple[str, str | None, str, str | None], BaseAgent
+        ] = collections.OrderedDict()
         self._lock = threading.Lock()
 
-    def get(self, key: tuple[str, str | None, str]) -> BaseAgent | None:
+    def get(self, key: tuple[str, str | None, str, str | None]) -> BaseAgent | None:
         """Return the cached agent for *key*, or ``None`` on miss.
 
         Promotes *key* to the MRU end on hit.
@@ -196,7 +206,9 @@ class _AgentCache:
             self._store.move_to_end(key)
             return self._store[key]
 
-    def put(self, key: tuple[str, str | None, str], agent: BaseAgent) -> None:
+    def put(
+        self, key: tuple[str, str | None, str, str | None], agent: BaseAgent
+    ) -> None:
         """Insert or update *key* → *agent*, evicting the LRU entry if at capacity."""
         with self._lock:
             if key in self._store:
@@ -207,7 +219,7 @@ class _AgentCache:
 
     def get_or_build(
         self,
-        key: tuple[str, str | None, str],
+        key: tuple[str, str | None, str, str | None],
         builder: Callable[[], BaseAgent],
     ) -> BaseAgent:
         """Return the cached agent for *key*, calling *builder* exactly once on miss.
@@ -341,6 +353,7 @@ def _build_specialist(
     session_state: Mapping[str, Any] | None = None,
     mcp_pool: McpToolsetPool | None = None,
     resolved_reviewer_model: str | None = None,
+    mode: str | None = None,
 ) -> BaseAgent:
     """Construct a specialist ``BaseAgent`` from a ``MergedAgentConfig``.
 
@@ -352,6 +365,13 @@ def _build_specialist(
     invalidation path. The wrapped pipeline is renamed back to *name* so
     ADK's ``transfer_to_agent`` (which looks up sub-agents by name) finds
     it under the same identifier as the unwrapped specialist.
+
+    ``mode`` (AH-135): when ``'task'``, constructs an
+    ``LlmAgent(mode='task')`` so the supervisor coordinator can delegate to
+    this specialist and regain control after it completes (call-and-return
+    primitive).  When ``None`` (default), the existing chat-mode path is
+    preserved byte-for-byte.  Both the single-pass and review-pipeline paths
+    inherit the caller's ``mode`` value.
 
     Mirrors the pre-AH-PRD-09 specialist-build path from ``hierarchy.py`` (now
     deleted from the deploy-time loop) so the per-turn resolver preserves
@@ -648,6 +668,7 @@ def _build_specialist(
         account_id=account_id,
         tools=tools,
         config_doc_id=name,
+        mode=mode,
         additional_after_tool_callbacks=_additional_after_tool or None,
     )
 
@@ -853,6 +874,13 @@ def _build_specialist(
     else:
         reviewer_model = DEFAULT_REVIEWER_MODEL
 
+    # AH-135 (task-mode + review-pipeline): the inner specialist LlmAgent carries
+    # ``mode=mode`` from the call site (wired above via build_agent).  The outer
+    # LoopAgent produced by build_review_pipeline is NOT constructed with
+    # ``mode='task'`` — its call-and-return semantics when wrapping a task-mode
+    # specialist are undefined and owned by AH-142.  No task-mode specialists
+    # with ``default_acceptance_criteria`` exist in production today, so this
+    # interaction is latent; AH-142 will finalise it.
     pipeline = build_review_pipeline(
         specialist=specialist,
         acceptance_criteria=criteria,
@@ -941,14 +969,15 @@ def resolve_agent(
     account_id: str | None = None,
     ttl_seconds: int = 60,
     session_state: Mapping[str, Any] | None = None,
+    mode: str | None = None,
 ) -> BaseAgent:
     """Return a cached specialist ``BaseAgent`` for ``(doc_id, account_id)``.
 
     Fetches the ``MergedAgentConfig``, computes a content-hash, and returns
     the cached agent if one exists with the same
-    ``(doc_id, account_id, content_hash)``.  On hash mismatch (config changed
-    since last build), a new agent is constructed and inserted into the LRU
-    cache; the stale entry is evicted naturally when the cache reaches
+    ``(doc_id, account_id, content_hash, mode)``.  On hash mismatch (config
+    changed since last build), a new agent is constructed and inserted into
+    the LRU cache; the stale entry is evicted naturally when the cache reaches
     capacity.
 
     Returns an ``LlmAgent`` for plain specialists or a ``LoopAgent``
@@ -956,6 +985,15 @@ def resolve_agent(
     (AH-75 / AH-PRD-09). The returned agent's ``.name`` matches *doc_id*
     in both cases so ADK's ``transfer_to_agent`` finds it under one
     identifier.
+
+    ``mode`` (AH-135): when ``'task'``, the returned specialist is an
+    ``LlmAgent(mode='task')`` so the supervisor coordinator can delegate to
+    it and regain control after it completes.  Chat-mode (``mode=None``) and
+    task-mode (``mode='task'``) variants for the same config are cached as
+    independent entries — the 4th tuple element distinguishes them.  Existing
+    call sites (``sub_agent_attacher._attach_locked``,
+    ``available_specialists_provider`` slow path) pass no ``mode`` and land
+    on the same key as before (4th element ``None``).
 
     Args:
         doc_id: Firestore document ID in the ``agent_configs`` collection.
@@ -965,6 +1003,9 @@ def resolve_agent(
             (AH-62) to derive per-server credential hashes for
             ``McpToolsetPool`` key computation.  ``None`` is treated as an
             empty mapping (all creds hashes default to the hash of ``{}``).
+        mode: ADK agent mode to pass to ``LlmAgent``.  ``None`` uses the ADK
+            default (chat mode).  Pass ``'task'`` for supervisor-orchestration
+            leaf specialists.
 
     Returns:
         A ready-to-use ``BaseAgent`` with tools wired according to the config.
@@ -987,7 +1028,17 @@ def resolve_agent(
     )
 
     content_hash = _content_hash(config, resolved_reviewer_model=resolved_reviewer)
-    cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
+    # AH-135: extend the cache key with ``mode`` so chat-mode (``None``) and
+    # task-mode (``'task'``) variants of the same config are cached as
+    # independent entries.  Chat-mode call sites pass no ``mode`` and land on
+    # the ``(doc_id, account_id, content_hash, None)`` key — byte-identical to
+    # the old 3-tuple key in all behaviour.
+    cache_key: tuple[str, str | None, str, str | None] = (
+        doc_id,
+        account_id,
+        content_hash,
+        mode,
+    )
 
     # Note: this probe is outside the cache's internal lock, so a concurrent
     # first-call can cause a genuine hit to be reported as a miss — the same
@@ -1002,6 +1053,7 @@ def resolve_agent(
             account_id,
             session_state=session_state,
             resolved_reviewer_model=resolved_reviewer,
+            mode=mode,
         ),
     )
     # account_id is intentionally omitted — see AH-77 Item E; only non-tenant

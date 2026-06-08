@@ -18,8 +18,9 @@ from typing import Any
 import pytest
 
 from app.adk.tools.registry.function_tool_registry import (
-    clear_function_tool_registry,
     get_function_tool,
+    restore_function_tool_registry,
+    snapshot_function_tool_registry,
 )
 
 # ---------------------------------------------------------------------------
@@ -43,16 +44,20 @@ def _run(coro: Any) -> Any:
 
 @pytest.fixture(autouse=True)
 def _clean_registry() -> Generator[None, None, None]:
-    """Clear the process-global function-tool registry before and after each test."""
-    clear_function_tool_registry()
-    # Re-import so the registration side effects re-fire in a clean registry.
-    import importlib
+    """Snapshot the registry, ensure the todo tools are registered, then restore.
 
-    import app.adk.tools.todo_list_tools
+    The function-tool registry is a process-global singleton. Importing
+    ``todo_list_tools`` fires its registration side effect (it is also imported
+    at startup by ``hierarchy.py``), so the tools are present for this suite's
+    body. Restoring the snapshot on teardown — rather than clearing — guarantees
+    this suite never strands an *empty* registry for later suites, which used to
+    force every hierarchy/supervisor test to reload this module defensively.
+    """
+    import app.adk.tools.todo_list_tools  # noqa: F401  # registration side effect
 
-    importlib.reload(app.adk.tools.todo_list_tools)
+    snapshot = snapshot_function_tool_registry()
     yield
-    clear_function_tool_registry()
+    restore_function_tool_registry(snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +496,7 @@ class TestSupervisorOrchestrationFields:
                         "assignee": "google_analytics_specialist",
                         "query": "weekly bounce rate",
                         "criteria": "≥2 weeks of data",
-                        "depends_on": ["item_000"],
+                        "depends_on": [],
                         "result_key": "ga_bounce",
                         "status": "dispatched",
                     }
@@ -507,7 +512,7 @@ class TestSupervisorOrchestrationFields:
             "assignee": "google_analytics_specialist",
             "query": "weekly bounce rate",
             "criteria": "≥2 weeks of data",
-            "depends_on": ["item_000"],
+            "depends_on": [],
             "result_key": "ga_bounce",
             "status": "dispatched",
         }
@@ -617,7 +622,7 @@ class TestSupervisorOrchestrationFields:
                         "text": "Step",
                         "assignee": "x",
                         "status": "dispatched",
-                        "depends_on": ["dep_000"],
+                        "depends_on": [],
                         "result_key": "r1",
                         "query": "q?",
                         "criteria": "c",
@@ -635,7 +640,7 @@ class TestSupervisorOrchestrationFields:
             "completed": True,
             "assignee": "x",
             "status": "dispatched",
-            "depends_on": ["dep_000"],
+            "depends_on": [],
             "result_key": "r1",
             "query": "q?",
             "criteria": "c",
@@ -674,6 +679,230 @@ class TestSupervisorOrchestrationFields:
         validated = TodoList(**raw_list)
         assert validated.items[0].assignee == "google_analytics_specialist"
         assert validated.items[0].status == "dispatched"
+
+
+# ---------------------------------------------------------------------------
+# TestSupervisorValidationHook — AH-133
+# ---------------------------------------------------------------------------
+
+
+class TestSupervisorValidationHook:
+    """Supervisor-mode validation fires inside set_todo_list when any item
+    carries an ``assignee`` field (AH-133 Task 5).
+
+    Non-supervisor lists (no ``assignee`` on any item) must be unaffected.
+    """
+
+    def _supervisor_items(
+        self,
+        assignees: list[str],
+        cyclic: bool = False,
+    ) -> list[dict]:
+        if cyclic:
+            return [
+                {
+                    "item_id": "a",
+                    "text": "Task A",
+                    "assignee": assignees[0],
+                    "depends_on": ["b"],
+                },
+                {
+                    "item_id": "b",
+                    "text": "Task B",
+                    "assignee": assignees[0] if len(assignees) < 2 else assignees[1],
+                    "depends_on": ["a"],
+                },
+            ]
+        return [
+            {
+                "item_id": f"task_{i}",
+                "text": f"Task {i}",
+                "assignee": assignees[i % len(assignees)],
+                "depends_on": [],
+            }
+            for i in range(len(assignees))
+        ]
+
+    def _ctx_with_specialists(self, specialists: list[str]) -> SimpleNamespace:
+        state: dict = {
+            "_available_specialists": [{"agent_id": s} for s in specialists]
+        }
+        return _fake_ctx(state)
+
+    def test_supervisor_list_with_known_specialists_succeeds(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = self._ctx_with_specialists(["ga_specialist", "meta_specialist"])
+        items = self._supervisor_items(["ga_specialist", "meta_specialist"])
+        result = _run(set_todo_list(ctx, "supervisor_ledger", "T", items))
+        assert "ERROR" not in result
+
+    def test_supervisor_list_with_unknown_specialist_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = self._ctx_with_specialists(["ga_specialist"])
+        items = self._supervisor_items(["unknown_spec"])
+        result = _run(set_todo_list(ctx, "supervisor_ledger", "T", items))
+        assert result.startswith("ERROR:")
+        assert "unknown specialist" in result.lower()
+
+    def test_supervisor_list_with_cyclic_deps_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = self._ctx_with_specialists(["ga_specialist"])
+        items = self._supervisor_items(["ga_specialist"], cyclic=True)
+        result = _run(set_todo_list(ctx, "supervisor_ledger", "T", items))
+        assert result.startswith("ERROR:")
+        assert "cyclic" in result.lower()
+
+    def test_supervisor_list_over_cap_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = self._ctx_with_specialists(["ga_specialist"])
+        items = [
+            {
+                "item_id": f"t{i}",
+                "text": f"Task {i}",
+                "assignee": "ga_specialist",
+                "depends_on": [],
+            }
+            for i in range(13)  # exceeds MAX_LEDGER_ITEMS=12
+        ]
+        result = _run(set_todo_list(ctx, "supervisor_ledger", "T", items))
+        assert result.startswith("ERROR:")
+        assert "soft cap" in result
+
+    def test_non_supervisor_list_bypasses_validation(self) -> None:
+        """Items without assignee should never trigger supervisor validation."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()  # no _available_specialists
+        items = [{"text": "plain item"}]
+        result = _run(set_todo_list(ctx, "plain_list", "T", items))
+        assert "ERROR" not in result
+
+    def test_supervisor_list_empty_known_specialists_skips_check(self) -> None:
+        """When _available_specialists is absent (Firestore-degraded), the
+        unknown-specialist check is skipped and the ledger is accepted."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()  # no _available_specialists key in state
+        items = [
+            {
+                "item_id": "a",
+                "text": "Task A",
+                "assignee": "any_specialist",
+                "depends_on": [],
+            }
+        ]
+        result = _run(set_todo_list(ctx, "supervisor_ledger", "T", items))
+        assert "ERROR" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestNormalizeItemsSecurityBounds — AH-133 security review fixes
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeItemsSecurityBounds:
+    """Length caps and reserved-key validation added per security review (AH-133)."""
+
+    def test_query_over_cap_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        from app.adk.tools.todo_list_tools import _MAX_QUERY_LEN
+
+        ctx = _fake_ctx()
+        items = [{"text": "t", "query": "x" * (_MAX_QUERY_LEN + 1)}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert result.startswith("ERROR:")
+        assert "query" in result
+
+    def test_query_at_cap_succeeds(self) -> None:
+        set_todo_list, _ = _get_tools()
+        from app.adk.tools.todo_list_tools import _MAX_QUERY_LEN
+
+        ctx = _fake_ctx()
+        items = [{"text": "t", "query": "x" * _MAX_QUERY_LEN}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert "ERROR" not in result
+
+    def test_criteria_over_cap_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        from app.adk.tools.todo_list_tools import _MAX_CRITERIA_LEN
+
+        ctx = _fake_ctx()
+        items = [{"text": "t", "criteria": "x" * (_MAX_CRITERIA_LEN + 1)}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert result.startswith("ERROR:")
+        assert "criteria" in result
+
+    def test_result_key_over_cap_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        from app.adk.tools.todo_list_tools import _MAX_RESULT_KEY_LEN
+
+        ctx = _fake_ctx()
+        items = [{"text": "t", "result_key": "x" * (_MAX_RESULT_KEY_LEN + 1)}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert result.startswith("ERROR:")
+        assert "result_key" in result
+
+    def test_reserved_result_key_returns_error(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        items = [{"text": "t", "result_key": "_available_specialists"}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert result.startswith("ERROR:")
+        assert "reserved" in result
+
+    def test_non_reserved_result_key_succeeds(self) -> None:
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        items = [{"text": "t", "result_key": "ga_result"}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert "ERROR" not in result
+
+    def test_plain_named_reserved_key_returns_error(self) -> None:
+        """A plain (non-underscore) reserved key the pattern cannot catch on its
+        own is still rejected via the explicit reserved set."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        items = [{"text": "t", "result_key": "account_id"}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert result.startswith("ERROR:")
+        assert "reserved" in result
+
+    def test_credential_substring_result_key_returns_error(self) -> None:
+        """The open-ended credential family is caught by substring, not
+        enumeration — a key the old denylist never listed is still rejected."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        for key in ("auth_token", "my_api_key", "session_secret"):
+            items = [{"text": "t", "result_key": key}]
+            result = _run(set_todo_list(ctx, key, "T", items))
+            assert result.startswith("ERROR:"), f"{key!r} should be rejected"
+            assert "sensitive" in result or "reserved" in result
+
+    def test_uppercase_result_key_returns_error(self) -> None:
+        """The naming convention rejects non-lowercase keys."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        items = [{"text": "t", "result_key": "GaResult"}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert result.startswith("ERROR:")
+        assert "result_key" in result
+
+    def test_non_identifier_result_key_returns_error(self) -> None:
+        """Hyphens / dots / leading digits violate the naming convention."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        for key in ("ga-result", "ga.result", "1ga_result"):
+            items = [{"text": "t", "result_key": key}]
+            result = _run(set_todo_list(ctx, key, "T", items))
+            assert result.startswith("ERROR:"), f"{key!r} should be rejected"
+            assert "result_key" in result
+
+    def test_empty_result_key_is_a_noop(self) -> None:
+        """An empty-string result_key means "no output slot" and is accepted
+        (same as absent), so it does not trip the naming convention."""
+        set_todo_list, _ = _get_tools()
+        ctx = _fake_ctx()
+        items = [{"text": "t", "result_key": ""}]
+        result = _run(set_todo_list(ctx, "l1", "T", items))
+        assert "ERROR" not in result
 
 
 # ---------------------------------------------------------------------------

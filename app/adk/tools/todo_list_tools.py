@@ -14,6 +14,7 @@ side-effect fires when ``hierarchy.py`` imports this module at startup.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,6 +29,44 @@ _MAX_LIST_ID_LEN: int = 128
 _MAX_TITLE_LEN: int = 256
 _MAX_ITEM_ID_LEN: int = 128
 _MAX_ITEM_TEXT_LEN: int = 1024
+_MAX_QUERY_LEN: int = 4096
+_MAX_CRITERIA_LEN: int = 2048
+_MAX_RESULT_KEY_LEN: int = 128
+
+# ``result_key`` names the session.state slot a specialist writes its output to,
+# and the value is chosen by the coordinator LLM. Validate it as an allowlist (a
+# naming convention) rather than a denylist of sensitive keys — a denylist is
+# inherently incomplete against an LLM-chosen name and silently grows stale as
+# new state keys land. The convention closes the two open-ended families:
+#   * ``_RESULT_KEY_PATTERN`` requires lowercase, leading letter, no leading
+#     underscore — rejecting every internal/ADK key (all ``_``-prefixed) and any
+#     name with surprising characters.
+#   * ``_SENSITIVE_KEY_SUBSTRINGS`` rejects the open-ended credential/secret
+#     family (``ga_credentials``, future ``*_token`` keys, …).
+# ``_RESERVED_STATE_KEYS`` is then only the small, closed set of plain-named app
+# keys the convention cannot catch on its own.
+_RESULT_KEY_PATTERN: re.Pattern[str] = re.compile(r"^[a-z][a-z0-9_]*$")
+
+_SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
+    "credential",
+    "cred",
+    "token",
+    "secret",
+    "password",
+    "api_key",
+    "apikey",
+)
+
+_RESERVED_STATE_KEYS: frozenset[str] = frozenset(
+    {
+        "account_id",
+        "organization_context",
+        "todo_lists",
+        "user_id",
+        "app_name",
+        "session_id",
+    }
+)
 
 # Mirrors TodoItem.status Literal in api/src/kene_api/models/chat.py (AH-122 / AH-PRD-14 §4).
 _TODO_ITEM_STATUSES: frozenset[str] = frozenset(
@@ -78,14 +117,38 @@ def _normalize_items(
         query = item.get("query")
         if query is not None and not isinstance(query, str):
             return f"ERROR: query at index {i} must be a string or null."
+        if isinstance(query, str) and len(query) > _MAX_QUERY_LEN:
+            return f"ERROR: query at index {i} exceeds {_MAX_QUERY_LEN} characters."
 
         criteria = item.get("criteria")
         if criteria is not None and not isinstance(criteria, str):
             return f"ERROR: criteria at index {i} must be a string or null."
+        if isinstance(criteria, str) and len(criteria) > _MAX_CRITERIA_LEN:
+            return f"ERROR: criteria at index {i} exceeds {_MAX_CRITERIA_LEN} characters."
 
         result_key = item.get("result_key")
         if result_key is not None and not isinstance(result_key, str):
             return f"ERROR: result_key at index {i} must be a string or null."
+        # Empty/absent result_key is a no-op (the item simply has no output slot);
+        # only validate a non-empty value the coordinator chose.
+        if isinstance(result_key, str) and result_key:
+            if len(result_key) > _MAX_RESULT_KEY_LEN:
+                return f"ERROR: result_key at index {i} exceeds {_MAX_RESULT_KEY_LEN} characters."
+            if (
+                result_key.startswith("_")
+                or result_key in _RESERVED_STATE_KEYS
+                or any(s in result_key.lower() for s in _SENSITIVE_KEY_SUBSTRINGS)
+            ):
+                return (
+                    f"ERROR: result_key {result_key!r} at index {i} is a reserved or "
+                    "sensitive session-state key and cannot be used as a task output key."
+                )
+            if not _RESULT_KEY_PATTERN.match(result_key):
+                return (
+                    f"ERROR: result_key {result_key!r} at index {i} must be lowercase "
+                    "alphanumeric with underscores and start with a letter "
+                    f"(pattern {_RESULT_KEY_PATTERN.pattern})."
+                )
 
         # Coerce absent/None → [] to match Pydantic Field(default_factory=list).
         # Only None (and absent key) are silently coerced; any other falsy type
@@ -164,6 +227,24 @@ async def set_todo_list(
     normalized = _normalize_items(items)
     if isinstance(normalized, str):
         return normalized  # propagate item-level validation error
+
+    # Supervisor-mode validation: if any item carries an assignee field the
+    # coordinator is building a multi-task ledger — validate it before writing.
+    # Non-supervisor lists (no assignee on any item) skip this path entirely
+    # so the existing CH-PRD-05 single-specialist TODO panel is unaffected.
+    if any(item.get("assignee") for item in normalized):
+        # Lazy import avoids circular deps (orchestration may import factory code).
+        from app.adk.agents.orchestration.supervisor import validate_ledger
+
+        state_specialists = tool_context.state.get("_available_specialists") or []
+        known_specialist_ids: set[str] = {
+            spec["agent_id"]
+            for spec in state_specialists
+            if isinstance(spec, dict) and "agent_id" in spec
+        }
+        validation_error = validate_ledger(normalized, known_specialist_ids)
+        if validation_error is not None:
+            return validation_error
 
     existing: dict[str, Any] = tool_context.state.get(_TODO_LISTS_KEY) or {}
 

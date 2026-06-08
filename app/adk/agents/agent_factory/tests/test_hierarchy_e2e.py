@@ -197,9 +197,17 @@ class TestRootOnlyBuild:
 
     def test_root_has_no_specialist_dispatch_tool(self) -> None:
         """AH-75: root carries no specialist-dispatch tool. Specialists are
-        reached via transfer_to_agent + per-turn sub_agents attachment."""
+        reached via transfer_to_agent + per-turn sub_agents attachment.
+
+        AH-133: supervisor ledger tools (set_todo_list, update_todo_list) ARE
+        present — they are platform-invariant coordinator tools, not
+        specialist-dispatch tools.
+        """
         root = _run_build_hierarchy(_E2E_DOCS)
-        assert root.tools == []
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
+        assert "dispatch_to_" not in " ".join(n or "" for n in tool_names)
 
     def test_root_has_attach_specialists_before_agent_callback(self) -> None:
         """The runtime sub_agents-sync callback must be wired so per-turn
@@ -213,10 +221,12 @@ class TestRootOnlyBuild:
         assert attach_specialists_before_agent_callback in callbacks
 
     def test_extra_specialist_configs_do_not_add_tools(self) -> None:
-        """Specialist Firestore docs exist but must NOT add tools to the root."""
+        """Specialist Firestore docs exist but must NOT add tools to the root
+        beyond the platform-invariant supervisor tools (AH-133)."""
         root = _run_build_hierarchy(_E2E_DOCS)
-        # _E2E_DOCS has 2 specialist configs + root — root still has 0 tools.
-        assert root.tools == []
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        # Only supervisor tools — no per-specialist additions.
+        assert tool_names == {"set_todo_list", "update_todo_list"}
 
     def test_single_firestore_read_for_root_config(self) -> None:
         """build_hierarchy reads only the root config, not all specialist configs."""
@@ -323,7 +333,8 @@ class TestAccountOverlay:
 
     def test_account_overlay_root_still_has_no_dispatch_tool(self) -> None:
         """With account_id provided, root still has no specialist-dispatch tool
-        (AH-75 — sub_agents are populated per-turn by the before_agent_callback)."""
+        (AH-75 — sub_agents are populated per-turn by the before_agent_callback).
+        AH-133: supervisor tools are still present."""
         docs = {
             ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
             ("accounts", "acc_xyz", "agent_configs", "ken_e_chatbot"): {
@@ -333,7 +344,10 @@ class TestAccountOverlay:
             },
         }
         root = _run_build_hierarchy(docs, account_id="acc_xyz")
-        assert root.tools == []
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
+        assert "dispatch_to_" not in " ".join(n or "" for n in tool_names)
 
 
 # ---------------------------------------------------------------------------
@@ -495,8 +509,12 @@ class TestRootAgentTools:
 
     def test_root_has_no_tools_without_tool_ids(self) -> None:
         # google_search is opt-in (not default_global) → absent unless listed.
+        # AH-133: supervisor tools are always present regardless of tool_ids.
         root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
-        assert root.tools == []
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        assert "google_search" not in tool_names
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
 
 
 # ---------------------------------------------------------------------------
@@ -564,9 +582,13 @@ class TestRootToolsHotReload:
     # -----------------------------------------------------------------------
 
     def test_cold_start_no_tool_ids_gives_empty_tools(self) -> None:
-        """build_hierarchy with tool_ids=null → root.tools == [] at deploy time."""
+        """build_hierarchy with tool_ids=null → only supervisor tools at deploy time
+        (google_search is opt-in / not default_global; AH-133 adds supervisor tools)."""
         root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
-        assert root.tools == []
+        tool_names = {getattr(t, "name", None) for t in root.tools}
+        assert "google_search" not in tool_names
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
 
     def test_cold_start_with_tool_ids_gives_isolated_agent_tool(self) -> None:
         """build_hierarchy with tool_ids=['agent.google_search'] → isolated AgentTool
@@ -614,9 +636,9 @@ class TestRootToolsHotReload:
                 None,
             )
 
-        # Start: root built with no tool_ids → no agent-as-tool in root.tools.
+        # Start: root built with no tool_ids → no google_search (opt-in),
+        # but supervisor tools are present (AH-133).
         root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
-        assert root.tools == []
         assert _gs_tool(root) is None
 
         # Simulate admin Firestore edit: config now lists google_search.

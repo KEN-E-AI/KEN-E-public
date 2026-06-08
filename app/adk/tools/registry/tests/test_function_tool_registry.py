@@ -10,6 +10,7 @@ exist yet) so the wiring is verifiable today.
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -21,15 +22,23 @@ from app.adk.tools.registry.function_tool_registry import (
     get_function_tool,
     register_function_tool,
     resolve_default_global_tools,
+    restore_function_tool_registry,
+    snapshot_function_tool_registry,
 )
 
 
 @pytest.fixture(autouse=True)
-def _clean_registry_between_tests() -> None:
-    """Process-global registry — clear between tests to avoid leakage."""
+def _clean_registry_between_tests() -> Generator[None, None, None]:
+    """Give each test a clean registry, then restore the prior contents.
+
+    The registry is a process-global singleton; restoring the snapshot on
+    teardown (rather than clearing) keeps this suite from stranding an empty
+    registry for later suites.
+    """
+    snapshot = snapshot_function_tool_registry()
     clear_function_tool_registry()
     yield
-    clear_function_tool_registry()
+    restore_function_tool_registry(snapshot)
 
 
 def _stub_callable() -> str:

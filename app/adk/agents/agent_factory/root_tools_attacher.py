@@ -389,7 +389,20 @@ def _attach_locked(
     #    LlmAgent items live in sub_agents so ADK 2.0 auto-injects
     #    request_task_<name> on the LLM call; non-LlmAgent items are regular
     #    tools (MCP toolsets, function tools) that continue to live in root.tools.
-    resolved_non_agent: list[Any] = list(_roster.tools)
+    #    AH-133: supervisor function tools are appended AFTER the roster resolve
+    #    so they bypass the admin tool_ids filter and remain platform-invariant
+    #    across every per-turn reconcile (mirrors the build-time pattern in
+    #    hierarchy.py).
+    #    Registry identity: _REGISTRY stores one FunctionTool singleton per name.
+    #    _tools_equal uses identity (is) comparison, so if root.tools already
+    #    holds the same instances the slice assignment is skipped — no
+    #    accumulation.  A module reload replaces the registry entries, causing
+    #    a fresh identity-miss and a correct re-resolve.
+    from app.adk.agents.orchestration.supervisor import get_supervisor_function_tools
+
+    resolved_non_agent: list[Any] = (
+        list(_roster.tools) + get_supervisor_function_tools()
+    )
     agent_subs_desired: dict[str, LlmAgent] = {
         sub.name: sub for sub in _roster.sub_agents if sub.name is not None
     }

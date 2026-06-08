@@ -298,8 +298,19 @@ def main() -> int:
                     assert decl is not None, (
                         f"_get_declaration() returned None for {fn}"
                     )
-                    assert decl.parameters is not None, (
-                        f"declaration.parameters is None for {fn}"
+                    # ADK 2.0 emits the parameter schema in one of two fields:
+                    # the legacy `parameters` (genai Schema), or, when a signature
+                    # triggers the JSON_SCHEMA_FOR_FUNC_DECL path (e.g. a
+                    # `list[dict[str, Any]]` arg), `parameters_json_schema` — in
+                    # which case `parameters` is legitimately None. Accept either;
+                    # a tool with neither still has no declarable schema and fails.
+                    has_params = (
+                        decl.parameters is not None
+                        or getattr(decl, "parameters_json_schema", None) is not None
+                    )
+                    assert has_params, (
+                        f"declaration has neither parameters nor "
+                        f"parameters_json_schema for {fn}"
                     )
                     logger.info(
                         "  PASS cloudpickle round-trip: %s", getattr(fn, "__name__", fn)

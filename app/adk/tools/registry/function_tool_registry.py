@@ -202,9 +202,33 @@ def clear_function_tool_registry() -> None:
     _REGISTRY.clear()
 
 
+def snapshot_function_tool_registry() -> dict[str, FunctionTool]:
+    """Return a shallow copy of the registry's current contents.
+
+    Test-only. Pair with :func:`restore_function_tool_registry` to isolate a
+    suite's registry mutations without leaking an *empty* registry into
+    adjacent suites — the failure mode that a clear-on-teardown fixture causes
+    (the registry is process-global, so a bare ``clear`` in one suite's
+    teardown strands every later suite with no tools registered).
+    """
+    return dict(_REGISTRY)
+
+
+def restore_function_tool_registry(snapshot: dict[str, FunctionTool]) -> None:
+    """Replace the registry's contents with *snapshot* in place.
+
+    Test-only. ``snapshot`` is typically the value returned by
+    :func:`snapshot_function_tool_registry` at fixture setup.
+    """
+    _REGISTRY.clear()
+    _REGISTRY.update(snapshot)
+
+
 __all__ = [
     "clear_function_tool_registry",
     "get_function_tool",
     "register_function_tool",
     "resolve_default_global_tools",
+    "restore_function_tool_registry",
+    "snapshot_function_tool_registry",
 ]

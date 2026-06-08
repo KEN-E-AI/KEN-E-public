@@ -183,6 +183,33 @@ class TestBasicConstruction:
 
         assert agent.description == ""
 
+    def test_mode_task_sets_mode_on_llm_agent(self) -> None:
+        """AH-135: build_agent(mode='task') must produce an LlmAgent with mode=='task'."""
+        config = _make_config()
+        agent = _build(config, name="task_agent", mode="task")
+
+        assert agent.mode == "task", (
+            f"Expected mode='task' on the built agent; got mode={agent.mode!r}. "
+            "Regression: the `if mode is not None: llm_agent_kwargs['mode'] = mode` guard "
+            "in builder.py must set the kwarg when mode='task'."
+        )
+
+    def test_mode_none_does_not_set_mode_to_task(self) -> None:
+        """AH-135: build_agent(mode=None) must NOT produce an LlmAgent with mode=='task'.
+
+        Specifically, mode=None omits the mode kwarg entirely so ADK's default
+        chat mode is used — not None.  Regression guard: if the guard is removed
+        and `mode=None` is passed to LlmAgent, the ADK constructor behaviour
+        must not silently break all existing specialists.
+        """
+        config = _make_config()
+        agent = _build(config, name="chat_agent", mode=None)
+
+        assert agent.mode != "task", (
+            "build_agent(mode=None) must not produce a task-mode agent. "
+            "This would break all existing specialists that pass no mode."
+        )
+
 
 # ---------------------------------------------------------------------------
 # AC-2 & AC-3: InstructionProvider

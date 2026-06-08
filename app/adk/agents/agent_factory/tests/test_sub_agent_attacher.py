@@ -379,6 +379,97 @@ class TestReconcile:
         assert [s.name for s in root.sub_agents] == ["ui_hidden_spec"]
         assert a.parent_agent is root
 
+    def test_reconcile_injects_task_agent_tool_for_task_mode_sub(self) -> None:
+        """AH-135: _reconcile injects _TaskAgentTool into root.tools for every
+        task-mode (``mode='task'``) specialist added post-construction, and
+        removes it when the specialist is later dropped.
+
+        ADK only injects the ``_TaskAgentTool`` in ``LlmAgent.model_post_init``.
+        Because per-turn specialists are resolved AFTER the coordinator/root is
+        constructed, model_post_init never sees them. Without the explicit
+        injection in _reconcile the coordinator's LLM would never see
+        ``request_task_<name>`` and delegation (plus its billing) silently
+        no-ops — the AH-117 / AH-PRD-15 prod-incident pattern.
+        """
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        root = _make_root()
+        task_spec = LlmAgent(name="task_spec", model="gemini-2.5-pro", mode="task")
+
+        # --- Step 1: add the task-mode specialist via reconcile ---
+        with _patched_resolvers({"task_spec": task_spec}):
+            attach_account_specialists(root, "acc_inject")
+
+        assert task_spec in root.sub_agents
+
+        injected = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == "task_spec"
+        ]
+        assert len(injected) == 1, (
+            "_reconcile must inject _TaskAgentTool('task_spec') into root.tools when "
+            "the task-mode specialist is added post-construction; "
+            f"root.tools = {[getattr(t, 'name', repr(t)) for t in root.tools]}"
+        )
+
+        # --- Step 2: drop the task-mode specialist — tool must be removed ---
+        # Empty resolver dict means list_account_agent_configs_cached returns [],
+        # so _reconcile receives desired={} and drops every existing sub_agent.
+        # Note: it is the empty return from _list (not ken_e_sub_agent=False) that
+        # drives the drop — the resolver is never called for an absent doc_id.
+        with _patched_resolvers({}):  # no specialists visible this turn
+            attach_account_specialists(root, "acc_inject")
+
+        assert task_spec not in root.sub_agents
+
+        remaining = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == "task_spec"
+        ]
+        assert remaining == [], (
+            "_reconcile must remove the _TaskAgentTool when the task-mode specialist "
+            f"is dropped; root.tools still has: {remaining}"
+        )
+
+    def test_reconcile_removes_stale_task_agent_tool_on_replace(self) -> None:
+        """AH-135: when a task-mode specialist is replaced by a fresh instance
+        (content-hash drift), _reconcile removes the stale _TaskAgentTool and
+        injects a fresh one for the new instance."""
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        root = _make_root()
+        stale_spec = LlmAgent(name="task_spec", model="gemini-2.5-pro", mode="task")
+
+        with _patched_resolvers({"task_spec": stale_spec}):
+            attach_account_specialists(root, "acc_replace")
+
+        stale_tools = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == "task_spec"
+        ]
+        assert len(stale_tools) == 1, "stale specialist must inject _TaskAgentTool"
+
+        # Simulate config-hash drift: same name, fresh instance.
+        fresh_spec = LlmAgent(name="task_spec", model="gemini-2.5-pro", mode="task")
+        with _patched_resolvers({"task_spec": fresh_spec}, config_suffix="_v2"):
+            attach_account_specialists(root, "acc_replace")
+
+        assert fresh_spec in root.sub_agents
+        assert stale_spec not in root.sub_agents
+
+        all_task_tools = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == "task_spec"
+        ]
+        assert len(all_task_tools) == 1, (
+            "_reconcile must have exactly one _TaskAgentTool after replace "
+            f"(stale removed, fresh injected); found {len(all_task_tools)}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Resilience: failed resolves, bad account_id, missing sub_agents attribute.
@@ -1759,9 +1850,7 @@ class TestPerTurnReconciliationADK2:
             # --- Turn 1: fresh root, no prior state ---
             root_turn1 = _make_root()
             ctx1 = self._make_callback_ctx(root_turn1, "acc_a")
-            result1 = attach_specialists_before_agent_callback(
-                callback_context=ctx1
-            )
+            result1 = attach_specialists_before_agent_callback(callback_context=ctx1)
             assert result1 is None
             assert specialist_a in root_turn1.sub_agents, (
                 "Turn 1: specialist must be attached to the first clone"
@@ -1769,12 +1858,12 @@ class TestPerTurnReconciliationADK2:
 
             # --- Turn 2: ADK 2.0 creates a FRESH clone; sub_agents is [] ---
             root_turn2 = _make_root()  # fresh clone; sub_agents=[]
-            assert list(root_turn2.sub_agents) == [], "Pre-condition: clone starts empty"
+            assert list(root_turn2.sub_agents) == [], (
+                "Pre-condition: clone starts empty"
+            )
 
             ctx2 = self._make_callback_ctx(root_turn2, "acc_a")
-            result2 = attach_specialists_before_agent_callback(
-                callback_context=ctx2
-            )
+            result2 = attach_specialists_before_agent_callback(callback_context=ctx2)
             assert result2 is None
             # Populated-guard must have forced re-resolve on the empty clone.
             assert specialist_a in root_turn2.sub_agents, (
@@ -1807,8 +1896,12 @@ class TestPerTurnReconciliationADK2:
 
         # Account A again — must NOT see specialist_b.
         root_a2 = _attach_for("acc_a", specialist_a)
-        assert specialist_a in root_a2.sub_agents, "A's specialist must be present on return"
-        assert specialist_b not in root_a2.sub_agents, "B's specialist must NOT appear for A"
+        assert specialist_a in root_a2.sub_agents, (
+            "A's specialist must be present on return"
+        )
+        assert specialist_b not in root_a2.sub_agents, (
+            "B's specialist must NOT appear for A"
+        )
 
     def test_root_tools_reattached_on_each_clone_turn(self) -> None:
         """``attach_root_tools`` resolves tools on each per-turn clone that
@@ -1836,11 +1929,14 @@ class TestPerTurnReconciliationADK2:
         cfg.model_dump_json.return_value = '{"tool_ids": ["tool_x"]}'
 
         try:
-            with patch.object(
-                rta, "get_cached_merged_config", return_value=cfg
-            ), patch.object(
-                rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_x])
-            ) as mock_resolve:
+            with (
+                patch.object(rta, "get_cached_merged_config", return_value=cfg),
+                patch.object(
+                    rta,
+                    "resolve_specialist_roster",
+                    return_value=RosterResolution(tools=[tool_x]),
+                ) as mock_resolve,
+            ):
                 # Turn 1 — fresh root, hash miss → resolve fires.
                 root_turn1 = _make_root()
                 attach_root_tools(root_turn1, account_id="acc_tools")
@@ -1849,7 +1945,9 @@ class TestPerTurnReconciliationADK2:
 
                 # Turn 2 — ADK 2.0 fresh clone; tools=[] but hash matches.
                 root_turn2 = _make_root()  # fresh clone
-                assert list(root_turn2.tools) == [], "Pre-condition: clone starts with no tools"
+                assert list(root_turn2.tools) == [], (
+                    "Pre-condition: clone starts with no tools"
+                )
 
                 attach_root_tools(root_turn2, account_id="acc_tools")
                 # Populated-guard forces re-resolve even on hash hit.
@@ -1857,7 +1955,9 @@ class TestPerTurnReconciliationADK2:
                     "Turn 2: populated-guard must re-resolve when clone starts with "
                     "tools=[] even when _applied_hash matches the config."
                 )
-                assert tool_x in root_turn2.tools, "Turn 2: tool_x must be in the fresh clone"
+                assert tool_x in root_turn2.tools, (
+                    "Turn 2: tool_x must be in the fresh clone"
+                )
         finally:
             rta._reset_applied_hash_for_tests()
 

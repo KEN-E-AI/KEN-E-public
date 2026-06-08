@@ -363,6 +363,7 @@ def build_agent(
     instruction_suffix: str = "",
     instruction_suffix_provider: Callable[[ReadonlyContext], str] | None = None,
     sandbox_pool: SandboxPool | None = None,
+    mode: str | None = None,
     additional_before_agent_callbacks: list[Callable] | None = None,
     additional_after_agent_callbacks: list[Callable] | None = None,
     additional_before_tool_callbacks: list[Callable] | None = None,
@@ -480,22 +481,25 @@ def build_agent(
         additional_after_model_callbacks or None
     )
 
-    agent = LlmAgent(
-        name=name,
-        model=config.model,
-        description=config.description or "",
-        instruction=instruction,
-        generate_content_config=generate_content_config,
-        tools=assembled_tools,
-        code_executor=code_executor,
-        output_schema=output_schema,
-        before_agent_callback=before_agent_callback,
-        after_agent_callback=after_agent_callback,
-        before_tool_callback=before_tool_callback,
-        after_tool_callback=after_tool_callback,
-        before_model_callback=before_model_callback,
-        after_model_callback=after_model_callback,
-    )
+    llm_agent_kwargs: dict[str, Any] = {
+        "name": name,
+        "model": config.model,
+        "description": config.description or "",
+        "instruction": instruction,
+        "generate_content_config": generate_content_config,
+        "tools": assembled_tools,
+        "code_executor": code_executor,
+        "output_schema": output_schema,
+        "before_agent_callback": before_agent_callback,
+        "after_agent_callback": after_agent_callback,
+        "before_tool_callback": before_tool_callback,
+        "after_tool_callback": after_tool_callback,
+        "before_model_callback": before_model_callback,
+        "after_model_callback": after_model_callback,
+    }
+    if mode is not None:
+        llm_agent_kwargs["mode"] = mode
+    agent = LlmAgent(**llm_agent_kwargs)
 
     # Stash build-time skill outcomes on the sidecar so SK-27 can surface them
     # as attributes on the skill.list Weave span:
@@ -517,6 +521,8 @@ def build_agent(
     if skill_load_timeout:
         record_skill_build_metadata(agent, account_id, skill_load_timeout=True)
     if skill_name_index:
-        record_skill_build_metadata(agent, account_id, skill_name_index=skill_name_index)
+        record_skill_build_metadata(
+            agent, account_id, skill_name_index=skill_name_index
+        )
 
     return agent

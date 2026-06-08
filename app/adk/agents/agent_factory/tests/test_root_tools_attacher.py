@@ -86,6 +86,19 @@ def _reset_applied_hash():
     rta._reset_applied_hash_for_tests()
 
 
+@pytest.fixture
+def _mock_supervisor_tools_empty():
+    """Suppress supervisor function tools for tests that only care about the
+    roster resolver (AH-133).  Apply via @pytest.mark.usefixtures."""
+    from unittest.mock import patch
+
+    with patch(
+        "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
+        return_value=[],
+    ):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Module API
 # ---------------------------------------------------------------------------
@@ -138,6 +151,7 @@ class TestCallbackContract:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("_mock_supervisor_tools_empty")
 class TestSuccessfulResolve:
     def test_resolved_tools_replace_root_tools(self) -> None:
         """On a fingerprint miss, root_agent.tools is replaced with the resolved list."""
@@ -205,6 +219,7 @@ class TestSuccessfulResolve:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("_mock_supervisor_tools_empty")
 class TestFingerprintCache:
     def test_fingerprint_hit_skips_resolve(self) -> None:
         """Second call with no config change does NOT call resolve_specialist_roster."""
@@ -897,3 +912,93 @@ class TestReconcileAgentSubagents:
 
         assert changed is False
         assert specialist in list(root.sub_agents)
+
+
+# ---------------------------------------------------------------------------
+# AH-133: supervisor function tools are preserved on every reconcile
+# ---------------------------------------------------------------------------
+
+
+class TestSupervisorToolsPreservation:
+    """Verifies that ``attach_root_tools`` appends ``set_todo_list`` and
+    ``update_todo_list`` to ``root.tools`` after every reconcile, regardless
+    of the ``ken_e_chatbot.tool_ids`` config (AH-133).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ensure_todo_tools_registered(self) -> None:
+        """Ensure the todo-list tools' registration side effect has fired.
+
+        ``get_supervisor_function_tools`` resolves them from the process-global
+        function-tool registry; importing the module registers them
+        idempotently. A plain import (no ``reload``) is sufficient now that no
+        suite clears the registry on teardown — ``test_todo_list_tools`` and the
+        registry's own suite snapshot-restore it instead.
+        """
+        import app.adk.tools.todo_list_tools  # noqa: F401  # registration side effect
+
+    def test_supervisor_tools_present_after_reconcile(self) -> None:
+        """After any reconcile pass the root carries set_todo_list and
+        update_todo_list, bypassing the admin tool_ids filter."""
+        agent = _make_root_agent(tools=[])
+        cfg = _make_config(tool_ids=None)  # no admin-configured tools
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        ):
+            attach_root_tools(agent, account_id="acc_supervisor")
+
+        tool_names = {getattr(t, "name", None) for t in agent.tools}
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
+
+    def test_supervisor_tools_present_alongside_roster_tools(self) -> None:
+        """Supervisor tools are appended after the roster; both are present."""
+        agent = _make_root_agent(tools=[])
+        roster_tool = _make_tool("agent.google_search")
+        cfg = _make_config(tool_ids=["agent.google_search"])
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_specialist_roster",
+            return_value=RosterResolution(tools=[roster_tool]),
+        ):
+            attach_root_tools(agent, account_id="acc_alongside")
+
+        tool_names = {getattr(t, "name", None) for t in agent.tools}
+        assert "set_todo_list" in tool_names
+        assert "update_todo_list" in tool_names
+        assert "agent.google_search" in tool_names or roster_tool in agent.tools
+
+    def test_supervisor_tools_survive_config_change_reconcile(self) -> None:
+        """After a config change forces a re-resolve, supervisor tools are still
+        present on the updated root.tools."""
+        agent = _make_root_agent(tools=[])
+        cfg_v1 = _make_config(tool_ids=None)
+        cfg_v1.model_dump_json.return_value = '{"tool_ids": null, "v": 1}'
+        cfg_v2 = _make_config(tool_ids=None)
+        cfg_v2.model_dump_json.return_value = '{"tool_ids": null, "v": 2}'
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_v1
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        ):
+            attach_root_tools(agent, account_id="acc_v1")
+
+        tool_names_v1 = {getattr(t, "name", None) for t in agent.tools}
+        assert "set_todo_list" in tool_names_v1
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg_v2
+        ), patch.object(
+            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        ):
+            attach_root_tools(agent, account_id="acc_v2")
+
+        tool_names_v2 = {getattr(t, "name", None) for t in agent.tools}
+        assert "set_todo_list" in tool_names_v2
+        assert "update_todo_list" in tool_names_v2

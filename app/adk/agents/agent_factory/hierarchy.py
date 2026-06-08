@@ -206,6 +206,10 @@ def build_hierarchy(
         attach_specialists_before_agent_callback,
         attach_task_subagent,
     )
+    from app.adk.agents.orchestration.supervisor import (
+        SUPERVISOR_INSTRUCTION_FRAGMENT,
+        get_supervisor_function_tools,
+    )
     from app.adk.tools.registry.agent_tool_registry import (
         resolve_agent_subagents,
         resolve_isolated_agent_tools,
@@ -235,8 +239,17 @@ def build_hierarchy(
     )
     # RosterResolution.tools carries the isolated AgentTools (when opted in via
     # tool_ids); .sub_agents carries any task-mode sub-agents (currently none).
-    root_function_tools = _root_roster.tools
+    # AH-133: supervisor function tools are appended AFTER resolve_specialist_roster
+    # so they bypass the admin tool_ids filter and remain platform-invariant.
+    root_function_tools = list(_root_roster.tools) + get_supervisor_function_tools()
     root_agent_subagents = _root_roster.sub_agents
+
+    def _compose_root_instruction_suffix(ctx: Any) -> str:
+        return (
+            available_specialists_provider(ctx).rstrip()
+            + "\n\n"
+            + SUPERVISOR_INSTRUCTION_FRAGMENT
+        )
 
     root_agent = build_agent(
         root_config,
@@ -244,7 +257,7 @@ def build_hierarchy(
         account_id=account_id,
         tools=root_function_tools,
         config_doc_id=ROOT_CONFIG_ID,
-        instruction_suffix_provider=available_specialists_provider,
+        instruction_suffix_provider=_compose_root_instruction_suffix,
         additional_before_agent_callbacks=[
             attach_specialists_before_agent_callback,
             # Per-turn root-tools sync (AH-100): hot-reloads ``ken_e_chatbot.

@@ -363,6 +363,18 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
     match by identity are left alone — same agent, same parent pointer,
     no work.
 
+    AH-135: For ``mode='task'`` sub-agents the reconcile pass also
+    synchronises ``root_agent.tools``:
+
+    * **Add** — injects a ``_TaskAgentTool`` for each new task-mode
+      specialist, replicating what ``LlmAgent.model_post_init`` would have
+      done had the sub-agent been present at construction time.  Without
+      this, the coordinator's LLM never sees ``request_task_<name>`` and
+      delegation silently no-ops (the AH-117 / AH-PRD-15 prod-incident
+      pattern).
+    * **Drop / Replace** — removes the stale ``_TaskAgentTool`` entry so
+      ``root_agent.tools`` is always consistent with ``root_agent.sub_agents``.
+
     Returns:
         ``True`` if ``root_agent.sub_agents`` was mutated (an entry was
         dropped, replaced, or added); ``False`` if the reconcile pass was a
@@ -389,17 +401,43 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
             # Name no longer visible: drop. Clear parent pointer so a future
             # attach to the same name can succeed if the specialist returns.
             _clear_parent(sub, root_agent)
+            # AH-135: remove the _TaskAgentTool so root_agent.tools stays
+            # consistent with root_agent.sub_agents for task-mode specialists.
+            if getattr(sub, "mode", None) == "task" and sub_name:
+                _remove_task_tool(root_agent, sub_name)
             changed = True
         else:
             # Name still visible but a fresh instance has replaced it
             # (content_hash drift on a config edit). Drop the stale, keep the
             # desired below.
             _clear_parent(sub, root_agent)
+            # AH-135: remove stale _TaskAgentTool before injecting a fresh one.
+            if getattr(sub, "mode", None) == "task" and sub_name:
+                _remove_task_tool(root_agent, sub_name)
             changed = True
 
     # Add anything still in desired_by_name (either net-new or replaced).
     for new_sub in desired_by_name.values():
         _set_parent(new_sub, root_agent)
+        # AH-135: inject _TaskAgentTool for task-mode specialists that were
+        # attached post-construction.  model_post_init already ran without
+        # these sub-agents, so the tool would otherwise be missing and the
+        # coordinator's LLM could never dispatch request_task_<name>
+        # (the AH-117 / AH-PRD-15 prod-incident pattern).
+        if getattr(new_sub, "mode", None) == "task":
+            task_tool = _make_task_agent_tool(new_sub)
+            tools = getattr(root_agent, "tools", None)
+            if task_tool is not None and isinstance(tools, list):
+                tools.append(task_tool)
+            elif task_tool is not None:
+                logger.warning(
+                    "[RECONCILE] Cannot inject _TaskAgentTool for %r: "
+                    "root_agent.tools is not a list (got %r). "
+                    "The coordinator LLM will not see request_task_%s.",
+                    getattr(new_sub, "name", "<unnamed>"),
+                    type(tools).__name__,
+                    getattr(new_sub, "name", "<unnamed>"),
+                )
         keep.append(new_sub)
         changed = True
 
@@ -487,9 +525,7 @@ def _remove_task_tool(parent: BaseAgent, sub_name: str) -> None:
     tools[:] = [
         t
         for t in tools
-        if not (
-            isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == sub_name
-        )
+        if not (isinstance(t, _TaskAgentTool) and getattr(t, "name", None) == sub_name)
     ]
 
 
