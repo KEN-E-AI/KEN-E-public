@@ -202,6 +202,7 @@ steps:
           app/adk/security/tests/ \
           app/adk/tracking/tests/ \
           app/adk/tools/agent_tools/tests/ \
+          shared/tests/test_artifact_models.py \
           -q
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'

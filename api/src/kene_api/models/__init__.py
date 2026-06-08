@@ -1,5 +1,15 @@
 """Models package for the Kene API."""
 
+# Import shared artifact models — AH-PRD-04 §5.1.
+# shared/ is an editable install declared in api/pyproject.toml; this import
+# does not depend on sys.path side-effects from config.py.
+from shared.artifact_models import (
+    Artifact,
+    ArtifactMetadata,
+    ArtifactType,
+    ChartType,
+)
+
 # Import all classes from kene_models
 from .kene_models import (  # Constants; Session Models; Enums; Base Models; Metric Models; Evidence Models; Activity Models; Insight Models; Notification Models; Analysis Models; Response Models; Organization Models
     ACCOUNT_ID_DESCRIPTION,
@@ -156,4 +166,9 @@ __all__ = [
     "ItemCreate",
     "ItemResponse",
     "HealthResponse",
+    # Artifact Models (shared with app/utils — AH-PRD-04)
+    "Artifact",
+    "ArtifactMetadata",
+    "ArtifactType",
+    "ChartType",
 ]
