@@ -8,7 +8,7 @@ module-scope.
 Mirrors ``verify_deploy_tree.py`` (chat tree) for the strategy tree
 (``deploy_with_sys_version.py``, ``google-adk==1.34.1``).
 
-Five checks:
+Six checks:
   1. assemble_strategy_deploy_tree() runs without error (packaging integrity).
   2. ``from agents.strategy_agent.orchestrator import app`` resolves inside the
      packaged tree with the source tree stripped from sys.path (import
@@ -28,8 +28,20 @@ Five checks:
      strategy import path has moved one of those imports to module scope, the
      stub raises and the check fails — catching the regression class before it
      reaches production.
+  6. Strategy manifest aiplatform pin guard (AH-152 / AH-121 mirror) —
+     ``app/adk/requirements-strategy.txt`` must pin ``google-cloud-aiplatform``
+     with ``==`` AND must not declare the ``[adk]`` extra. Two traps, both
+     surfaced as opaque 500s from the prod deploy:
+       - Pin skew: ``deploy_with_sys_version.py`` cloudpickles ``AdkApp`` with the
+         locally-installed aiplatform; the Agent Engine backend unpickles it.
+         An unpinned manifest lets the container resolve a newer aiplatform where
+         ``vertexai.agent_engines.templates.adk`` has moved → the engine fails to
+         boot → opaque ``500``.
+       - ``[adk]`` extra: redundant (``google-adk`` is pinned directly) and adds
+         an avoidable transitive surface. Dropped per PR #888 / AH-121 convention.
+     This check mirrors Check 6 in ``verify_deploy_tree.py`` for the chat tree.
 
-Exit 0 = all five checks pass.  Non-zero = at least one check failed.
+Exit 0 = all six checks pass.  Non-zero = at least one check failed.
 
 Design notes (AH-106):
   * The two known ADK 2.0-only modules are imported lazily (inside function
@@ -52,6 +64,56 @@ import sys
 import tempfile
 import types
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Requirements-file helpers for Check 6 — intentionally self-contained so
+# this script can run in its dedicated 1.34.1 venv without importing from the
+# chat-tree verifier (AH-106 intentional split; each verifier is independent).
+# ---------------------------------------------------------------------------
+
+
+def _pinned_aiplatform_version(requirements_path: Path) -> str | None:
+    """Return the ``==``-pinned google-cloud-aiplatform version from a requirements file, or None.
+
+    Returns None when the entry is absent or not pinned with ``==`` — the AH-121
+    / AH-152 failure mode where an unpinned entry lets the container resolve a newer
+    aiplatform than the one the agent was cloudpickled with. Optional extras such as
+    ``[agent_engines]`` are stripped before matching the base name.
+    """
+    for line in requirements_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        name = stripped.split("==")[0].split("[")[0].strip()
+        if name == "google-cloud-aiplatform":
+            _, sep, version = stripped.partition("==")
+            if not sep:
+                return None
+            # Strip inline comments (e.g. "1.154.0  # AH-152" → "1.154.0")
+            return version.strip().split("#")[0].strip() or None
+    return None
+
+
+def _aiplatform_extras(requirements_path: Path) -> set[str] | None:
+    """Return the extras declared on the google-cloud-aiplatform requirement, or None.
+
+    e.g. ``google-cloud-aiplatform[agent_engines]==1.154.0`` → ``{"agent_engines"}``.
+    Returns None when the entry is absent. The strategy tree must NOT carry the ``adk``
+    extra: redundant (``google-adk`` is pinned directly) and adds an avoidable
+    transitive surface (mirrors chat-tree convention from PR #888 / AH-121).
+    """
+    for line in requirements_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        base = stripped.split("==")[0].strip()
+        if base.split("[")[0].strip() == "google-cloud-aiplatform":
+            if "[" in base and "]" in base:
+                inner = base[base.index("[") + 1 : base.index("]")]
+                return {e.strip() for e in inner.split(",") if e.strip()}
+            return set()
+    return None
+
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -261,8 +323,46 @@ def main() -> int:
         "PASS Check 3: deploy_with_sys_version imports cleanly from app/adk/ cwd"
     )
 
+    # ------------------------------------------------------------------
+    # Check 6: strategy manifest aiplatform pin guard (AH-152 / AH-121 mirror)
+    # ------------------------------------------------------------------
+    # deploy_with_sys_version.py cloudpickles AdkApp with the locally-installed
+    # aiplatform; the Agent Engine backend unpickles it.  An unpinned manifest lets
+    # the container resolve a newer aiplatform where
+    # vertexai.agent_engines.templates.adk has moved → opaque 500 at engine boot.
+    # [adk] extra is also rejected: redundant and adds an avoidable transitive
+    # (mirrors chat-tree convention from PR #888 / AH-121).
+    strategy_req = repo_root / "app" / "adk" / "requirements-strategy.txt"
+    pinned = _pinned_aiplatform_version(strategy_req)
+    logger.info("Check 6: strategy manifest aiplatform pin guard (AH-152)")
+    if pinned is None:
+        logger.error(
+            "FAIL Check 6: %s does not pin google-cloud-aiplatform with '=='. "
+            "Unpinned → the container can install a newer aiplatform than the "
+            "cloudpickled artifact (the AH-121 / AH-152 500 pattern). "
+            "Pin it to ==<version> matching the aiplatform version in your deploy venv "
+            "(AH-121 precedent: chat tree pinned to ==1.154.0 in PR #887).",
+            strategy_req.name,
+        )
+        return 1
+    extras = _aiplatform_extras(strategy_req) or set()
+    if "adk" in extras:
+        logger.error(
+            "FAIL Check 6: %s declares the google-cloud-aiplatform [adk] extra. "
+            "That extra is redundant (google-adk is pinned directly) and adds an "
+            "avoidable transitive surface. Use [agent_engines] only — mirrors the "
+            "chat-tree convention from PR #888 / AH-121 / AH-152.",
+            strategy_req.name,
+        )
+        return 1
     logger.info(
-        "All 5 checks passed — strategy deploy tree is correctly packaged and "
+        "PASS Check 6: google-cloud-aiplatform pinned to ==%s (extras=%s)",
+        pinned,
+        sorted(extras) or "none",
+    )
+
+    logger.info(
+        "All 6 checks passed — strategy deploy tree is correctly packaged and "
         "ADK-major-agnostic at module scope."
     )
     return 0

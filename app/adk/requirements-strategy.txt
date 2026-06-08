@@ -16,7 +16,13 @@
 # is 1.34.x before building (see its main() guard) — run the strategy deploy
 # from a dedicated 1.34.1 venv (e.g. `uv venv .venv-adk1 && VIRTUAL_ENV=.venv-adk1
 # uv pip install -r app/adk/requirements-strategy.txt`).
-google-cloud-aiplatform[adk,agent_engines]
+# AH-121 / PR #887 / PR #888 / AH-152 — pin-skew trap: deploy_with_sys_version.py
+# cloudpickles AdkApp locally; the Agent Engine backend unpickles it.  If the
+# container resolves a newer aiplatform than what was cloudpickled, the templates.adk
+# module path moves and the engine fails to boot with an opaque 500.  Keep this pin
+# == the version resolved by app/adk/uv.lock.  Drop [adk] extra: redundant and adds
+# an avoidable transitive (mirrors chat-tree convention from PR #888).
+google-cloud-aiplatform[agent_engines]==1.154.0
 google-adk==1.34.1
 google-cloud-discoveryengine
 google-cloud-firestore
