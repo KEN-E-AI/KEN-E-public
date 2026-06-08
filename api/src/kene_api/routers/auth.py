@@ -6,11 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import UserContext
+from ..auth.rate_limiting import signup_policy_rate_limiter
 from ..auth.token_revocation import get_token_revocation_service
 from ..auth.user_context import get_current_user_context
 from ..config import settings
+from ..models.feature_flag_models import EvaluationContext
 from ..rate_limiter import recaptcha_rate_limiter
 from ..recaptcha import recaptcha_service
+from ..services.feature_flag_service import is_feature_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -173,3 +176,32 @@ async def check_token(
         "user_id": current_user.user_id,
         "email": current_user.email,
     }
+
+
+class SignupPolicyResponse(BaseModel):
+    """Response model for the public signup-policy endpoint."""
+
+    invite_only: bool
+
+
+@router.get("/signup-policy", response_model=SignupPolicyResponse)
+async def get_signup_policy(request: Request) -> SignupPolicyResponse:
+    """Return whether invite-only signup mode is currently active.
+
+    Pre-auth endpoint used by the signup page to decide whether to show the
+    Early Release code field.  Evaluates the ``invite_only_signup`` feature
+    flag against a synthetic anonymous context (the flag has no targeting rules,
+    so user_id / email never participate in evaluation).
+
+    Rate-limited per IP via its own ``signup_policy_rate_limiter`` (20/min, 100/hr)
+    to prevent polling abuse — a dedicated bucket so a page-load GET cannot contend
+    with the recaptcha verification or early-release validation paths on the same
+    signup flow.
+    Fails open: ``is_feature_enabled`` swallows all service errors and returns
+    ``default=False``, so a flag-system outage reopens signup rather than
+    locking out legitimate code-holders (DM-PRD-11 §4.4).
+    """
+    await signup_policy_rate_limiter.check_rate_limit(request, ctx=None)
+    ctx = EvaluationContext(user_id="anonymous", user_email="")
+    invite_only = await is_feature_enabled("invite_only_signup", ctx, default=False)
+    return SignupPolicyResponse(invite_only=invite_only)

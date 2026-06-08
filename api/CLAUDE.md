@@ -171,7 +171,7 @@ The ≤60 s propagation is two-layered: backend Cloud Run instances re-read Fire
 
 ## Rate Limiting
 
-The API uses a layered rate-limiting architecture across six named limiter instances. The physical implementation lives in `api/src/kene_api/rate_limiter.py` and `api/src/kene_api/auth/rate_limiting.py`; it is owned by the Agentic Harness component because every chat turn traverses this gate before reaching the root agent.
+The API uses a layered rate-limiting architecture across eight named limiter instances. The physical implementation lives in `api/src/kene_api/rate_limiter.py` and `api/src/kene_api/auth/rate_limiting.py`; it is owned by the Agentic Harness component because every chat turn traverses this gate before reaching the root agent.
 
 ### Limiter instances
 
@@ -181,10 +181,12 @@ The API uses a layered rate-limiting architecture across six named limiter insta
 | `bad_token` | 10/min, 50/hr | IP (pre-auth) | 10 | False | False |
 | `password_reset` | 3/min, 10/hr | IP (pre-auth) | 10 | False | False |
 | `recaptcha` | 5/min, 20/hr | IP (pre-auth) | 10 | False | False |
+| `early_release` | 5/min, 20/hr | IP (pre-auth) | 10 | False | False |
+| `signup_policy` | 20/min, 100/hr | IP (pre-auth) | 10 | False | False |
 | `token` | `KENE_TOKEN_RATE_LIMIT_PER_MINUTE`/min (default 60), `KENE_TOKEN_RATE_LIMIT_PER_HOUR`/hr (default 1000) | Authenticated UID (sha256[:16] hash) | 1 | True | True |
 | `progress` | 120/min, 2000/hr | Authenticated UID | 1 | True | True |
 
-**Security-critical limiters** (`auth`, `bad_token`, `password_reset`, `recaptcha`): `fallback_cap_divisor=10` means a Redis outage divides effective limits by 10 per process instance, preventing a Redis failure from silently disabling brute-force protection. `emit_remaining_on_success=False` prevents leaking bucket headroom to unauthenticated callers.
+**Security-critical limiters** (`auth`, `bad_token`, `password_reset`, `recaptcha`, `early_release`, `signup_policy`): `fallback_cap_divisor=10` means a Redis outage divides effective limits by 10 per process instance, preventing a Redis failure from silently disabling brute-force protection. `emit_remaining_on_success=False` prevents leaking bucket headroom to unauthenticated callers. (`signup_policy` guards the read-only signup-policy GET with generous caps but keeps the same fail-closed, IP-keyed posture.)
 
 **Throughput limiters** (`token`, `progress`): `fail_open=True` means a Redis error or open circuit breaker allows the request through — a Redis outage must not cascade to a service outage. `emit_remaining_on_success=True` so clients can use the `X-RateLimit-Remaining` header for backoff.
 

@@ -52,3 +52,38 @@ class EarlyReleaseWriteRequest(BaseModel):
     code: Annotated[str, Field(min_length=1, max_length=256)]
     is_active: bool | None = None
     expires_at: datetime | None = None
+
+
+class EarlyReleaseAdminUpdateRequest(BaseModel):
+    """Validated payload for a partial PUT on the early-release config.
+
+    All fields are optional so the caller can patch only the fields that
+    need to change.  ``extra="ignore"`` mirrors ``EarlyReleaseWriteRequest``.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    code: Annotated[str, Field(min_length=1, max_length=256)] | None = None
+    is_active: bool | None = None
+    expires_at: datetime | None = None
+
+
+class EarlyReleaseAdminConfigResponse(BaseModel):
+    """GET response that combines the live ``EarlyReleaseConfig`` with a
+    pre-computed redemption count so the admin UI needs only one request.
+    """
+
+    code: Annotated[str, Field(min_length=1, max_length=256)]
+    is_active: bool
+    expires_at: datetime | None = None
+    updated_by: str
+    updated_at: datetime
+    redemption_count: int
+
+
+class EarlyReleaseRedemptionsListResponse(BaseModel):
+    """Paginated list response for the redemption log endpoint."""
+
+    redemptions: list[EarlyReleaseRedemption]
+    total: int
+    next_cursor: str | None = None

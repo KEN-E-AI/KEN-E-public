@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.cloud.firestore_v1.field_path import FieldPath
 from src.kene_api.models.early_release_models import (
     EarlyReleaseConfig,
     EarlyReleaseWriteRequest,
@@ -209,12 +210,32 @@ async def test_set_code_writes_correct_document() -> None:
     assert written_data["updated_by"] == _ACTOR
 
 
-async def test_set_code_sets_is_active_true_always() -> None:
-    """set_code always sets is_active=True — rotating implies re-activation."""
+async def test_set_code_defaults_is_active_true() -> None:
+    """set_code defaults is_active=True — a plain rotation implies re-activation."""
     db = MagicMock()
     svc = EarlyReleaseService(db=db)
     config = await svc.set_code("rotated", actor_id=_ACTOR)
     assert config.is_active is True
+
+
+async def test_set_code_can_rotate_into_disabled_state_in_one_write() -> None:
+    """set_code(is_active=False) rotates the code already-disabled in a single write.
+
+    This is the atomic rotate-with-disable primitive: no rotate-then-disable
+    two-step that could leave a freshly-rotated code live if the second write
+    failed.
+    """
+    db = MagicMock()
+    doc_ref = MagicMock()
+    db.collection.return_value.document.return_value = doc_ref
+
+    svc = EarlyReleaseService(db=db)
+    config = await svc.set_code("rotated", actor_id=_ACTOR, is_active=False)
+
+    assert config.is_active is False
+    # A single .set() carries is_active=False — no second write.
+    doc_ref.set.assert_called_once()
+    assert doc_ref.set.call_args[0][0]["is_active"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -293,28 +314,41 @@ async def test_record_redemption_idempotent_swallows_already_exists() -> None:
 
 
 # ---------------------------------------------------------------------------
-# count_redemptions — returns accurate length
+# count_redemptions — Firestore COUNT aggregation (collection.count().get())
 # ---------------------------------------------------------------------------
 
 
-async def test_count_redemptions_returns_collection_size() -> None:
-    """count_redemptions returns the number of docs in early_release_redemptions."""
+def _mock_db_for_count(value: object) -> MagicMock:
+    """Wire ``db.collection().count().get()`` to return ``[[AggregationResult]]``."""
     db = MagicMock()
-    # stream() returns 3 fake docs
-    db.collection.return_value.stream.return_value = [
-        MagicMock(),
-        MagicMock(),
-        MagicMock(),
-    ]
+    agg = MagicMock()
+    agg.value = value
+    db.collection.return_value.count.return_value.get.return_value = [[agg]]
+    return db
+
+
+async def test_count_redemptions_returns_aggregation_value() -> None:
+    """count_redemptions returns the scalar from the COUNT aggregation."""
+    db = _mock_db_for_count(3)
     svc = EarlyReleaseService(db=db)
     count = await svc.count_redemptions()
     assert count == 3
+    # A COUNT aggregation is used — the collection is never streamed.
+    db.collection.return_value.count.return_value.get.assert_called_once()
+    db.collection.return_value.stream.assert_not_called()
 
 
 async def test_count_redemptions_zero_when_empty() -> None:
     """count_redemptions returns 0 when the collection is empty."""
+    db = _mock_db_for_count(0)
+    svc = EarlyReleaseService(db=db)
+    assert await svc.count_redemptions() == 0
+
+
+async def test_count_redemptions_defensive_zero_on_empty_aggregation() -> None:
+    """An unexpected empty aggregation shape yields 0 rather than crashing."""
     db = MagicMock()
-    db.collection.return_value.stream.return_value = []
+    db.collection.return_value.count.return_value.get.return_value = []
     svc = EarlyReleaseService(db=db)
     assert await svc.count_redemptions() == 0
 
@@ -373,3 +407,152 @@ def test_config_rejects_empty_code() -> None:
             updated_by=_ACTOR,
             updated_at=_NOW,
         )
+
+
+# ---------------------------------------------------------------------------
+# list_redemptions
+# ---------------------------------------------------------------------------
+
+
+def _make_redemption_doc(
+    user_id: str,
+    redeemed_at: datetime,
+    email: str = "user@example.com",
+    org_id: str = "org_test",
+) -> MagicMock:
+    """Return a MagicMock Firestore document snapshot for a redemption."""
+    doc = MagicMock()
+    doc.id = user_id
+    doc.to_dict.return_value = {
+        "user_id": user_id,
+        "email": email,
+        "org_id": org_id,
+        "redeemed_at": redeemed_at.isoformat(),
+    }
+    return doc
+
+
+def _mock_db_for_list(stream_docs: list[MagicMock]) -> MagicMock:
+    """Return a MagicMock Firestore client suitable for list_redemptions tests.
+
+    Mocks the ``collection().order_by().limit().stream()`` chain that
+    ``list_redemptions._run`` executes on the first-page (no cursor) path.
+    """
+    db = MagicMock()
+    # Build chained mock: .collection().order_by().order_by().limit().stream()
+    order_by_mock = MagicMock()
+    order_by_mock.limit.return_value.stream.return_value = stream_docs
+    # The secondary order_by(document_id) tiebreaker chains off the first order_by.
+    order_by_mock.order_by.return_value = order_by_mock
+    # start_after also returns the same order_by mock (used in cursor path)
+    order_by_mock.start_after.return_value = order_by_mock
+    db.collection.return_value.order_by.return_value = order_by_mock
+    return db
+
+
+async def test_list_redemptions_first_page_returns_limit_docs_and_cursor() -> None:
+    """First page (cursor=None): returns the most-recent ``limit`` docs, next_cursor set.
+
+    We request limit=2 but provide 3 mock docs (limit+1) so the service
+    detects has_next=True and sets next_cursor to the user_id of the last
+    returned doc (the second one, index 1).
+    """
+    _t1 = _NOW
+    _t0 = _NOW - timedelta(hours=1)
+    _t_oldest = _NOW - timedelta(hours=2)
+
+    doc0 = _make_redemption_doc("uid_newest", _t1)
+    doc1 = _make_redemption_doc("uid_second", _t0)
+    doc2 = _make_redemption_doc("uid_oldest", _t_oldest)
+
+    # stream returns limit+1 = 3 docs to trigger has_next=True
+    db = _mock_db_for_list([doc0, doc1, doc2])
+    svc = EarlyReleaseService(db=db)
+
+    entries, next_cursor = await svc.list_redemptions(limit=2, cursor=None)
+
+    # Should return exactly limit=2 entries
+    assert len(entries) == 2
+    assert entries[0].user_id == "uid_newest"
+    assert entries[1].user_id == "uid_second"
+    # next_cursor is the user_id of the last returned entry (entries[-1])
+    assert next_cursor == "uid_second"
+
+
+async def test_list_redemptions_stale_cursor_returns_empty() -> None:
+    """Stale cursor (user_id whose doc no longer exists): returns ([], None) without raising."""
+    db = MagicMock()
+
+    # cursor doc does NOT exist
+    cursor_doc = MagicMock()
+    cursor_doc.exists = False
+    db.collection.return_value.document.return_value.get.return_value = cursor_doc
+
+    # order_by chain — should not be called on the stale-cursor path, but set up anyway
+    order_by_mock = MagicMock()
+    db.collection.return_value.order_by.return_value = order_by_mock
+
+    svc = EarlyReleaseService(db=db)
+    entries, next_cursor = await svc.list_redemptions(limit=10, cursor="stale_uid")
+
+    assert entries == []
+    assert next_cursor is None
+
+
+async def test_list_redemptions_terminal_page_has_no_next_cursor() -> None:
+    """Terminal page: exactly ``limit`` docs exist, so ``next_cursor = None``.
+
+    We request limit=3 and provide exactly 3 docs (not limit+1), so has_next=False.
+    """
+    docs = [
+        _make_redemption_doc(f"uid_{i}", _NOW - timedelta(hours=i))
+        for i in range(3)
+    ]
+
+    db = _mock_db_for_list(docs)
+    svc = EarlyReleaseService(db=db)
+
+    entries, next_cursor = await svc.list_redemptions(limit=3, cursor=None)
+
+    assert len(entries) == 3
+    assert next_cursor is None
+
+
+async def test_list_redemptions_ordering_uses_descending_with_doc_id_tiebreaker() -> None:
+    """The query orders by ``redeemed_at DESC`` then a document-id tiebreaker.
+
+    The primary sort is verified by the ``order_by`` call on the collection; the
+    secondary document-id sort (a unique tiebreaker for stable pagination) is
+    verified by the chained ``order_by`` call.
+    """
+    from google.cloud import firestore as _fs
+
+    doc = _make_redemption_doc("uid_only", _NOW)
+
+    db = MagicMock()
+    order_by_mock = MagicMock()
+    order_by_mock.limit.return_value.stream.return_value = [doc]
+    # The secondary order_by(document_id) chains off the first order_by.
+    order_by_mock.order_by.return_value = order_by_mock
+    db.collection.return_value.order_by.return_value = order_by_mock
+
+    svc = EarlyReleaseService(db=db)
+    await svc.list_redemptions(limit=5, cursor=None)
+
+    # Primary sort: redeemed_at DESC on the collection.
+    db.collection.return_value.order_by.assert_called_once_with(
+        "redeemed_at", direction=_fs.Query.DESCENDING
+    )
+    # Secondary sort: a document-id tiebreaker chained off the primary order_by.
+    order_by_mock.order_by.assert_called_once_with(FieldPath.document_id())
+
+
+async def test_list_redemptions_invalid_cursor_with_slash_returns_empty() -> None:
+    """A cursor containing '/' is treated as invalid and returns ([], None) without raising."""
+    db = MagicMock()
+    svc = EarlyReleaseService(db=db)
+    entries, next_cursor = await svc.list_redemptions(limit=10, cursor="../../app_config/early_release")
+    assert entries == []
+    assert next_cursor is None
+    # Firestore document lookup must NOT be called for an invalid cursor.
+    db.collection.return_value.document.assert_not_called()

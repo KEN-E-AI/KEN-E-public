@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from google.cloud import firestore
 
 if TYPE_CHECKING:
+    from .services.early_release_service import EarlyReleaseService
     from .services.feature_flag_service import FeatureFlagService
 
 
@@ -72,6 +73,26 @@ def get_feature_flag_service() -> FeatureFlagService:
     """
     from .services.feature_flag_service import (
         get_feature_flag_service as _svc_singleton,
+    )
+
+    return _svc_singleton()
+
+
+# ---------------------------------------------------------------------------
+# Early Release — DM-PRD-11 §4.5
+# ---------------------------------------------------------------------------
+
+
+def get_early_release_service() -> EarlyReleaseService:
+    """FastAPI dependency that returns the process-wide EarlyReleaseService singleton.
+
+    Delegates to ``services.early_release_service.get_early_release_service`` so
+    tests can override via ``app.dependency_overrides[get_early_release_service]``
+    without monkeypatching the LRU cache. Mirrors the ``get_feature_flag_service``
+    pattern (dependencies.py:64-77).
+    """
+    from .services.early_release_service import (
+        get_early_release_service as _svc_singleton,
     )
 
     return _svc_singleton()

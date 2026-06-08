@@ -1,6 +1,6 @@
 """Rate limiting for authentication endpoints.
 
-AH-71: All six limiter instances migrated to build_rate_limiter with per-limiter
+AH-71: All limiter instances migrated to build_rate_limiter with per-limiter
 KeyStrategy, fallback_cap_divisor, fail_open, and emit_remaining_on_success flags
 per AH-PRD-10 §5 specification table.
 """
@@ -65,6 +65,35 @@ password_reset_rate_limiter: LocalRateLimiter | SwitchableRateLimiter = build_ra
     name="password_reset",
     requests_per_minute=3,
     requests_per_hour=10,
+    key_strategy=ip_only_key_strategy,
+    fallback_cap_divisor=10,
+    fail_open=False,
+    audit_logger=_get_audit_logger_lazy(),
+    emit_remaining_on_success=False,
+)
+
+# Early Release code validation — 5/min, 20/hr (mirrors recaptcha caps)
+# fail_open=False: a Redis outage must not silently disable brute-force protection.
+early_release_rate_limiter: LocalRateLimiter | SwitchableRateLimiter = build_rate_limiter(
+    name="early_release",
+    requests_per_minute=5,
+    requests_per_hour=20,
+    key_strategy=ip_only_key_strategy,
+    fallback_cap_divisor=10,
+    fail_open=False,
+    audit_logger=_get_audit_logger_lazy(),
+    emit_remaining_on_success=False,
+)
+
+# Signup-policy lookup — 20/min, 100/hr.  Dedicated bucket (kept off the
+# recaptcha and early_release limiters) so a page-load GET cannot contend with
+# the recaptcha verification or code-validation paths on the same signup flow.
+# Caps are generous because this guards a read-only flag check the signup page
+# fires on load, but it stays IP-keyed + fail-closed to resist polling abuse.
+signup_policy_rate_limiter: LocalRateLimiter | SwitchableRateLimiter = build_rate_limiter(
+    name="signup_policy",
+    requests_per_minute=20,
+    requests_per_hour=100,
     key_strategy=ip_only_key_strategy,
     fallback_cap_divisor=10,
     fail_open=False,

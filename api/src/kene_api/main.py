@@ -34,11 +34,13 @@ from .routers import (
     accounts,
     activities,
     admin,
+    admin_early_release,
     admin_feature_flags,
     agent_configs,
     auth,
     chat,
     datasets,
+    early_release,
     feature_flags,
     firestore,
     funnel_reports,
@@ -368,8 +370,12 @@ app.include_router(
 )  # MCP server config admin router has its prefix
 app.include_router(feature_flags.router)  # Feature flags router already has its prefix
 app.include_router(
+    admin_early_release.router
+)  # Admin Early Release code management (DM-PRD-11)
+app.include_router(
     admin_feature_flags.router
 )  # Admin feature flag management (FF-PRD-02)
+app.include_router(early_release.router)  # Early Release public endpoints (DM-PRD-11)
 
 
 # Health and root endpoints below routers

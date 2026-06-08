@@ -13,6 +13,7 @@ from functools import lru_cache
 
 from google.api_core import exceptions as gcp_exceptions
 from google.cloud import firestore
+from google.cloud.firestore_v1.field_path import FieldPath
 
 from ..dependencies import get_firestore_client
 from ..models.early_release_models import (
@@ -73,20 +74,23 @@ class EarlyReleaseService:
         *,
         actor_id: str,
         expires_at: datetime | None = None,
+        is_active: bool = True,
     ) -> EarlyReleaseConfig:
-        """Write (or overwrite) the shared Early Release code.
+        """Write (or overwrite) the shared Early Release code in a single write.
 
         Uses ``.set()`` (full overwrite) because rotating the code intentionally
         clears any prior expiry — a partial merge would retain the old
         ``expires_at``, which is not the correct semantic for a rotation.
 
-        ``is_active`` is always set to ``True`` on a new code so the admin
-        doesn't need a second call after rotation.
+        ``is_active`` defaults to ``True`` so a plain rotation needs no second
+        call.  Pass ``is_active=False`` to rotate a code into a disabled state in
+        the same atomic write — this avoids a rotate-then-disable two-step that
+        could leave a live code if the second write failed.
         """
         now = datetime.now(timezone.utc)
         config = EarlyReleaseConfig(
             code=code,
-            is_active=True,
+            is_active=is_active,
             expires_at=expires_at,
             updated_by=actor_id,
             updated_at=now,
@@ -181,21 +185,98 @@ class EarlyReleaseService:
                 extra={"user_id": user_id},
             )
 
+    async def list_redemptions(
+        self,
+        limit: int,
+        cursor: str | None,
+    ) -> tuple[list[EarlyReleaseRedemption], str | None]:
+        """Return a page of redemptions ordered by ``redeemed_at DESC`` (newest-first).
+
+        Ordered by ``(redeemed_at DESC, __name__ ASC)``.  The document-id
+        (``__name__``) secondary sort is a unique tiebreaker so two redemptions
+        sharing an identical ``redeemed_at`` cannot be skipped or duplicated
+        across a page boundary.  Ordering by ``__name__`` requires no composite
+        index (Firestore appends it implicitly).
+
+        Cursor semantics:
+        - ``cursor`` is an opaque ``user_id`` value from a prior page's ``next_cursor``.
+        - Resolved server-side by fetching ``early_release_redemptions/{cursor}`` and
+          passing the resulting DocumentSnapshot to Firestore's ``start_after()``
+          (the snapshot supplies both order keys, so the cursor is fully stable).
+        - A stale cursor (doc no longer exists) returns ``([], None)`` without raising.
+
+        Args:
+            limit:  Maximum redemptions to return per page (validated by caller).
+            cursor: ``user_id`` of the last entry from the prior page, or ``None``
+                    for the first page.
+
+        Returns:
+            ``(entries, next_cursor)`` where ``next_cursor`` is ``None`` when no
+            further pages exist, or equals the ``user_id`` of the last returned
+            entry when a further page is available.
+        """
+
+        def _run() -> tuple[list[EarlyReleaseRedemption], str | None]:
+            coll = self._db.collection(_REDEMPTIONS_COLLECTION)
+
+            query = coll.order_by(
+                "redeemed_at", direction=firestore.Query.DESCENDING
+            ).order_by(FieldPath.document_id())
+
+            if cursor is not None:
+                # Reject cursors containing path separators — Firestore document IDs
+                # must not contain "/" and an attacker-controlled cursor with path
+                # separators could resolve against an unexpected collection path.
+                if "/" in cursor or not cursor:
+                    return [], None
+                cursor_doc = coll.document(cursor).get()
+                if not cursor_doc.exists:
+                    # Stale cursor — redemption doc was deleted; return empty terminal page.
+                    return [], None
+                query = query.start_after(cursor_doc)
+
+            # Fetch limit+1 to detect whether a next page exists.
+            raw_docs = list(query.limit(limit + 1).stream())
+
+            has_next = len(raw_docs) == limit + 1
+            page_docs = raw_docs[:limit]
+
+            entries: list[EarlyReleaseRedemption] = []
+            for doc in page_docs:
+                try:
+                    entries.append(EarlyReleaseRedemption.model_validate(doc.to_dict()))
+                except ValueError as exc:
+                    logger.warning(
+                        "early_release_redemption_invalid_doc",
+                        extra={"doc_id": doc.id, "error": str(exc)},
+                    )
+
+            # Guard against empty entries when has_next is True (can occur if all
+            # page_docs fail Pydantic validation — skipped by the loop above).
+            next_cursor: str | None = (
+                entries[-1].user_id if (has_next and entries) else None
+            )
+            return entries, next_cursor
+
+        return await asyncio.to_thread(_run)
+
     async def count_redemptions(self) -> int:
         """Return the total number of Early Release redemptions.
 
-        Issues a full-collection stream — appropriate for v1 where onboard volume
-        is bounded by the rate-limited validate endpoint.  Matches the ``list_flags``
-        pattern in ``FeatureFlagService``.
-
-        TODO: replace with a Firestore COUNT aggregation query
-        (``collection.count().get()``) once a hard cap on redemptions is added
-        or the collection size grows beyond a few thousand documents.
+        Uses a Firestore COUNT aggregation (``collection.count().get()``) so the
+        full collection is never streamed — the server returns a single scalar
+        regardless of collection size.
         """
-        docs = await asyncio.to_thread(
-            lambda: list(self._db.collection(_REDEMPTIONS_COLLECTION).stream())
-        )
-        return len(docs)
+
+        def _run() -> int:
+            result = self._db.collection(_REDEMPTIONS_COLLECTION).count().get()
+            # The sync client returns List[List[AggregationResult]]; guard the
+            # unwrap defensively so an unexpected empty shape yields 0, not a crash.
+            if not result or not result[0]:
+                return 0
+            return int(result[0][0].value)
+
+        return await asyncio.to_thread(_run)
 
 
 @lru_cache(maxsize=1)

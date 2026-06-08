@@ -1,7 +1,7 @@
 """Unit tests for AH-71 limiter-instance wiring + call-site signatures.
 
 Verifies:
-- Each of the 6 limiter instances has the correct key_strategy, fallback_cap_divisor,
+- Each limiter instance has the correct key_strategy, fallback_cap_divisor,
   fail_open, and emit_remaining_on_success per AH-PRD-10 §5 spec table.
 - Each of the 4 flow-level call sites passes (request, ctx_or_none) correctly.
 - _apply_rate_limiting does NOT invoke audit_logger.log_rate_limit_exceeded on 429
@@ -107,6 +107,32 @@ class TestLimiterInstanceWiringMemory:
         assert isinstance(limiter, LocalRateLimiter)
         assert limiter.key_strategy is ip_only_key_strategy
         assert limiter.limiter_name == "password_reset"
+
+    def test_early_release_rate_limiter_ip_keyed(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "memory")
+        from importlib import reload
+
+        import src.kene_api.auth.rate_limiting as rl_mod
+        reload(rl_mod)
+        limiter = rl_mod.early_release_rate_limiter
+        assert isinstance(limiter, LocalRateLimiter)
+        assert limiter.key_strategy is ip_only_key_strategy
+        assert limiter.limiter_name == "early_release"
+        assert limiter.requests_per_minute == 5
+        assert limiter.requests_per_hour == 20
+
+    def test_signup_policy_rate_limiter_ip_keyed(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "memory")
+        from importlib import reload
+
+        import src.kene_api.auth.rate_limiting as rl_mod
+        reload(rl_mod)
+        limiter = rl_mod.signup_policy_rate_limiter
+        assert isinstance(limiter, LocalRateLimiter)
+        assert limiter.key_strategy is ip_only_key_strategy
+        assert limiter.limiter_name == "signup_policy"
+        assert limiter.requests_per_minute == 20
+        assert limiter.requests_per_hour == 100
 
     def test_token_rate_limiter_authenticated(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "memory")
