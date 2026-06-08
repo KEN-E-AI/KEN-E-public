@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field, computed_field
 
+from shared.artifact_models import Artifact
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
 
@@ -420,6 +421,10 @@ class ChatResponse(BaseModel):
         None, description="Conversation name if provided"
     )
     metadata: dict[str, Any] | None = Field(None, description="Response metadata")
+    artifacts: list[Artifact] | None = Field(
+        default=None,
+        description="Vega-Lite chart artifacts emitted by specialist agents this turn (PRD §4.2)",
+    )
 
 
 class ConversationInfo(BaseModel):
@@ -842,6 +847,100 @@ class AgentEngineClient:
             logger.warning(
                 f"Failed to ensure GA credentials in session {session_id}: {e}"
             )
+
+    async def _extract_and_clear_response_artifacts(
+        self,
+        user_id: str,
+        session_id: str,
+    ) -> list[Artifact]:
+        """Extract and clear Vega-Lite chart artifacts from session state.
+
+        Reads ``response_artifacts`` written by ``create_visualization()`` (AH-131),
+        validates each entry, clears the slot, and returns the valid artifacts so the
+        caller can populate ``ChatResponse.artifacts`` and the SSE ``artifacts`` event.
+
+        Best-effort: extraction failures are logged at WARN and return []; clear
+        failures are also logged at WARN but validated artifacts are still returned
+        so that a transient Vertex error on the clear step does not silently drop
+        charts from the current response (mirrors ``_ensure_session_ga_credentials``
+        precedent at chat.py:818-821).
+
+        Args:
+            user_id: The ADK session owner.
+            session_id: The ADK session ID.
+
+        Returns:
+            Validated list of ``Artifact`` objects; empty when none were produced.
+        """
+        try:
+            session = await self.session_service.get_session(
+                app_name=APP_NAME, user_id=user_id, session_id=session_id
+            )
+            if session is None:
+                return []
+
+            raw_list = (getattr(session, "state", None) or {}).get(
+                "response_artifacts"
+            )
+            if not raw_list:
+                return []
+
+            valid: list[Artifact] = []
+            n_invalid = 0
+            for entry in raw_list:
+                try:
+                    valid.append(Artifact.model_validate(entry))
+                except Exception as entry_err:
+                    n_invalid += 1
+                    logger.debug(
+                        "Artifact entry failed validation: %s",
+                        entry_err,
+                        extra=log_context(
+                            component="chat",
+                            action="extract_response_artifacts",
+                            session_id=session_id,
+                        ),
+                    )
+
+            if n_invalid:
+                logger.warning(
+                    "Skipped malformed artifact entries",
+                    extra=log_context(
+                        component="chat",
+                        action="extract_response_artifacts",
+                        session_id=session_id,
+                        extra={"error_type": "ValidationError", "count": n_invalid},
+                    ),
+                )
+
+        except Exception as e:
+            logger.warning(
+                "Failed to extract response_artifacts from session %s: %s",
+                session_id,
+                e,
+            )
+            return []
+
+        # Clear the slot in a separate try so a transient Vertex error here
+        # does not drop artifacts that were already successfully extracted.
+        # Vertex Sessions API rejects an empty invocation_id — use a unique uuid suffix.
+        try:
+            from google.adk.events import Event, EventActions
+
+            event = Event(
+                author="system",
+                invocation_id=f"clear-artifacts-{uuid4()}",
+                actions=EventActions(state_delta={"response_artifacts": []}),
+            )
+            await self.session_service.append_event(session, event)
+        except Exception as clear_err:
+            logger.warning(
+                "Failed to clear response_artifacts slot for session %s: %s",
+                session_id,
+                clear_err,
+            )
+
+        return valid
 
     async def create_conversation(
         self,
@@ -2823,6 +2922,19 @@ async def _stream_completion_sse(
         # Normal stream end: flush any remaining worker buffers before [DONE].
         for frame in _collect_worker_flush_frames():
             yield frame
+        # Emit artifacts before [DONE] so clients receive chart specs on clean completion
+        # only (not on cancellation — this block is inside `try:`, not `finally:`).
+        # session_id may be None before any `session` channel event; skip extraction
+        # in that case (no session → no artifacts were produced).
+        if resolved_session_id:
+            _artifacts = await agent_client._extract_and_clear_response_artifacts(
+                user_context.user_id, resolved_session_id
+            )
+            if _artifacts:
+                yield (
+                    f"event: artifacts\n"
+                    f"data: {json.dumps({'artifacts': [a.model_dump(mode='json') for a in _artifacts]})}\n\n"
+                )
         yield "data: [DONE]\n\n"
     except (asyncio.CancelledError, GeneratorExit, Exception):
         # SSE cancellation (GeneratorExit / CancelledError) or an agent-side
@@ -3036,11 +3148,17 @@ async def chat_completion(
             reauth_key = f"{user_context.user_id}:{actual_session_id}"
             metadata = _reauth_cache.pop(reauth_key, None)
 
+            # Extract any Vega-Lite artifacts written to session state this turn (AH-132).
+            artifacts = await agent_client._extract_and_clear_response_artifacts(
+                user_context.user_id, actual_session_id
+            )
+
             return ChatResponse(
                 content=response_content,
                 session_id=actual_session_id,
                 conversation_name=request.conversation_name,
                 metadata=metadata,
+                artifacts=artifacts or None,
             )
 
     except HTTPException:
