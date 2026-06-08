@@ -1,12 +1,13 @@
 /**
  * Playwright E2E integration tests for SessionsSidebar.
  *
- * Five scenarios:
+ * Six scenarios:
  *   TC-1  sidebar-loads-within-1s    — sidebar renders ≤1 000 ms after navigation
  *   TC-2  dot-state-rendering        — active=teal, needs-review=coral, idle=empty
  *   TC-3  cross-tab-polling          — status updates propagate via the 5 s poll interval
  *   TC-4  100-session-pagination     — infinite scroll + heap delta <50 MB
  *   TC-5  mark-read-transition       — needs-review → idle via IntersectionObserver on latest assistant message
+ *   TC-6  long-preview-no-overflow   — a long title/preview must not stretch the card past the panel
  *
  * Prerequisites (started by deployment/ci/scripts/start_e2e_stack.sh):
  *   - Firestore emulator : 127.0.0.1:8090
@@ -413,4 +414,71 @@ test("TC-5: mark-read-transition", async ({ page, request }) => {
       .locator('[data-slot="session-list-item"][data-status="idle"]')
       .filter({ hasText: "Mark read test session" }),
   ).toBeVisible({ timeout: 8_000 });
+});
+
+// ─── TC-6: Long preview/title does not overflow the panel ─────────────────────
+// Regression guard for the session-card width-overflow bug (the original fix's
+// CSS selector silently matched nothing, so the bug persisted in production).
+//
+// The card title/preview use `truncate` (overflow:hidden; text-overflow:ellipsis;
+// white-space:nowrap), which only clips when an ancestor bounds the width. Radix
+// ScrollArea wraps the viewport content in a `display:table` div that grows to its
+// widest single-line content, so the width is only bounded when the sidebar forces
+// that wrapper to `display:block`. If that override regresses, a long single-line
+// preview stretches the card past the panel and clips mid-word with no ellipsis.
+
+test("TC-6: long-preview-card-does-not-overflow-panel", async ({
+  page,
+  request,
+}) => {
+  // A long, single-line title and preview. With `truncate`'s white-space:nowrap
+  // their intrinsic (max-content) width far exceeds the 384 px panel, so an
+  // unbounded table wrapper would grow the card well past the sidebar.
+  const longTitle =
+    "Zipper etymology — where does that surprisingly funny-sounding word actually originate?";
+  const longPreview =
+    "The word zipper is onomatopoeic; it was coined by B.F. Goodrich in 1923 to describe the sound the fastener makes when opened and closed, and the catchy name stuck even though the sliding device itself had already existed for decades beforehand.";
+
+  await seedChatSession(request, {
+    accountId: ACCOUNT_ID,
+    orgId: ORG_ID,
+    sessionId: "sb-overflow-session-01",
+    overrides: {
+      title: longTitle,
+      last_message_preview: longPreview,
+      updated_at: T_RECENT,
+      created_at: T_RECENT,
+    },
+  });
+
+  await setupAuth({ page, request });
+  await page.goto("/chat");
+
+  const sidebar = page.locator('[data-testid="sessions-sidebar"]');
+  const card = page.locator('[data-slot="session-list-item"]').first();
+  await card.waitFor({ state: "visible", timeout: 10_000 });
+
+  // User-visible symptom: a card must never be laid out wider than the sidebar
+  // that contains it. boundingBox() reports layout geometry (unaffected by the
+  // panel's overflow-x:hidden clipping), so a content-stretched card is caught
+  // here even when it is visually clipped at the panel edge.
+  const sidebarBox = await sidebar.boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(sidebarBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.width).toBeLessThanOrEqual(sidebarBox!.width);
+
+  // Precise mechanism: the scroll viewport must not overflow horizontally. With
+  // the display:table wrapper unbounded, scrollWidth exceeds clientWidth even
+  // though overflow-x is hidden. +1 px tolerates sub-pixel rounding.
+  const viewport = await page.evaluate(() => {
+    const vp = document.querySelector(
+      '[data-testid="sessions-sidebar"] [data-radix-scroll-area-viewport]',
+    ) as HTMLElement | null;
+    return vp
+      ? { scrollWidth: vp.scrollWidth, clientWidth: vp.clientWidth }
+      : null;
+  });
+  expect(viewport).not.toBeNull();
+  expect(viewport!.scrollWidth).toBeLessThanOrEqual(viewport!.clientWidth + 1);
 });

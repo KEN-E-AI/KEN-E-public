@@ -292,8 +292,13 @@ export function SessionsSidebar({
         Without this, the table wrapper grows to the widest card's content, so the
         card title/preview `truncate` never gets a bounded width to clip against
         and a long last-message preview stretches the card past the panel.
+
+        Anchor the override to the [data-radix-scroll-area-viewport] data attribute,
+        NOT child position: ScrollAreaViewport renders a sibling <style> element as
+        the Root's first child, so a `div:first-child` selector matches nothing and
+        the override silently no-ops (the original regression behind this fix).
       */}
-      <ScrollArea className="flex-1 [&>div:first-child>div]:!block">
+      <ScrollArea className="flex-1 [&_[data-radix-scroll-area-viewport]>div]:!block">
         <div className="px-4 pb-4 space-y-2">
           {isError && (
             <p className="text-[var(--text-body-sm)] text-[var(--color-text-tertiary)] text-center py-4">
