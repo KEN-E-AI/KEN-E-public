@@ -51,6 +51,22 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Restore .mypy_cache from GCS so the lint step's mypy run is incremental
+  # (~153s cold → ~10–20s warm). Runs in parallel with install-dependencies so
+  # it adds zero wall-clock on a warm cache, and the lint step waits for both.
+  # Best-effort only: the || true ensures a missing cache or GCS error never
+  # gates the build. First-run (no cache yet) exits immediately with no effect.
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
+    id: mypy-cache-restore
+    waitFor: ['-']
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        gsutil -m rsync -r \
+          gs://${PROJECT_ID}-logs-data/cache/.mypy_cache \
+          /workspace/.mypy_cache || true
+
   # Run unit tests using pytest
   - name: "python:3.11-slim"
     id: unit-tests
@@ -214,9 +230,13 @@ steps:
   # (MockCallbackContext, _FakeRegistry, dict[str, MagicMock]) that
   # legitimately don't satisfy strict typing; annotating them produces no
   # behavioural value.
+  #
+  # Waits on mypy-cache-restore so the incremental cache is in place before
+  # mypy runs. Both mypy-cache-restore and install-dependencies start at t=0;
+  # whichever is slower sets the lint start time.
   - name: "python:3.11-slim"
     id: lint
-    waitFor: ['install-dependencies']
+    waitFor: ['install-dependencies', 'mypy-cache-restore']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -237,6 +257,42 @@ steps:
           app/adk/tracking/ \
           --exclude '/tests/' \
           --ignore-missing-imports
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # Write the updated .mypy_cache back to GCS so the next build starts warm.
+  # Runs only after lint succeeds (if lint fails, the cache is not updated).
+  # Best-effort: || true means a GCS write error never fails the build.
+  # Ends at ~lint_end + rsync_time; lint ends ~200s after build start, well
+  # within the ~331s critical path (e2e → a11y).
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
+    id: mypy-cache-save
+    waitFor: ['lint']
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        if [ -d /workspace/.mypy_cache ]; then
+          gsutil -m rsync -r \
+            /workspace/.mypy_cache \
+            gs://${PROJECT_ID}-logs-data/cache/.mypy_cache || true
+        fi
+
+  # Shadow type-check using Astral's `ty` — non-gating evaluation step.
+  # Evaluates ty against this Pydantic-heavy codebase without blocking the
+  # build (|| true). Output is visible in build logs for comparison with mypy.
+  # Run `uvx ty check --help` to see available flags as ty matures.
+  - name: "python:3.11-slim"
+    id: ty-shadow-check
+    waitFor: ['install-dependencies']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        uvx ty check \
+          app/adk/agents/agent_factory/ \
+          app/adk/mcp_config/ \
+          app/adk/tracking/ || true
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
