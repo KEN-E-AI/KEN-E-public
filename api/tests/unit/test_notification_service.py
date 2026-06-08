@@ -59,7 +59,7 @@ class TestNotificationService:
         # Strengthen ID format assertion
         import re
 
-        assert re.match(r"^notif_acc_123_\d{13}_\d{3}$", notification_id), (
+        assert re.match(r"^notif_acc_123_\d{13}_[0-9a-f]{32}$", notification_id), (
             f"Notification ID format incorrect: {notification_id}"
         )
 
