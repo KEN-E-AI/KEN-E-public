@@ -22,8 +22,7 @@ set -euo pipefail
 # it is queryable via substitutions.TRIGGER_NAME in gcloud builds list filters.
 readonly PROJECT="ken-e-cicd"
 readonly TRIGGER_NAME="deploy-to-prod-pipeline"
-readonly PAGE_SIZE=100
-readonly MAX_PAGES=20  # safety cap: 20 × 100 = 2000 builds per run
+readonly PAGE_SIZE=100  # server-side batch size for gcloud's auto-pagination
 
 # Normalise DRY_RUN to "0" or "1" so callers can use "true"/"yes" as well.
 case "${DRY_RUN:-0}" in
@@ -49,39 +48,49 @@ fi
 
 log "Querying PENDING builds for trigger '${TRIGGER_NAME}' in project '${PROJECT}'..."
 
-page=0
-while [[ $page -lt $MAX_PAGES ]]; do
-  page=$((page + 1))
+# Fetch ALL PENDING build IDs in a single query. gcloud paginates server-side
+# using --page-size and, with --limit omitted, returns the complete result set —
+# so the DRY_RUN count is exact and the live run sees every build.
+#
+# The previous re-query-per-page loop double-counted in DRY_RUN: because nothing
+# is cancelled in dry mode, every pass re-fetched the same first page, inflating
+# WOULD_CANCEL up to MAX_PAGES × PAGE_SIZE. Listing once removes that failure mode
+# (and the symmetric >PAGE_SIZE under-count the old --limit cap could cause).
+#
+# Notes:
+#   - Do NOT pass --ongoing: that flag restricts to WORKING/QUEUED and silently
+#     excludes PENDING (approval-awaiting) builds, which is exactly what we target.
+#   - TRIGGER_NAME is a Cloud Build built-in substitution (no underscore prefix)
+#     stamped on every triggered build; it IS queryable as substitutions.TRIGGER_NAME.
+#   - Single-quote the trigger name value in the filter to prevent shell injection.
+#   - Capture via command substitution (not process substitution) so a gcloud
+#     failure propagates its exit code instead of being silently swallowed.
+list_rc=0
+builds_raw=$(
+  gcloud builds list \
+    --project="${PROJECT}" \
+    --filter="status=PENDING AND substitutions.TRIGGER_NAME='${TRIGGER_NAME}'" \
+    --format="value(id)" \
+    --page-size="${PAGE_SIZE}"
+) || list_rc=$?
 
-  # Fetch a page of PENDING build IDs.
-  # Notes:
-  #   - Do NOT pass --ongoing: that flag restricts to WORKING/QUEUED and silently
-  #     excludes PENDING (approval-awaiting) builds, which is exactly what we target.
-  #   - TRIGGER_NAME is a Cloud Build built-in substitution (no underscore prefix)
-  #     stamped on every triggered build; it IS queryable as substitutions.TRIGGER_NAME.
-  #   - Single-quote the trigger name value in the filter to prevent shell injection.
-  mapfile -t BUILD_IDS < <(
-    gcloud builds list \
-      --project="${PROJECT}" \
-      --filter="status=PENDING AND substitutions.TRIGGER_NAME='${TRIGGER_NAME}'" \
-      --format="value(id)" \
-      --page-size="${PAGE_SIZE}" \
-      --limit="${PAGE_SIZE}" \
-      2>/dev/null
-  ) || true
+if [[ $list_rc -ne 0 ]]; then
+  log "ERROR: 'gcloud builds list' failed (exit ${list_rc}). Check auth and filter; aborting."
+  exit 1
+fi
 
-  if [[ ${#BUILD_IDS[@]} -eq 0 ]]; then
-    log "No more PENDING builds found (page ${page})."
-    break
-  fi
+# Split into an array, dropping blank lines so the count is exact when empty.
+PENDING_IDS=()
+while IFS= read -r BUILD_ID; do
+  [[ -n "$BUILD_ID" ]] && PENDING_IDS+=("$BUILD_ID")
+done <<< "$builds_raw"
 
-  log "Page ${page}: found ${#BUILD_IDS[@]} PENDING build(s)."
+log "Found ${#PENDING_IDS[@]} PENDING build(s) for trigger '${TRIGGER_NAME}'."
 
-  for BUILD_ID in "${BUILD_IDS[@]}"; do
-    if [[ -z "$BUILD_ID" ]]; then
-      continue
-    fi
-
+# Guard the loop on the count: expanding "${arr[@]}" on an empty array under
+# `set -u` aborts on bash 3.2 (macOS default), so never enter the loop empty.
+if [[ ${#PENDING_IDS[@]} -gt 0 ]]; then
+  for BUILD_ID in "${PENDING_IDS[@]}"; do
     if [[ "$DRY_RUN" == "1" ]]; then
       log "  [DRY_RUN] Would cancel: ${BUILD_ID}"
       WOULD_CANCEL=$((WOULD_CANCEL + 1))
@@ -107,15 +116,7 @@ while [[ $page -lt $MAX_PAGES ]]; do
     # Throttle to avoid Cloud Build API quota exhaustion (~10 req/s quota).
     sleep 0.2
   done
-
-  # If the page returned fewer results than PAGE_SIZE, we've reached the end.
-  if [[ ${#BUILD_IDS[@]} -lt $PAGE_SIZE ]]; then
-    break
-  fi
-
-  # Brief pause between pages to stay under list-API quota.
-  sleep 1
-done
+fi
 
 echo ""
 log "Summary:"
