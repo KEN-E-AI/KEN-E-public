@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Seed rate-limiter feature flags into Firestore (AH-71).
+"""Seed feature flags into Firestore.
 
-Registers exactly one flag: ``rate_limit_backend_override``.  This flag is
-registered in ``SECURITY_CRITICAL_FLAGS`` (feature_flags/security_critical.py)
-so any write through the admin UI fires the AH-79 audit-log + Cloud Monitoring
-counter hooks automatically.
+Registers platform-level feature flags. Currently includes:
 
-Running this script has zero runtime effect because the flag starts with
-``is_active=False, default_enabled=False`` — the default backend is ``redis``
-(set by ``KENE_RATE_LIMIT_BACKEND`` or ``build_rate_limiter``'s default).  An
-operator must explicitly flip ``default_enabled=True`` through the admin UI to
-activate the kill-switch rollback to memory mode.
+- ``rate_limit_backend_override`` (AH-71): emergency rollback to in-process
+  rate limiting when Redis is unavailable. Registered in
+  ``SECURITY_CRITICAL_FLAGS`` (feature_flags/security_critical.py) so any
+  write through the admin UI fires the AH-79 audit-log + Cloud Monitoring
+  counter hooks automatically.
+
+- ``invite_only_signup`` (DM-PRD-11): global toggle for the Early Release
+  signup gate. Ships dark (``is_active=True, default_enabled=False``); flip
+  ``default_enabled`` via the admin UI to enforce invite-only onboarding.
 
 Usage:
     python api/scripts/seed_feature_flags.py
@@ -43,7 +44,7 @@ from src.kene_api.services.feature_flag_service import (
 # Flag registry
 # ---------------------------------------------------------------------------
 
-RATE_LIMITER_FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
+FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
     FeatureFlagWriteRequest(
         key="rate_limit_backend_override",
         description=(
@@ -58,9 +59,22 @@ RATE_LIMITER_FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
         bucketing_entity="account",
         owner="agentic-harness@ken-e.ai",
     ),
+    FeatureFlagWriteRequest(
+        key="invite_only_signup",
+        description=(
+            "When ON, new users can only onboard via an org invitation or a valid "
+            "Early Release code. Ships dark (default_enabled=False). Do NOT add "
+            "targeting rules — staff bypass lives in the org-creation predicate, not "
+            "here (see DM-PRD-11 §4.4 and feature-flags/README.md §7.6)."
+        ),
+        default_enabled=False,
+        is_active=True,
+        bucketing_entity="account",
+        owner="data-management@ken-e.ai",
+    ),
 ]
 
-_ACTOR_EMAIL = "system+ah-71-seed@ken-e.ai"
+_ACTOR_EMAIL = "system+seed-feature-flags@ken-e.ai"
 
 
 # ---------------------------------------------------------------------------
@@ -69,10 +83,10 @@ _ACTOR_EMAIL = "system+ah-71-seed@ken-e.ai"
 
 
 async def _seed_flags(db: object, dry_run: bool) -> dict[str, str]:
-    """Create the rate-limiter flags.  Returns {key: outcome}."""
+    """Create all registered feature flags.  Returns {key: outcome}."""
     service = FeatureFlagService(db=db)
     results: dict[str, str] = {}
-    for req in RATE_LIMITER_FLAGS_TO_REGISTER:
+    for req in FLAGS_TO_REGISTER:
         if dry_run:
             print(
                 f"  [DRY RUN] would create: {req.key!r} "
@@ -106,7 +120,7 @@ def _is_dev_project(project_id: str) -> bool:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Seed rate-limiter feature flags into Firestore (idempotent)."
+        description="Seed platform feature flags into Firestore (idempotent)."
     )
     parser.add_argument(
         "--dry-run",
@@ -151,10 +165,10 @@ def main(argv: list[str] | None = None) -> int:
             "Proceeding because --yes-i-know-its-not-dev was passed.\n"
         )
 
-    print("=== seed_feature_flags (rate-limiter) ===")
+    print("=== seed_feature_flags ===")
     print(f"project_id : {project_id or '(not set)'}")
     print(f"dry_run    : {args.dry_run}")
-    print(f"flags      : {[f.key for f in RATE_LIMITER_FLAGS_TO_REGISTER]}")
+    print(f"flags      : {[f.key for f in FLAGS_TO_REGISTER]}")
     print()
 
     from src.kene_api.dependencies import get_firestore_client

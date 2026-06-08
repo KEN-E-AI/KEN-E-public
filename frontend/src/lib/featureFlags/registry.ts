@@ -5,6 +5,7 @@ const BASE_FLAGS: FlagKey[] = [
   // toFlagKey("automations_beta"),
   toFlagKey("chat_v2_enabled"),
   toFlagKey("chat_categories_enabled"),
+  toFlagKey("invite_only_signup"),
 ] satisfies FlagKey[];
 
 function parseFixtureFlags(): FlagKey[] {
