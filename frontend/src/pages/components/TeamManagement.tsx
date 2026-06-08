@@ -15,6 +15,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -719,6 +720,9 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Invite Team Member</DialogTitle>
+            <DialogDescription className="sr-only">
+              Invite a new member to join this team.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
@@ -855,6 +859,9 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Change Access Level</DialogTitle>
+            <DialogDescription className="sr-only">
+              Update the access level for this team member.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <p className="text-sm text-[var(--color-text-tertiary)]">
@@ -980,6 +987,9 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Remove Team Member</DialogTitle>
+            <DialogDescription className="sr-only">
+              Remove this member from the team.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <p className="text-sm text-[var(--color-text-tertiary)]">
@@ -1020,6 +1030,9 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Cancel Invitation</DialogTitle>
+            <DialogDescription className="sr-only">
+              Cancel the pending invitation for this user.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <p className="text-sm text-[var(--color-text-tertiary)]">

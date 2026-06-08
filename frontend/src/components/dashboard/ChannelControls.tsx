@@ -501,8 +501,9 @@ const ReactFlowComponent = () => {
     from: new Date(new Date().getFullYear(), 0, 1), // January 1st of current year
     to: new Date(new Date().getFullYear(), 0, 31), // January 31st of current year
   });
-  const [pendingComparisonDateRange, setPendingComparisonDateRange] =
-    useState<DateRange | undefined>(undefined);
+  const [pendingComparisonDateRange, setPendingComparisonDateRange] = useState<
+    DateRange | undefined
+  >(undefined);
 
   // Sample data structure - now as state. Typed as the shared `SampleData`
   // interface (rather than letting useState infer the deeply-literal shape of
@@ -747,16 +748,18 @@ const ReactFlowComponent = () => {
     // Object.entries (it falls back to `unknown`). The sampleData shape
     // declares channels as `Record<string, any>`, so `any` here is the
     // intended type, just made explicit for the compiler.
-    return Object.entries(channel.tactics).map(([id, tactic]: [string, any]) => ({
-      id,
-      name:
-        tactic?.name ||
-        id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, " "),
-      effectivenessKPI: tactic?.effectivenessKPI || "",
-      efficiencyKPI: tactic?.efficiencyKPI || "",
-      supportingMetrics: tactic?.supportingMetrics || [],
-      ...tactic,
-    }));
+    return Object.entries(channel.tactics).map(
+      ([id, tactic]: [string, any]) => ({
+        id,
+        name:
+          tactic?.name ||
+          id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, " "),
+        effectivenessKPI: tactic?.effectivenessKPI || "",
+        efficiencyKPI: tactic?.efficiencyKPI || "",
+        supportingMetrics: tactic?.supportingMetrics || [],
+        ...tactic,
+      }),
+    );
   };
 
   // Helper function to get tactics for EditChannelsModal format
@@ -772,15 +775,17 @@ const ReactFlowComponent = () => {
     if (!channel || !channel.tactics) {
       return [];
     }
-    return Object.entries(channel.tactics).map(([id, tactic]: [string, any]) => ({
-      id,
-      name:
-        tactic?.name ||
-        id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, " "),
-      effectivenessKPI: tactic?.effectivenessKPI || "",
-      efficiencyKPI: tactic?.efficiencyKPI || "",
-      supportingMetrics: tactic?.supportingMetrics || [],
-    }));
+    return Object.entries(channel.tactics).map(
+      ([id, tactic]: [string, any]) => ({
+        id,
+        name:
+          tactic?.name ||
+          id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, " "),
+        effectivenessKPI: tactic?.effectivenessKPI || "",
+        efficiencyKPI: tactic?.efficiencyKPI || "",
+        supportingMetrics: tactic?.supportingMetrics || [],
+      }),
+    );
   };
 
   // Handle channels change
@@ -1237,6 +1242,9 @@ const ReactFlowComponent = () => {
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogTitle className="sr-only">{modalContent.title}</DialogTitle>
+          <DialogDescription className="sr-only">
+            View detailed information for this dashboard item.
+          </DialogDescription>
           <div className="text-lg font-normal tracking-tight leading-tight">
             {modalContent.title}
           </div>

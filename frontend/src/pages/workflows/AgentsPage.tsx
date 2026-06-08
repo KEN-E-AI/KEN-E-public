@@ -1,5 +1,10 @@
 import { useSearchParams } from "react-router-dom";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AgentsListView } from "./agents/AgentsListView";
 import { AgentEditView } from "./agents/AgentEditView";
@@ -32,6 +37,9 @@ export function AgentsPage() {
         <SheetContent className="sm:max-w-md p-0 gap-0">
           <VisuallyHidden>
             <SheetTitle>Configure Agent</SheetTitle>
+            <SheetDescription>
+              Configure the selected agent settings.
+            </SheetDescription>
           </VisuallyHidden>
           {editingId !== null && (
             <AgentEditView configId={editingId} onClose={closeEdit} />

@@ -25,6 +25,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -883,6 +884,9 @@ const MetricsPage = () => {
             <DialogTitle>
               {isCreating ? "Create New Metric" : "Edit Metric"}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Edit metric details and configuration.
+            </DialogDescription>
           </DialogHeader>
 
           {editingMetric && (

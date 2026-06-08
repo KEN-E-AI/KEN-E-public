@@ -22,6 +22,7 @@ import { SwotManagement } from "@/components/swot/SwotManagement";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -334,6 +335,9 @@ export default function KnowledgeAccount() {
                 <Building className="h-5 w-5" />
                 Edit Company Summary
               </SheetTitle>
+              <SheetDescription className="sr-only">
+                View and edit account knowledge details.
+              </SheetDescription>
             </SheetHeader>
 
             <div className="flex-1 mt-6 overflow-y-auto">

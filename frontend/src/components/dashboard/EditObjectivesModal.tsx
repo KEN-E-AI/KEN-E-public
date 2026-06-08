@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -432,6 +433,9 @@ const EditObjectivesModal = ({
                 : `Edit ${entityType === "objective" ? "Objective" : entityType === "channel" ? "Channel" : "Tactic"}`
               : `Edit Marketing ${entityType === "objective" ? "Objectives" : entityType === "channel" ? "Channels" : "Tactics"}`}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Edit marketing objectives for this dashboard.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">

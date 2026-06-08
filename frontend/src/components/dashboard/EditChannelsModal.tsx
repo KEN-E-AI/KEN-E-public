@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -326,6 +327,9 @@ const EditChannelsModal = ({
               ? `Edit ${entityType === "channel" ? "Channel" : "Tactic"}`
               : `Edit Marketing ${entityType === "channel" ? "Channels" : "Tactics"}`}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Edit channel configurations for this dashboard.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">

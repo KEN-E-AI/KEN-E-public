@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -208,6 +209,9 @@ const EditStepsModal = ({
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Marketing Objectives</DialogTitle>
+          <DialogDescription className="sr-only">
+            Edit marketing steps for this dashboard.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">

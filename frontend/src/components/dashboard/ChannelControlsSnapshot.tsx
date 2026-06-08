@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -193,6 +194,9 @@ const ObjectiveNode = ({ data }: { data: any }) => {
             <DialogTitle className="capitalize">
               {data.step_name} Objective
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Channel performance snapshot and controls.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6">
@@ -586,6 +590,9 @@ const ChannelNode = ({ data }: { data: any }) => {
                 <DialogTitle className="capitalize">
                   {data.label} Channel
                 </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Channel performance and configuration details.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <p className="text-[var(--color-text-secondary)]">
@@ -695,6 +702,9 @@ const TacticNode = ({ data }: { data: any }) => {
                 <DialogTitle className="capitalize">
                   {data.label} Tactic
                 </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Tactic performance details and configuration.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <p className="text-[var(--color-text-secondary)]">

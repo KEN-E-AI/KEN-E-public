@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -306,6 +307,9 @@ const EditTacticsModal = ({
           <DialogTitle>
             {editTacticId ? "Edit Tactic" : "Edit Marketing Tactics"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Edit marketing tactics for this dashboard.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">

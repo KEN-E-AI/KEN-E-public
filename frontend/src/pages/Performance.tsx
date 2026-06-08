@@ -18,6 +18,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -609,6 +610,10 @@ const Performance = () => {
                   <DialogContent className="max-w-3xl">
                     <DialogHeader>
                       <DialogTitle>Edit Metrics Configuration</DialogTitle>
+                      <DialogDescription className="sr-only">
+                        Configure the metrics displayed in this performance
+                        dashboard.
+                      </DialogDescription>
                     </DialogHeader>
 
                     {/* Search and Filters — search on its own row, filters below */}

@@ -30,6 +30,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1305,6 +1306,9 @@ const ActivitiesPage = () => {
               <DialogTitle>
                 {editingIntuition.intuition?.id ? "Edit" : "Add"} Intuition
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                Add or edit an intuition entry for this metric.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {/* Metric Selection with Search and Filters */}
@@ -1493,6 +1497,9 @@ const ActivitiesPage = () => {
               <DialogTitle>
                 {editingLog.log?.id ? "Edit" : "Add"} Log
               </DialogTitle>
+              <DialogDescription className="sr-only">
+                Add or edit a log entry for this activity.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -1572,6 +1579,9 @@ const ActivitiesPage = () => {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{isCreating ? "Add" : "Edit"} Activity</DialogTitle>
+              <DialogDescription className="sr-only">
+                Create or edit an activity record.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
               {/* Name */}

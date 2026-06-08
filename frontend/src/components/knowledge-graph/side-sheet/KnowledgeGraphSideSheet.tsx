@@ -1,6 +1,7 @@
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -71,6 +72,9 @@ export function KnowledgeGraphSideSheet({
             {Icon && <Icon className="h-5 w-5" />}
             {title}
           </SheetTitle>
+          <SheetDescription className="sr-only">
+            View and explore knowledge graph details for this item.
+          </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 mt-6 overflow-y-auto">{children}</div>

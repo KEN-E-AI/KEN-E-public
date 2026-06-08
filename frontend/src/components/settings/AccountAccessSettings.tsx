@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -288,6 +289,10 @@ export const AccountAccessSettings = ({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Grant Account Access</DialogTitle>
+            <DialogDescription className="sr-only">
+              Grant a user access to this account by entering their email
+              address.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">

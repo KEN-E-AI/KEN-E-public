@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -186,6 +187,9 @@ export default function KnowledgeCompetitors() {
                 <Swords className="h-5 w-5" />
                 Edit Competitive Environment
               </SheetTitle>
+              <SheetDescription className="sr-only">
+                View and edit competitor details.
+              </SheetDescription>
             </SheetHeader>
 
             <div className="flex-1 mt-6 overflow-y-auto">
