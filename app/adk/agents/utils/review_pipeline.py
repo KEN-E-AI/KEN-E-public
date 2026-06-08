@@ -9,6 +9,7 @@ An intermediate SequentialAgent wrapper does not propagate the reviewer's `escal
 action up to the LoopAgent, so the loop never terminates on approval.
 """
 
+import json
 import logging
 import re
 from collections.abc import Callable
@@ -222,6 +223,96 @@ def _make_review_exit_loop(feedback_key: str) -> Callable[[ToolContext], None]:
     return exit_loop
 
 
+def _make_artifacts_projector_callback(
+    output_key_prefix: str,
+) -> Callable[[Any], None]:
+    """Build a per-pipeline after_agent_callback that snapshots response_artifacts.
+
+    The returned closure reads ``callback_context.state["response_artifacts"]``
+    (the list written by ``create_visualization()`` during the worker's run) and
+    writes a JSON-stringified representation to
+    ``callback_context.state[f"{output_key_prefix}_artifacts"]``.
+
+    When ``response_artifacts`` is absent or empty the projector leaves
+    ``{output_key_prefix}_artifacts`` **unset**.  ADK's optional-suffix
+    ``{<prefix>_artifacts?}`` substitution already renders an absent key to the
+    empty string (identical to ``{<prefix>_feedback?}`` on iteration 1), so an
+    explicit ``""`` write is redundant.  It is also harmful: writing to
+    ``callback_context.state`` from an ``after_agent_callback`` produces a
+    session-state delta, and ADK emits an extra worker-authored event for any
+    callback that mutates state (``BaseAgent._handle_after_agent_callback``).
+    That phantom event has empty content and no ``{<prefix>_draft}`` delta, so
+    ``extract_iterations`` would miscount it as an empty review iteration.
+    Skipping the write keeps the worker's event stream clean on artifact-free
+    turns.
+
+    **Accumulation semantics (intentional):** ``create_visualization()`` appends
+    to ``response_artifacts`` across iterations and this projector takes a running
+    snapshot without clearing the source key between iterations.  The reviewer
+    therefore sees the union of all charts the worker has produced so far in the
+    current turn — the correct input for judging whether the final composite
+    output satisfies the acceptance criteria.  If iteration-scoped evaluation
+    (each iteration's charts only) is ever needed, the seam is here in the
+    projector without changing the template or state-key contract.
+
+    **Size / sanitization (AH-138 seam):** AH-138 will replace the ``json.dumps``
+    call below with a size-aware summariser that collapses ``data.values`` arrays
+    exceeding 1,000 rows and sanitizes leaf-string values against prompt-injection
+    patterns (``spec.data.values`` originate from marketing-platform APIs and may
+    contain user-influenced strings).  Until AH-138 ships, each entry is
+    re-validated against ``Artifact`` before serialization so malformed /
+    non-Artifact dicts in session state are silently dropped rather than coerced
+    to ``str()`` and injected into the reviewer prompt.
+
+    The projector is appended LAST in the worker's callback chain so any
+    specialist-propagated callbacks (tracing, billing, state-write) fire first
+    and ``response_artifacts`` is fully populated before the snapshot runs.
+    """
+    # Deferred imports keep module-level startup cost zero for code paths
+    # that never call create_visualization().
+    from pydantic import ValidationError
+
+    from shared.artifact_models import Artifact as _Artifact
+
+    artifacts_key = f"{output_key_prefix}_artifacts"
+
+    def _projector(callback_context: Any) -> None:
+        try:
+            state = callback_context.state
+            raw = state.get("response_artifacts", []) or []
+            # Re-validate each entry against the Artifact model; drop anything
+            # that fails rather than coercing to str() via default=str. This
+            # prevents malformed session-state values from reaching the reviewer
+            # prompt as repr() strings.
+            valid: list[dict[str, Any]] = []
+            for entry in raw:
+                try:
+                    valid.append(_Artifact.model_validate(entry).model_dump())
+                except (ValidationError, Exception):
+                    logger.warning(
+                        "[REVIEW-LOOP] _projector for '%s': dropping invalid "
+                        "artifact entry from reviewer snapshot.",
+                        output_key_prefix,
+                    )
+            if valid:
+                state[artifacts_key] = json.dumps(valid, indent=2, ensure_ascii=False)
+            # When there are no valid artifacts, leave artifacts_key UNSET: the
+            # `{<prefix>_artifacts?}` optional suffix already renders an absent
+            # key to "", and writing "" here would create a state delta that
+            # makes ADK emit a phantom worker event miscounted as a review
+            # iteration. See the docstring for the full rationale.
+        except Exception:
+            logger.warning(
+                "[REVIEW-LOOP] _projector for '%s' raised unexpectedly; "
+                "artifacts will not be surfaced to the reviewer. "
+                "The review loop continues normally.",
+                output_key_prefix,
+                exc_info=True,
+            )
+
+    return _projector
+
+
 def build_review_pipeline(
     specialist: LlmAgent,
     acceptance_criteria: str,
@@ -351,6 +442,9 @@ def build_review_pipeline(
     # intentionally. Inside a LoopAgent they fire once per iteration (up to
     # max_iterations times per user turn). Specialist authors must design
     # these callbacks to be idempotent.
+    # The artifacts projector is appended AFTER any specialist-propagated
+    # after_agent_callback(s) so tracing/billing callbacks fire first and
+    # response_artifacts is fully populated before the snapshot runs.
     worker_kwargs: dict[str, Any] = {}
     for field in LlmAgent.model_fields:
         if (
@@ -360,6 +454,18 @@ def build_review_pipeline(
         ):
             continue
         worker_kwargs[field] = getattr(specialist, field)
+
+    # Chain the artifacts projector onto the worker's after_agent_callback.
+    # Normalise None / callable / list to a list, then append the projector last.
+    _existing_after = worker_kwargs.get("after_agent_callback")
+    if _existing_after is None:
+        _chained_after: list[Callable[..., Any]] = []
+    elif callable(_existing_after):
+        _chained_after = [_existing_after]
+    else:
+        _chained_after = list(_existing_after)
+    _chained_after.append(_make_artifacts_projector_callback(output_key_prefix))
+    worker_kwargs["after_agent_callback"] = _chained_after
 
     worker_kwargs.update(
         {
@@ -380,6 +486,8 @@ def build_review_pipeline(
         "<<<CRITERIA_END>>>\n\n"
         "## Draft to Evaluate\n"
         f"{{{output_key_prefix}_draft}}\n\n"
+        "## Artifacts (if any)\n"
+        f"{{{output_key_prefix}_artifacts?}}\n\n"
         "## Instructions\n"
         "Check each criterion above against the draft text. "
         "If criteria pass, invoke the `exit_loop` tool. "
@@ -391,7 +499,18 @@ def build_review_pipeline(
         "ROAS = revenue / spend). Direct platform metrics reported as raw counts or "
         "aggregates by the platform itself (e.g. Google Analytics 'Total active users', "
         "'Sessions', 'New users') have no formula; their absence is not a defect and "
-        "must not be flagged as missing."
+        "must not be flagged as missing. "
+        "When artifacts are present in the '## Artifacts (if any)' section above, "
+        "additionally evaluate: "
+        "(a) the chart type (the 'mark' field or 'chart_type_suggestion') matches the "
+        "data shape — time-series data should use a line mark, categorical comparisons "
+        "a bar mark, part-of-whole distributions an arc mark, correlations a point mark, "
+        "and cumulative progressions an area mark; "
+        "(b) the chart has labelled axes via the 'encoding' field and a meaningful "
+        "'title' — axis labels must be present and the title must describe the data; "
+        "(c) the text narrative in the draft references the chart accurately — "
+        "the direction of change, peaks, and data values described in prose must be "
+        "consistent with the data points in the artifact spec."
     )
 
     reviewer = LlmAgent(
@@ -609,6 +728,27 @@ def extract_iterations(
             continue
 
         if author == specialist_worker_name:
+            # Resolve this worker event's draft: prefer the `{prefix}_draft`
+            # state-delta value, fall back to the event's text content.
+            specialist_output = ""
+            actions = getattr(event, "actions", None)
+            state_delta = getattr(actions, "state_delta", None) if actions else None
+            if state_delta:
+                specialist_output = state_delta.get(draft_key, "") or ""
+            if not specialist_output:
+                specialist_output = _event_text(event)
+
+            # Skip worker-authored events that are pure state projections, not
+            # drafts. An after_agent_callback that mutates session state (e.g.
+            # the artifacts projector writing `{prefix}_artifacts`) makes ADK
+            # emit an extra worker-authored event with empty content and no
+            # `{prefix}_draft` delta. Such an event is not a review iteration —
+            # counting it would inflate the iteration total and emit a phantom
+            # empty span.
+            has_draft_delta = bool(state_delta and draft_key in state_delta)
+            if not specialist_output and not has_draft_delta:
+                continue
+
             # If we already have a pending specialist output without a
             # matching reviewer-final, the previous iteration was aborted
             # mid-flight; emit it with an empty reviewer record before
@@ -624,13 +764,6 @@ def extract_iterations(
                     )
                 )
 
-            specialist_output = ""
-            actions = getattr(event, "actions", None)
-            state_delta = getattr(actions, "state_delta", None) if actions else None
-            if state_delta:
-                specialist_output = state_delta.get(draft_key, "") or ""
-            if not specialist_output:
-                specialist_output = _event_text(event)
             pending_specialist_output = specialist_output
 
         elif author == reviewer_name:

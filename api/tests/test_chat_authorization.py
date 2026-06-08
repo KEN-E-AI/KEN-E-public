@@ -64,7 +64,7 @@ async def test_chat_completion_allows_authorized_account():
     with patch.object(
         agent_client, "chat_completion", new_callable=AsyncMock
     ) as mock_chat:
-        mock_chat.return_value = ("Response", "session_123")
+        mock_chat.return_value = ("Response", "session_123", False)
 
         from src.kene_api.routers.chat import ChatMessage, ChatRequest, chat_completion
 

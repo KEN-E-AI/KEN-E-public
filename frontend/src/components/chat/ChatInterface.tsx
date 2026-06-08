@@ -9,7 +9,16 @@ import {
   isPendingSessionId,
   streamChatCompletion,
 } from "@/lib/chatApi";
-import type { ChatMessage, StreamEvent } from "@/lib/chatApi";
+import type { Artifact, ChatMessage, StreamEvent } from "@/lib/chatApi";
+import { Settings2 } from "lucide-react";
+import { ChatArtifactRenderer } from "./ChatArtifactRenderer";
+import { ChartSettingsPopover } from "./ChartSettingsPopover";
+import type { ArtifactConfig } from "./ChartSettingsPopover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import type { AccountId } from "@/lib/branded-types";
 import { parseConversationHistory } from "@/lib/parseConversationHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
@@ -31,6 +40,7 @@ type Message = {
   stopped?: boolean;
   reasoning?: { thoughts: string[]; durationSeconds: number };
   artifacts?: MessageArtifact[];
+  chartArtifacts?: Artifact[];
   author?: string;
 };
 
@@ -71,6 +81,39 @@ const TEXT_SIZE_CLASSES: Record<TextSize, string> = {
   medium: "text-base",
   large: "text-lg",
 };
+
+function ChartArtifactItem({ artifact }: { artifact: Artifact }) {
+  const [config, setConfig] = useState<ArtifactConfig>({});
+
+  const handleChange = useCallback((patch: Partial<ArtifactConfig>) => {
+    setConfig((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  return (
+    <Popover>
+      <div className="relative group" data-testid="chart-artifact-item">
+        <ChatArtifactRenderer
+          artifact={artifact}
+          viewOverride={config.viewOverride}
+          color={config.color}
+          showDataLabels={config.showDataLabels}
+        />
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Chart settings"
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]"
+          >
+            <Settings2 className="size-3.5" />
+          </button>
+        </PopoverTrigger>
+      </div>
+      <PopoverContent align="end" className="w-[12.5rem] p-2">
+        <ChartSettingsPopover config={config} onChange={handleChange} />
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function ChatInterface({
   sessionId,
@@ -335,7 +378,23 @@ export function ChatInterface({
           collectedThoughts = [...collectedThoughts, event.text];
           liveThoughtsRef.current = collectedThoughts;
           setLiveThoughts(collectedThoughts);
-        } else {
+        } else if (event.type === "artifacts") {
+          if (event.artifacts.length > 0) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === currentAssistantId
+                  ? {
+                      ...m,
+                      chartArtifacts: [
+                        ...(m.chartArtifacts ?? []),
+                        ...event.artifacts,
+                      ],
+                    }
+                  : m,
+              ),
+            );
+          }
+        } else if (event.type === "text") {
           const incomingAuthor = event.author ?? "model";
           if (!authorBubbleMap.has(incomingAuthor)) {
             // First time seeing this author in the turn.
@@ -521,6 +580,17 @@ export function ChatInterface({
                           ))}
                         </div>
                       )}
+                      {message.chartArtifacts &&
+                        message.chartArtifacts.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            {message.chartArtifacts.map((artifact, idx) => (
+                              <ChartArtifactItem
+                                key={`${message.id}-chart-${idx}`}
+                                artifact={artifact}
+                              />
+                            ))}
+                          </div>
+                        )}
                       {message.stopped && (
                         <button
                           onClick={() => handleRetry(message.id)}

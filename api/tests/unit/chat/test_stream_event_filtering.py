@@ -104,7 +104,7 @@ class TestNonStreamingSkipsContentlessEvents:
         """The non-streaming path must not append the raw event dict either."""
         client = _make_client([STATE_DELTA_EVENT, TEXT_EVENT])
 
-        result, _session_id = await client.chat_completion(
+        result, _session_id, _visualization_seen = await client.chat_completion(
             messages=[ChatMessage(role="user", content="How do I start a business?")],
             user_context=_user_context(),
             session_id="test-session-ch59-ns",

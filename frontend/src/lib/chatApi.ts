@@ -76,6 +76,7 @@ export type ChatResponse = {
   content: string;
   session_id: string;
   metadata?: { requires_reauth?: boolean; service?: string };
+  artifacts?: Artifact[] | null;
 };
 
 export type ConversationInfo = {
@@ -160,6 +161,27 @@ export type TodoListView = {
 
 export type ListTodosResponse = {
   todo_lists: TodoListView[];
+};
+
+// ─── Vega-Lite chart artifact types (AH-PRD-04 §4.1) ────────────────────────
+// Mirrors shared/artifact_models.py field-for-field. Wire uses snake_case
+// (matching the Python Pydantic model serialization); frontend types preserve
+// that casing so JSON.parse() round-trips without a transform layer.
+
+export type ChartType = "bar" | "line" | "area" | "point" | "arc";
+export type ArtifactType = "visualization" | "text" | "table" | "file";
+
+export type ArtifactMetadata = {
+  chart_type_suggestion: ChartType;
+  title: string;
+  data_source: string;
+  description?: string | null;
+};
+
+export type Artifact = {
+  type: ArtifactType;
+  spec: Record<string, unknown>;
+  metadata: ArtifactMetadata;
 };
 
 // ─── Artifact types (CH-PRD-05 §4.3) ─────────────────────────────────────────
@@ -350,12 +372,15 @@ export async function postChatCompletion(
  * - "reasoning": a fragment of the model's reasoning (thought) text.
  * - "session": a one-time event carrying the real session id when a pending_
  *   placeholder has been resolved server-side (CH-62).
+ * - "artifacts": an atomic batch of Vega-Lite chart artifacts emitted after
+ *   text streaming completes (AH-PRD-04 §6.2 SSE wire contract).
  * Unknown SSE event types are silently dropped.
  */
 export type StreamEvent =
   | { type: "text"; text: string; author?: string }
   | { type: "reasoning"; text: string; author?: string }
-  | { type: "session"; sessionId: string };
+  | { type: "session"; sessionId: string }
+  | { type: "artifacts"; artifacts: Artifact[]; author?: string };
 
 /**
  * POST /api/v1/chat/completions (streaming SSE)
@@ -470,6 +495,26 @@ export async function* streamChatCompletion(
         // Malformed reasoning JSON — drop silently, no UI noise.
         console.debug(
           "[streamChatCompletion] malformed reasoning payload:",
+          data,
+        );
+        return null;
+      }
+    }
+    if (eventType === "artifacts") {
+      try {
+        const parsed = JSON.parse(data) as { artifacts: unknown };
+        if (!Array.isArray(parsed.artifacts) || parsed.artifacts.length === 0) {
+          return null;
+        }
+        return {
+          type: "artifacts",
+          artifacts: parsed.artifacts as Artifact[],
+          author,
+        };
+      } catch {
+        // Malformed artifacts JSON — drop silently, no UI noise.
+        console.debug(
+          "[streamChatCompletion] malformed artifacts payload:",
           data,
         );
         return null;

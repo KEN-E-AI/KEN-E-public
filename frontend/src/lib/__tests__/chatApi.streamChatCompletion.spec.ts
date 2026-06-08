@@ -216,4 +216,74 @@ describe("streamChatCompletion — SSE parser", () => {
     );
     expect(events).toEqual([]);
   });
+
+  test("event: artifacts between text and DONE yields artifacts event", async () => {
+    const artifact = {
+      type: "visualization",
+      spec: {},
+      metadata: {
+        chart_type_suggestion: "line",
+        title: "T",
+        data_source: "ga",
+      },
+    };
+    const artifactsPayload = JSON.stringify({ artifacts: [artifact] });
+    const raw =
+      `data: Here is the chart:\n\n` +
+      `event: artifacts\ndata: ${artifactsPayload}\n\n` +
+      `data: [DONE]\n\n`;
+
+    const events = await driveStream(raw);
+
+    expect(events).toEqual([
+      { type: "text", text: "Here is the chart:", author: "model" },
+      {
+        type: "artifacts",
+        artifacts: [artifact],
+        author: "model",
+      },
+    ]);
+  });
+
+  test("malformed artifacts JSON dropped silently", async () => {
+    const events = await driveStream(
+      "event: artifacts\ndata: NOT_JSON\n\ndata: [DONE]\n\n",
+    );
+    expect(events).toEqual([]);
+  });
+
+  test("empty artifacts array dropped (no-op event)", async () => {
+    const events = await driveStream(
+      `event: artifacts\ndata: ${JSON.stringify({ artifacts: [] })}\n\ndata: [DONE]\n\n`,
+    );
+    // Parser drops events with empty artifact arrays per spec.
+    expect(events).toEqual([]);
+  });
+
+  test("author sidecar carried through artifacts event", async () => {
+    const artifact = {
+      type: "visualization",
+      spec: {},
+      metadata: {
+        chart_type_suggestion: "bar",
+        title: "Test",
+        data_source: "ga",
+      },
+    };
+    const artifactsPayload = JSON.stringify({ artifacts: [artifact] });
+    const raw =
+      `event: author\ndata: specialist\n\n` +
+      `event: artifacts\ndata: ${artifactsPayload}\n\n` +
+      `data: [DONE]\n\n`;
+
+    const events = await driveStream(raw);
+
+    expect(events).toEqual([
+      {
+        type: "artifacts",
+        artifacts: [artifact],
+        author: "specialist",
+      },
+    ]);
+  });
 });

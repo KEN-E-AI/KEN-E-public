@@ -39,7 +39,7 @@ class TestConversationContext:
             organization_permissions={},
         )
 
-        result, session_id = await client.chat_completion(
+        result, session_id, _ = await client.chat_completion(
             messages=messages, user_context=user_context, session_id="test-session"
         )
 
@@ -69,7 +69,7 @@ class TestConversationContext:
             organization_permissions={},
         )
 
-        result, session_id = await client.chat_completion(
+        result, session_id, _ = await client.chat_completion(
             messages=messages, user_context=user_context, session_id="test-session"
         )
 

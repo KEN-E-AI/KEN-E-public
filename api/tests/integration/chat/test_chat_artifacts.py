@@ -197,14 +197,18 @@ async def test_extract_helper_returns_artifacts_when_append_event_fails():
 
 @pytest.mark.asyncio
 async def test_non_streaming_emits_artifacts():
-    """chat_completion endpoint populates ChatResponse.artifacts when helper returns Artifacts."""
+    """chat_completion endpoint populates ChatResponse.artifacts when helper returns Artifacts.
+
+    AH-157: chat_completion now returns a 3-tuple (content, session_id, visualization_seen).
+    When visualization_seen=True, the endpoint calls _extract_and_clear_response_artifacts.
+    """
     artifact = _make_artifact()
 
     with (
         patch(
             "kene_api.routers.chat.agent_client.chat_completion",
             new_callable=AsyncMock,
-            return_value=("hello", "real-sess"),
+            return_value=("hello", "real-sess", True),  # AH-157: visualization_seen=True
         ),
         patch(
             "kene_api.routers.chat.agent_client._extract_and_clear_response_artifacts",
@@ -239,17 +243,22 @@ async def test_non_streaming_emits_artifacts():
 
 @pytest.mark.asyncio
 async def test_non_streaming_artifacts_none_when_empty():
-    """chat_completion sets artifacts=None when helper returns []."""
+    """chat_completion sets artifacts=None when helper returns [].
+
+    AH-157: chat_completion now returns a 3-tuple. When visualization_seen=False,
+    _extract_and_clear_response_artifacts is NOT called at all.
+    """
+    mock_extract = AsyncMock(return_value=[])
+
     with (
         patch(
             "kene_api.routers.chat.agent_client.chat_completion",
             new_callable=AsyncMock,
-            return_value=("hello", "real-sess"),
+            return_value=("hello", "real-sess", False),  # AH-157: visualization_seen=False
         ),
         patch(
             "kene_api.routers.chat.agent_client._extract_and_clear_response_artifacts",
-            new_callable=AsyncMock,
-            return_value=[],
+            mock_extract,
         ),
         patch("kene_api.routers.chat._maybe_set_temp_title", new_callable=AsyncMock),
         patch("kene_api.routers.chat._background_tasks", set()),
@@ -269,6 +278,8 @@ async def test_non_streaming_artifacts_none_when_empty():
 
     assert isinstance(response, ChatResponse)
     assert response.artifacts is None
+    # AH-157: no visualization → extractor must NOT be called
+    mock_extract.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +289,17 @@ async def test_non_streaming_artifacts_none_when_empty():
 
 @pytest.mark.asyncio
 async def test_sse_event_ordering_with_artifacts():
-    """SSE frame order: data:<text>xN -> event:artifacts -> data:[DONE]."""
+    """SSE frame order: data:<text>xN -> event:artifacts -> data:[DONE].
+
+    AH-157: the fake stream now yields the ("tool_call", "create_visualization", "model")
+    sentinel so _visualization_seen=True and the extractor is called.
+    """
     artifact = _make_artifact()
 
     async def fake_stream(**kwargs):
+        # AH-157: yield the sentinel first (before or during text — order within
+        # turn doesn't matter; what matters is it arrives before end-of-stream).
+        yield ("tool_call", "create_visualization", "model")
         for text in ("Hello", " world", "!"):
             yield ("text", text, "model")
 
@@ -341,9 +359,15 @@ async def test_sse_event_ordering_with_artifacts():
 
 @pytest.mark.asyncio
 async def test_sse_no_artifacts_omits_frame():
-    """When helper returns [], no event:artifacts frame is emitted (legacy compat)."""
+    """When no tool_call sentinel is emitted, no event:artifacts frame appears.
+
+    AH-157: _extract_and_clear_response_artifacts must NOT be called when
+    _visualization_seen=False (no create_visualization sentinel in the stream).
+    """
+    mock_extract = AsyncMock(return_value=[])
 
     async def fake_stream(**kwargs):
+        # No ("tool_call", "create_visualization", ...) sentinel — plain text only.
         yield ("text", "plain text", "model")
 
     with (
@@ -353,8 +377,7 @@ async def test_sse_no_artifacts_omits_frame():
         ),
         patch(
             "kene_api.routers.chat.agent_client._extract_and_clear_response_artifacts",
-            new_callable=AsyncMock,
-            return_value=[],
+            mock_extract,
         ),
         patch("kene_api.routers.chat._flush_stream_turn", new_callable=AsyncMock),
         patch("kene_api.routers.chat._maybe_set_temp_title", new_callable=AsyncMock),
@@ -373,6 +396,8 @@ async def test_sse_no_artifacts_omits_frame():
     joined = "".join(frames)
     assert "event: artifacts" not in joined
     assert "data: [DONE]" in joined
+    # AH-157: no sentinel → extractor must NOT be called
+    mock_extract.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -465,3 +490,90 @@ async def test_sse_session_id_none_skips_extraction():
     joined = "".join(frames)
     assert "event: artifacts" not in joined
     assert "data: [DONE]" in joined
+
+
+# ---------------------------------------------------------------------------
+# AH-157 — gating tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sse_no_visualization_tool_call_skips_extraction():
+    """SSE: when no tool_call sentinel appears, extractor is skipped entirely.
+
+    Distinct from test_sse_no_artifacts_omits_frame in that this test explicitly
+    checks the _extract_and_clear_response_artifacts call count (not just the
+    frame output), confirming the Vertex AI round-trip is avoided.
+    """
+    mock_extract = AsyncMock(return_value=[])
+
+    async def fake_stream_text_only(**kwargs):
+        yield ("text", "plain response", "model")
+
+    with (
+        patch(
+            "kene_api.routers.chat.agent_client.stream_chat_completion",
+            side_effect=fake_stream_text_only,
+        ),
+        patch(
+            "kene_api.routers.chat.agent_client._extract_and_clear_response_artifacts",
+            mock_extract,
+        ),
+        patch("kene_api.routers.chat._flush_stream_turn", new_callable=AsyncMock),
+        patch("kene_api.routers.chat._maybe_set_temp_title", new_callable=AsyncMock),
+    ):
+        frames = await _collect_sse(
+            _stream_completion_sse(
+                messages=[],
+                user_context=_make_user_context(),
+                session_id="sess-gate",
+                conversation_name=None,
+                account_id="acc-1",
+                turn_uuid="turn-gate",
+            )
+        )
+
+    # Extractor must not be called — the Vertex AI get_session round-trip is avoided.
+    mock_extract.assert_not_awaited()
+    joined = "".join(frames)
+    assert "event: artifacts" not in joined
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_no_visualization_skips_extraction():
+    """Non-streaming: when visualization_seen=False, extractor is skipped entirely.
+
+    Confirms the Vertex AI get_session round-trip is avoided for plain-text turns.
+    """
+    mock_extract = AsyncMock(return_value=[])
+
+    with (
+        patch(
+            "kene_api.routers.chat.agent_client.chat_completion",
+            new_callable=AsyncMock,
+            return_value=("plain text response", "real-sess", False),
+        ),
+        patch(
+            "kene_api.routers.chat.agent_client._extract_and_clear_response_artifacts",
+            mock_extract,
+        ),
+        patch("kene_api.routers.chat._maybe_set_temp_title", new_callable=AsyncMock),
+        patch("kene_api.routers.chat._background_tasks", set()),
+        patch("kene_api.routers.chat._reauth_cache", {}),
+        patch("kene_api.routers.chat._get_firestore_client", return_value=MagicMock()),
+    ):
+        from kene_api.routers import chat as chat_module
+
+        request = MagicMock()
+        request.stream = False
+        request.messages = [MagicMock(content="what is revenue?")]
+        request.session_id = "sess-plain"
+        request.conversation_name = None
+        request.account_id = "acc-1"
+
+        response = await chat_module.chat_completion(request, _make_user_context())
+
+    assert isinstance(response, ChatResponse)
+    assert response.artifacts is None
+    # AH-157: no visualization → extractor must NOT be called at all
+    mock_extract.assert_not_awaited()

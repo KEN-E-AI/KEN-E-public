@@ -83,7 +83,7 @@ async def test_three_iteration_loop_only_final_draft_returned():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="How many users?", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s1"
     )
 
@@ -109,7 +109,7 @@ async def test_single_iteration_loop_draft_returned():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Sessions?", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s2"
     )
 
@@ -132,7 +132,7 @@ async def test_model_only_response_unchanged():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Hi.", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s3"
     )
 
@@ -160,7 +160,7 @@ async def test_multi_task_each_final_draft_present():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Multi?", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s4"
     )
 
@@ -184,7 +184,7 @@ async def test_fan_out_independent_reviewer_buffers():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Fan-out?", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s7"
     )
 
@@ -216,7 +216,7 @@ async def test_function_events_and_contentless_events_still_skipped():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Call?", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s5"
     )
 
@@ -243,7 +243,7 @@ async def test_object_chunk_worker_collapse():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Object path?", timestamp="")]
-    response, _ = await client.chat_completion(
+    response, _, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="s6"
     )
 

@@ -173,6 +173,41 @@ def _is_function_event_part(part: dict) -> bool:
     return "function_call" in part or "function_response" in part
 
 
+# Canonical tool name — must match the literal passed to register_function_tool()
+# at app/adk/tools/function_tools/create_visualization.py.  A value-level test in
+# test_chat_helpers.py keeps the two in sync.
+_VISUALIZATION_TOOL_NAME = "create_visualization"
+
+
+def _function_event_invokes(part: dict, tool_name: str) -> bool:
+    """Return True iff *part* is a function_call or function_response for *tool_name*.
+
+    Detection is intentionally restricted to dict parts (the production path);
+    the legacy string-chunk path (chat.py:2490-2574) is out of scope — see D6 in
+    the AH-157 Decisions & Assumptions.
+
+    >>> _function_event_invokes({"function_call": {"name": "create_visualization"}}, "create_visualization")
+    True
+    >>> _function_event_invokes({"function_response": {"name": "create_visualization"}}, "create_visualization")
+    True
+    >>> _function_event_invokes({"function_call": {"name": "other_tool"}}, "create_visualization")
+    False
+    >>> _function_event_invokes({"text": "hello"}, "create_visualization")
+    False
+    >>> _function_event_invokes({}, "create_visualization")
+    False
+    """
+    if not isinstance(part, dict):
+        return False
+    fc = part.get("function_call")
+    if isinstance(fc, dict) and fc.get("name") == tool_name:
+        return True
+    fr = part.get("function_response")
+    if isinstance(fr, dict) and fr.get("name") == tool_name:
+        return True
+    return False
+
+
 def _is_function_event_json(chunk: str) -> bool:
     """Check if a JSON string represents a function event."""
     stripped = chunk.strip()
@@ -1880,19 +1915,26 @@ class AgentEngineClient:
         session_id: str | None = None,
         conversation_name: str | None = None,
         account_id: str | None = None,
-    ) -> tuple[str, str]:
-        """Get a chat completion from the Agent Engine using agent_engines API with session management."""
+    ) -> tuple[str, str, bool]:
+        """Get a chat completion from the Agent Engine using agent_engines API with session management.
+
+        Returns:
+            (content, session_id, visualization_seen) — the third element is True iff the
+            agent invoked ``create_visualization`` during this turn (AH-157: used by the
+            caller to gate the per-turn ``_extract_and_clear_response_artifacts`` round-trip).
+        """
         if not self.agent_engine:
             return (
                 "I'm sorry, but I'm unable to process your request at the moment. Please try again later.",
                 "",
+                False,
             )
 
         try:
             # Get the latest message
             latest_message = messages[-1] if messages else None
             if not latest_message:
-                return "I didn't receive any message to process.", ""
+                return "I didn't receive any message to process.", "", False
 
             user_input = latest_message.content
             user_id = user_context.user_id
@@ -1962,6 +2004,8 @@ class AgentEngineClient:
                     # buffer is cleared on the next worker event.
                     _ns_worker_buf: dict[str, list[str]] = {}
                     _ns_pending_reset: set[str] = set()
+                    # AH-157: True when create_visualization was observed this turn.
+                    _ns_visualization_seen = False
 
                     def _ns_flush_worker_buf() -> None:
                         """Flush pending worker buffers into response_parts."""
@@ -2003,6 +2047,7 @@ class AgentEngineClient:
                             return (
                                 "I'm sorry, your request is taking longer than expected. Please try a simpler question or try again later.",
                                 actual_session_id,
+                                False,
                             )
                         for chunk in stream_iterator:
                             logger.debug(
@@ -2068,6 +2113,10 @@ class AgentEngineClient:
                                                     logger.debug(
                                                         "Skipping function_call/function_response part"
                                                     )
+                                                    if _function_event_invokes(
+                                                        part, _VISUALIZATION_TOOL_NAME
+                                                    ):
+                                                        _ns_visualization_seen = True
                                                 else:
                                                     _dest.append(str(part))
                                         else:
@@ -2085,6 +2134,10 @@ class AgentEngineClient:
                                                 logger.debug(
                                                     "Skipping function_call/function_response part"
                                                 )
+                                                if _function_event_invokes(
+                                                    part, _VISUALIZATION_TOOL_NAME
+                                                ):
+                                                    _ns_visualization_seen = True
                                             else:
                                                 _dest.append(str(part))
                                     # Handle string content
@@ -2203,34 +2256,37 @@ class AgentEngineClient:
                                         full_response = cleaned
 
                         if full_response:
-                            return full_response, actual_session_id
+                            return full_response, actual_session_id, _ns_visualization_seen
                         else:
                             return (
                                 "Received empty response from Agent Engine",
                                 actual_session_id,
+                                _ns_visualization_seen,
                             )
                     except Exception as stream_error:
                         logger.error(f"stream_query failed: {stream_error}")
                         return (
                             f"Agent Engine stream_query error: {stream_error!s}",
                             actual_session_id,
+                            False,
                         )
 
                 else:
                     return (
                         f"stream_query method not found. Available methods: {', '.join(available_methods[:10])}",
                         actual_session_id,
+                        False,
                     )
 
                 logger.debug(f"Response received: {type(response)}")
 
                 # Process the response
                 if isinstance(response, str):
-                    return response, actual_session_id
+                    return response, actual_session_id, False
                 elif hasattr(response, "content"):
-                    return str(response.content), actual_session_id
+                    return str(response.content), actual_session_id, False
                 elif hasattr(response, "text"):
-                    return str(response.text), actual_session_id
+                    return str(response.text), actual_session_id, False
                 elif isinstance(response, dict):
                     # Handle the agent's response format: {'parts': [{'text': '...'}], 'role': 'model'}
                     if "parts" in response and isinstance(response["parts"], list):
@@ -2240,23 +2296,24 @@ class AgentEngineClient:
                                 text_parts.append(part["text"])
                             else:
                                 text_parts.append(str(part))
-                        return "".join(text_parts).strip(), actual_session_id
+                        return "".join(text_parts).strip(), actual_session_id, False
                     elif "content" in response:
-                        return str(response["content"]), actual_session_id
+                        return str(response["content"]), actual_session_id, False
                     elif "text" in response:
-                        return str(response["text"]), actual_session_id
+                        return str(response["text"]), actual_session_id, False
                     elif "message" in response:
-                        return str(response["message"]), actual_session_id
+                        return str(response["message"]), actual_session_id, False
                     else:
-                        return str(response), actual_session_id
+                        return str(response), actual_session_id, False
                 else:
-                    return str(response), actual_session_id
+                    return str(response), actual_session_id, False
 
             except Exception as call_error:
                 logger.error(f"Error calling Agent Engine: {call_error}")
                 return (
                     f"Error processing your request: {call_error!s}",
                     actual_session_id or "",
+                    False,
                 )
 
         except HTTPException:
@@ -2285,10 +2342,13 @@ class AgentEngineClient:
 
         Yields:
             Tuples of ``(channel, text, author)`` where ``channel`` is one of
-            ``"text"``, ``"reasoning"``, or ``"session"`` (emitted at most once when a
-            ``pending_`` placeholder is resolved to the real session id), and
-            ``author`` identifies the emitting specialist (``"model"`` for the
-            default single-agent case).
+            ``"text"``, ``"reasoning"``, ``"session"`` (emitted at most once when a
+            ``pending_`` placeholder is resolved to the real session id), or
+            ``"tool_call"`` (emitted at most once per turn when a
+            ``create_visualization`` function-call/response part is observed — used
+            by ``_stream_completion_sse`` to gate the per-turn artifact extraction
+            round-trip, AH-157).  ``author`` identifies the emitting specialist
+            (``"model"`` for the default single-agent case).
         """
         if not self.agent_engine:
             yield (
@@ -2390,6 +2450,10 @@ class AgentEngineClient:
                     stream_thread = threading.Thread(target=stream_worker)
                     stream_thread.start()
 
+                    # AH-157: True once a create_visualization function part is seen;
+                    # guards the one-shot "tool_call" sentinel channel yield below.
+                    _emitted_visualization_signal = False
+
                     # Yield chunks as they arrive
                     while True:
                         # Check for chunks with a timeout to avoid blocking forever
@@ -2444,6 +2508,18 @@ class AgentEngineClient:
                                             logger.debug(
                                                 "Skipping function_call/function_response part in stream"
                                             )
+                                            if (
+                                                not _emitted_visualization_signal
+                                                and _function_event_invokes(
+                                                    part, _VISUALIZATION_TOOL_NAME
+                                                )
+                                            ):
+                                                _emitted_visualization_signal = True
+                                                yield (
+                                                    "tool_call",
+                                                    _VISUALIZATION_TOOL_NAME,
+                                                    author,
+                                                )
                                         elif (
                                             isinstance(part, dict)
                                             and part.get("thought", False)
@@ -2465,6 +2541,18 @@ class AgentEngineClient:
                                         logger.debug(
                                             "Skipping function_call/function_response part in stream"
                                         )
+                                        if (
+                                            not _emitted_visualization_signal
+                                            and _function_event_invokes(
+                                                part, _VISUALIZATION_TOOL_NAME
+                                            )
+                                        ):
+                                            _emitted_visualization_signal = True
+                                            yield (
+                                                "tool_call",
+                                                _VISUALIZATION_TOOL_NAME,
+                                                author,
+                                            )
                                     elif (
                                         isinstance(part, dict)
                                         and part.get("thought", False)
@@ -2820,6 +2908,9 @@ async def _stream_completion_sse(
         # Workers whose reviewer has fired since their last flush — their buffer
         # must be reset on next worker event (the iteration was rejected).
         _worker_pending_reset: set[str] = set()
+        # AH-157: True once a "tool_call" sentinel for create_visualization arrives
+        # from stream_chat_completion; gates the per-turn artifact extraction.
+        _visualization_seen = False
 
         def _collect_worker_flush_frames() -> list[str]:
             """Return SSE frames for all pending worker buffers and clear them.
@@ -2862,6 +2953,11 @@ async def _stream_completion_sse(
                 # URL and resume marker while the turn is in flight (CH-62).
                 resolved_session_id = text
                 yield f"event: session\ndata: {json.dumps({'session_id': text})}\n\n"
+            elif channel == "tool_call" and text == _VISUALIZATION_TOOL_NAME:
+                # AH-157: sentinel from stream_chat_completion — create_visualization
+                # was invoked this turn.  Not forwarded to SSE output; only sets the
+                # gate so artifact extraction runs at end-of-stream.
+                _visualization_seen = True
             elif _is_reviewer_author(author):
                 # CH-68: display-only filter — reviewer sub-agent text/reasoning
                 # is suppressed from the user-visible SSE stream. The accumulator
@@ -2926,7 +3022,9 @@ async def _stream_completion_sse(
         # only (not on cancellation — this block is inside `try:`, not `finally:`).
         # session_id may be None before any `session` channel event; skip extraction
         # in that case (no session → no artifacts were produced).
-        if resolved_session_id:
+        # AH-157: only extract if create_visualization was observed this turn.
+        # No visualization → no get_session / append_event round-trip at all.
+        if resolved_session_id and _visualization_seen:
             _artifacts = await agent_client._extract_and_clear_response_artifacts(
                 user_context.user_id, resolved_session_id
             )
@@ -3026,6 +3124,7 @@ async def chat_completion(
                 (
                     response_content,
                     actual_session_id,
+                    visualization_seen,  # AH-157: True iff create_visualization ran
                 ) = await agent_client.chat_completion(
                     messages=request.messages,
                     user_context=user_context,
@@ -3148,9 +3247,15 @@ async def chat_completion(
             reauth_key = f"{user_context.user_id}:{actual_session_id}"
             metadata = _reauth_cache.pop(reauth_key, None)
 
-            # Extract any Vega-Lite artifacts written to session state this turn (AH-132).
-            artifacts = await agent_client._extract_and_clear_response_artifacts(
-                user_context.user_id, actual_session_id
+            # AH-157: only extract when create_visualization was observed this turn
+            # (visualization_seen from the 3-tuple returned by chat_completion).
+            # No visualization → no get_session / append_event round-trip at all.
+            artifacts = (
+                await agent_client._extract_and_clear_response_artifacts(
+                    user_context.user_id, actual_session_id
+                )
+                if visualization_seen
+                else []
             )
 
             return ChatResponse(

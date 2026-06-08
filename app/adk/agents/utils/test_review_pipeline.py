@@ -515,7 +515,12 @@ class TestWorkerFieldPropagation:
         )
         pipeline = build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
         worker, _ = pipeline.sub_agents
-        assert worker.after_agent_callback is my_after_agent_cb
+        # The specialist's callback is preserved at index 0; the artifacts
+        # projector is appended last. Identity of the specialist callback is
+        # preserved — only the container type changes (from callable to list).
+        assert isinstance(worker.after_agent_callback, list)
+        assert worker.after_agent_callback[0] is my_after_agent_cb
+        assert len(worker.after_agent_callback) == 2
 
     def test_generate_content_config_propagated(self):
         from google.genai import types as genai_types
@@ -1503,6 +1508,56 @@ class TestExtractIterations:
                 specialist_output="perfect draft",
                 reviewer_output="",
                 escalate=True,
+            )
+        ]
+
+    # ── AH-136: ignore worker state-projection events ─────────────────────────
+
+    def test_worker_state_projection_event_is_not_an_iteration(self):
+        """A worker event that only writes `{prefix}_artifacts` (no draft, no
+        text) is a state projection from an after_agent_callback, not a draft.
+
+        The artifacts projector callback writes `{prefix}_artifacts` to session
+        state, which makes ADK emit an extra worker-authored event with empty
+        content and no `{prefix}_draft` delta. extract_iterations must skip it
+        so it does not inflate the iteration count (AH-136 regression)."""
+        events = [
+            _make_event(self._WORKER, text="perfect draft"),
+            _make_event(
+                self._WORKER,
+                text="",
+                state_delta={f"{self._PREFIX}_artifacts": "[{}]"},
+            ),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result == [
+            ReviewIteration(
+                iteration=1,
+                specialist_output="perfect draft",
+                reviewer_output="",
+                escalate=True,
+            )
+        ]
+
+    def test_empty_draft_with_draft_key_in_delta_is_kept(self):
+        """An empty draft is still a real iteration when `{prefix}_draft` is in
+        the state delta — only events lacking the draft key AND text are skipped."""
+        events = [
+            _make_event(
+                self._WORKER,
+                text="",
+                state_delta={f"{self._PREFIX}_draft": ""},
+            ),
+            _make_event(self._REVIEWER, text="criteria not met", escalate=False),
+        ]
+        result = self._extract(events)
+        assert result == [
+            ReviewIteration(
+                iteration=1,
+                specialist_output="",
+                reviewer_output="criteria not met",
+                escalate=False,
             )
         ]
 

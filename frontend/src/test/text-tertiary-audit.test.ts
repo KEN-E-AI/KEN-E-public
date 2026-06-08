@@ -78,6 +78,9 @@ const ALLOWED_FILES = new Set<string>([
   // TodoListsPanel — completed-item line-through, progress fraction, and subtitle
   // caption are decorative/secondary text (figma-export alignment).
   "components/chat/TodoListsPanel.tsx",
+  // ChartSettingsPopover — section labels ("View as", "Color", "Data labels") and
+  // inactive-swatch / close-button dim text are decorative/secondary (figma-export alignment).
+  "components/chat/ChartSettingsPopover.tsx",
 
   // layout — secondary metadata, breadcrumb separators, inactive-link tertiary state
   "components/layout/AccountSwitcher.tsx",

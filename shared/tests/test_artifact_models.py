@@ -274,6 +274,51 @@ def test_spec_nested_inline_data_accepted() -> None:
     assert artifact.spec["layer"][0]["data"]["values"] == [{"a": 1}]
 
 
+def test_spec_transform_rejected() -> None:
+    """transform is forbidden: vega-runtime executes calculate/filter via new Function()."""
+    meta = ArtifactMetadata(**_VALID_METADATA_KWARGS)
+    with pytest.raises(ValidationError, match="transform is forbidden"):
+        Artifact(
+            spec={
+                "$schema": "...",
+                "data": {"values": [{"x": 1}]},
+                "transform": [{"calculate": "datum.x * 2", "as": "x2"}],
+                "mark": "bar",
+                "encoding": {},
+            },
+            metadata=meta,
+        )
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {"layer": [{"transform": [{"filter": "datum.x > 0"}], "mark": "line"}]},
+        {
+            "hconcat": [
+                {"transform": [{"calculate": "datum.y", "as": "z"}], "mark": "bar"}
+            ]
+        },
+    ],
+)
+def test_spec_nested_transform_rejected(spec: dict[str, Any]) -> None:
+    """transform is rejected at any nesting level."""
+    meta = ArtifactMetadata(**_VALID_METADATA_KWARGS)
+    with pytest.raises(ValidationError, match="transform is forbidden"):
+        Artifact(spec=spec, metadata=meta)
+
+
+def test_spec_transform_allowed_for_non_visualization() -> None:
+    """The transform ban applies only to visualization artifacts."""
+    meta = ArtifactMetadata(**_VALID_METADATA_KWARGS)
+    artifact = Artifact(
+        type="text",
+        spec={"transform": [{"calculate": "datum.x", "as": "x"}]},
+        metadata=meta,
+    )
+    assert artifact.type == "text"
+
+
 # ---------------------------------------------------------------------------
 # Re-export shim: app.utils.artifact_models forwards to shared
 # ---------------------------------------------------------------------------

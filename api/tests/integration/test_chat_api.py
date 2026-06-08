@@ -91,7 +91,7 @@ async def test_chat_completion(agent_client, test_user):
         )
     ]
 
-    response, session_id = await agent_client.chat_completion(
+    response, session_id, _ = await agent_client.chat_completion(
         messages=messages, user_context=test_user, session_id="test-session"
     )
 
@@ -135,7 +135,7 @@ async def test_empty_message_handling(agent_client, test_user):
     """
     messages = []
 
-    response, _ = await agent_client.chat_completion(
+    response, _, _ = await agent_client.chat_completion(
         messages=messages, user_context=test_user
     )
 
@@ -200,7 +200,7 @@ async def test_development_mode_without_agent():
 
         messages = [ChatMessage(role="user", content="Test in dev mode", timestamp="")]
 
-        response, session_id = await client.chat_completion(
+        response, session_id, _ = await client.chat_completion(
             messages=messages, user_context=test_user
         )
 

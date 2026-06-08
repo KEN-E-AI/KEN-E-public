@@ -92,7 +92,7 @@ async def test_reviewer_text_absent_in_non_streaming():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="How many users?", timestamp="")]
-    response, _session_id = await client.chat_completion(
+    response, _session_id, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="test-session"
     )
 
@@ -114,7 +114,7 @@ async def test_non_streaming_only_reviewer_chunk_returns_empty_or_stripped():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Anything?", timestamp="")]
-    response, _session_id = await client.chat_completion(
+    response, _session_id, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="test-session-2"
     )
 
@@ -135,7 +135,7 @@ async def test_non_reviewer_author_unaffected():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Hello?", timestamp="")]
-    response, _session_id = await client.chat_completion(
+    response, _session_id, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="test-session-3"
     )
 
@@ -156,7 +156,7 @@ async def test_multiple_reviewer_agents_all_suppressed():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Multi-task?", timestamp="")]
-    response, _session_id = await client.chat_completion(
+    response, _session_id, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="test-session-4"
     )
 
@@ -193,7 +193,7 @@ async def test_string_chunks_unaffected_by_reviewer_filter():
         client._agent_engine = mock_engine
 
     messages = [ChatMessage(role="user", content="Anything?", timestamp="")]
-    response, _session_id = await client.chat_completion(
+    response, _session_id, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="test-session-5"
     )
 
@@ -216,7 +216,7 @@ async def test_object_chunk_reviewer_suppressed_worker_kept():
     client = _make_client_with_chunks(chunks)
 
     messages = [ChatMessage(role="user", content="Object path?", timestamp="")]
-    response, _session_id = await client.chat_completion(
+    response, _session_id, _ = await client.chat_completion(
         messages=messages, user_context=_make_user_context(), session_id="test-session-obj"
     )
 
