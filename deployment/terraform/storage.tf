@@ -31,3 +31,31 @@ resource "google_storage_bucket" "logs_data_bucket" {
 
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
+
+# mypy cache bucket — persists .mypy_cache across PR CI builds so mypy runs warm
+# (~10-20s) instead of cold (~183s). Provisioned in the CI/CD runner project only
+# (pr_checks.yaml runs against ${PROJECT_ID} = cicd_runner_project_id). 30-day
+# lifecycle rule bounds cache growth; stale signatures are naturally evicted when
+# the file content changes. AH-151 Lever 3.
+resource "google_storage_bucket" "ci_mypy_cache" {
+  name                        = "${var.cicd_runner_project_id}-ci-mypy-cache"
+  location                    = var.region
+  project                     = var.cicd_runner_project_id
+  uniform_bucket_level_access = true
+  force_destroy               = true
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  soft_delete_policy {
+    retention_duration_seconds = 0
+  }
+
+  depends_on = [resource.google_project_service.cicd_services]
+}

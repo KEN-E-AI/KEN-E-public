@@ -613,6 +613,67 @@ steps:
   # deploy-api-to-cloud-run, and Cloud Build requires referenced steps to
   # be declared earlier in the file than any step that references them.)
 
+  # ── mypy cache warming (AH-151 Lever 3) ──────────────────────────────────────
+  # pr_checks.yaml RESTORES .mypy_cache so lint's mypy runs warm (~10-20s vs ~183s
+  # cold), but it cannot SAVE it: pr_checks runs only on PR events, where the
+  # BRANCH_NAME substitution is the head branch and never "main". So the cache is
+  # uploaded HERE, on push-to-main. ${PROJECT_ID} = ken-e-cicd in this pipeline
+  # (same as pr_checks), so the bucket reference matches.
+  #
+  # All three steps are declared LAST and carry explicit waitFor so they stay OFF
+  # the sequential deploy chain (the earlier deploy steps have no waitFor and run
+  # in order); they run in parallel with the deploy and FAIL-OPEN, so they gate
+  # nothing and can never block or fail the staging deploy. The ~183s cold mypy
+  # adds zero wall-clock — the deploy + load tests run far longer.
+
+  # 1) Warm-start from the existing cache (incremental); empty bucket → cold, fine.
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+    id: mypy-cache-restore
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        gsutil -m rsync -r "gs://${PROJECT_ID}-ci-mypy-cache" .mypy_cache \
+          || echo "mypy-cache-restore: bucket empty or unavailable — cold run."
+
+  # 2) Produce .mypy_cache by running the EXACT mypy invocation from
+  #    pr_checks.yaml's `lint` step. Keep this dir list + flags identical to that
+  #    step, or the cache restored on PRs is useless. Wrapped in `|| true`: a type
+  #    error on main (already gated by the merging PR's lint) must never fail the
+  #    staging deploy — this step exists only to warm the cache.
+  - name: "python:3.11-slim"
+    id: mypy-warm
+    waitFor: ['install-dependencies', 'mypy-cache-restore']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        uv run --no-sync mypy \
+          app/adk/agents/agent_factory/ \
+          app/adk/mcp_config/ \
+          app/adk/tracking/ \
+          --exclude '/tests/' \
+          --ignore-missing-imports || true
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # 3) Upload the warmed cache for the next PR's mypy-cache-restore. No branch
+  #    gate needed — staging.yaml is push-to-main only. Fail-open. The bucket's 30d
+  #    lifecycle rule bounds growth; see deployment/terraform/storage.tf.
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+    id: mypy-cache-save
+    waitFor: ['mypy-warm']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        gsutil -m rsync -r .mypy_cache "gs://${PROJECT_ID}-ci-mypy-cache" \
+          || echo "mypy-cache-save: rsync failed (non-fatal) — next build will be cold."
+
 substitutions:
   _STAGING_PROJECT_ID: ken-e-staging
   _BUCKET_NAME_LOAD_TEST_RESULTS: ${PROJECT_ID}-cicd-load-test-results

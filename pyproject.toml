@@ -123,6 +123,7 @@ norecursedirs = [".*", "build", "dist", "node_modules", ".venv", ".terraform", "
 addopts = "--ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_v3_models.py"
 markers = [
     "llm: tests that exercise LLM tooling paths; uses deterministic fakes in CI, opt-in for live-Gemini tests via -m llm",
+    "slow: long-running stress / latency tests excluded from PR CI; run explicitly with -m slow",
 ]
 
 [tool.hatch.build.targets.wheel]

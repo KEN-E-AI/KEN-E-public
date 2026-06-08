@@ -10,9 +10,11 @@
 # emulator — a background process started in another step would not survive.
 #
 # Caller contract:
-#   - Source this file, then `cd api && uv sync --frozen` before running pytest.
+#   - Export EMULATOR_HOST_PORT before sourcing to override the default port.
 #   - The emulator listens on the host:port in EMULATOR_HOST_PORT (default
 #     127.0.0.1:8090); pass that value as FIRESTORE_EMULATOR_HOST to pytest.
+#   - api/.venv is built by the separate api-install step; callers use
+#     `uv run --no-sync` (not `uv sync --frozen`) after sourcing this file.
 #
 # Because this is a sourced script file (not inline YAML `args`), it is NOT
 # subject to Cloud Build variable substitution — plain $HOME / $PATH here, no

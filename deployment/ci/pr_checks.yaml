@@ -20,22 +20,24 @@
 #     Every root-venv consumer waits on it and then reads the venv read-only with
 #     `uv run --no-sync` — `--no-sync` is REQUIRED so concurrent steps never race
 #     to write the shared venv (plain `uv run` would re-sync on each invocation).
-#   * The two api steps each spin up their own Firestore emulator on port 8090 and
-#     sync `api/.venv`, so they cannot run concurrently with each other — they are
-#     chained (api-unit waits on api-integration). The pair runs in parallel with
-#     everything else.
-#   * Frontend + markdown steps are independent (`waitFor: ['-']`). a11y waits on
-#     BOTH frontend steps that run `npm ci` (typecheck + e2e) so its own `npm ci`
-#     never overlaps either into the shared `frontend/node_modules` — e2e's
-#     path-guard `exit 0` still satisfies the wait on non-frontend PRs, and the
-#     typecheck dep closes the window where a fast e2e exit would otherwise let
-#     a11y start while typecheck's `npm ci` is still in flight.
-#     typecheck and e2e do still run `npm ci` concurrently with each other into
-#     that directory (pre-existing). A single shared install step would remove
-#     that overlap too, but e2e runs on the Playwright image while typecheck/a11y
-#     run on node:20-slim, so one shared node_modules would span two images —
-#     left unchanged here rather than altered without a way to validate that
-#     cross-image.
+#   * `api-install` is the SOLE builder of `api/.venv` (`waitFor: ['-']`).
+#     Both `api-integration-tests` and `api-unit-tests` wait on it and consume
+#     the venv read-only with `uv run --no-sync`, mirroring the root-venv pattern.
+#     Each api step spins up its own Firestore emulator on a distinct port
+#     (integration: 8090, unit: 8091) so they can run concurrently without
+#     sharing emulator state or the venv write-lock (AH-151 Lever 1).
+#   * `frontend-install` builds `frontend/node_modules` once on `node:20-slim`
+#     (`waitFor: ['-']`) and is the SOLE writer of that shared dir.
+#     `frontend-typecheck` and `frontend-a11y-tests` both `waitFor:
+#     ['frontend-install']` and only READ node_modules (no `npm ci` of their own),
+#     so neither races the writer.
+#   * `frontend-e2e-tests` runs on the Playwright image and needs its own install
+#     (cross-image node_modules is not portable). Rather than wipe the shared dir
+#     with its own `npm ci` (the old TS6053 race), it installs into an ISOLATED
+#     copy of the frontend tree under `/workspace/frontend-e2e` (`npm ci` has no
+#     --prefix), so it NEVER touches `frontend/node_modules`. That makes it fully
+#     independent (`waitFor: ['-']`) and removes the race structurally rather than
+#     by timing (AH-151 Lever 4). markdown-link-check is independent (`waitFor: ['-']`).
 steps:
   # Install uv package manager and sync dependencies. Sole builder of the root
   # /workspace/.venv (persisted across steps); all root-venv steps waitFor this.
@@ -81,33 +83,59 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
-  # Run API integration tests against a live Firestore emulator (DM-84).
-  #
-  # 12 integration test files are gated behind FIRESTORE_EMULATOR_HOST via
-  # pytest.mark.skipif (gate established in DM-85 / PR #509). Without a running
-  # emulator they skip silently in CI; this step starts one so the gate opens.
-  #
-  # The emulator + uv bootstrap is shared with the api-unit-tests step below
-  # via deployment/ci/scripts/start_firestore_emulator.sh. Both steps run on
-  # the cloud-sdk `:emulators` image (bundles gcloud + the JRE the emulator
-  # needs; python:3.11-slim has neither). Each step starts its own emulator —
-  # Cloud Build steps are separate containers, so one started elsewhere would
-  # not survive.
+  # Build api/.venv once; both api test steps consume it read-only via
+  # `uv run --no-sync`. Mirrors the install-dependencies → root-venv pattern.
+  # Uses the same cloud-sdk :emulators image as the api test steps so the uv
+  # install path is identical (cloud-sdk blocks pip; uv standalone installer
+  # is used instead, matching start_firestore_emulator.sh).
+  # waitFor: ['-'] so this runs immediately in parallel with everything else
+  # (AH-151 Lever 1).
   - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
-    id: api-integration-tests
+    id: api-install
     waitFor: ['-']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         set -euo pipefail
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # Shell vars are escaped as $$ so Cloud Build does not parse them as
+        # build substitutions (same convention as the e2e step's NOTE below).
+        export PATH="$$HOME/.local/bin:$$PATH"
+        cd api && uv sync --frozen
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin'
+
+  # Run API integration tests against a live Firestore emulator (DM-84).
+  #
+  # 12 integration test files are gated behind FIRESTORE_EMULATOR_HOST via
+  # pytest.mark.skipif (gate established in DM-85 / PR #509). Without a running
+  # emulator they skip silently in CI; this step starts one so the gate opens.
+  #
+  # Both api steps run on the cloud-sdk `:emulators` image (bundles gcloud + the
+  # JRE the emulator needs; python:3.11-slim has neither). Each step starts its
+  # own emulator on a distinct port — Cloud Build steps are separate containers,
+  # so a background process from another step would not survive.
+  # Port assignment: integration=8090 (unchanged), unit=8091 (AH-151 Lever 1).
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
+    id: api-integration-tests
+    waitFor: ['api-install']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        export EMULATOR_HOST_PORT=127.0.0.1:8090
         source deployment/ci/scripts/start_firestore_emulator.sh
         cd api
-        uv sync --frozen
         FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 \
         GOOGLE_CLOUD_PROJECT_ID=test-project \
         GOOGLE_CLOUD_PROJECT=test-project \
-          uv run pytest tests/integration
+          uv run --no-sync pytest tests/integration
+    # No env: PATH override here — this step runs gcloud (Firestore emulator)
+    # via start_firestore_emulator.sh, and gcloud is not under /usr/local/bin or
+    # /usr/bin on the cloud-sdk image. Keep the image default PATH (which has
+    # gcloud); the sourced script prepends the uv install dir for uv (AH-151).
 
   # Run the API unit suite + the bulk top-level api/tests/test_*.py files (DM-90).
   #
@@ -132,21 +160,23 @@ steps:
   # flaky file; its triage is a DM-90 follow-up.
   - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
     id: api-unit-tests
-    waitFor: ['api-integration-tests']
+    waitFor: ['api-install']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         set -euo pipefail
+        export EMULATOR_HOST_PORT=127.0.0.1:8091
         source deployment/ci/scripts/start_firestore_emulator.sh
         cd api
-        uv sync --frozen
-        FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 \
+        FIRESTORE_EMULATOR_HOST=127.0.0.1:8091 \
         GOOGLE_CLOUD_PROJECT_ID=test-project \
         GOOGLE_CLOUD_PROJECT=test-project \
-          uv run pytest tests \
+          uv run --no-sync pytest tests \
             --ignore=tests/integration \
             --ignore=tests/middleware
+    # No env: PATH override here — see api-integration-tests above (gcloud is not
+    # under /usr/local/bin:/usr/bin on the cloud-sdk image; AH-151).
 
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
   # Scope: agent_factory, mcp_config, security, and tracking test directories,
@@ -181,6 +211,9 @@ steps:
   # agent.{name} registry + ctx.run_node concurrency contract. AH-98 shipped
   # without CI coverage of this directory; AH-119 closes the gap and makes
   # the parallel-search AC #9 merge gate CI-enforced.
+  # -m "not slow": deselects @pytest.mark.slow tests (e.g. test_mcp_pool_stress.py
+  # p95-latency assertion) on PRs — concurrent api steps on a shared 8-vCPU machine
+  # can inflate latencies and cause false-positive failures (AH-151 D6 / AH-150).
   - name: "python:3.11-slim"
     id: app-adk-tests
     waitFor: ['install-dependencies']
@@ -203,9 +236,31 @@ steps:
           app/adk/tracking/tests/ \
           app/adk/tools/agent_tools/tests/ \
           shared/tests/test_artifact_models.py \
+          -m "not slow" \
           -q
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # Restore .mypy_cache from GCS before the lint step so mypy runs warm
+  # (~10-20s) instead of cold (~183s). The cache is PRODUCED and SAVED by the
+  # push-to-main pipeline (deployment/cd/staging.yaml `mypy-warm`/`mypy-cache-save`);
+  # PRs only restore it. Fails open — an empty bucket or a GCS hiccup degrades to a
+  # cold mypy run, not a failed build. Runs on the cloud-sdk image (which has
+  # gsutil); lint runs on python:3.11-slim (no gsutil).
+  # Bucket lifecycle: 30-day auto-delete; see storage.tf.
+  # ${PROJECT_ID} is a Cloud Build built-in substitution.
+  # waitFor: ['-'] — gsutil does not need the root venv; starting immediately
+  # avoids adding install-dependencies (~30-60s) to the lint critical path.
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:slim"
+    id: mypy-cache-restore
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        gsutil -m rsync -r "gs://${PROJECT_ID}-ci-mypy-cache" .mypy_cache \
+          || echo "mypy-cache-restore: bucket empty or unavailable — cold run."
 
   # Lint gate: ruff + codespell + mypy scoped to clean agent-factory
   # subdirectories.  Legacy code under strategy_agent/ and agent_standalone_*
@@ -215,9 +270,12 @@ steps:
   # (MockCallbackContext, _FakeRegistry, dict[str, MagicMock]) that
   # legitimately don't satisfy strict typing; annotating them produces no
   # behavioural value.
+  #
+  # waitFor: both install-dependencies (venv for ruff/codespell/mypy) and
+  # mypy-cache-restore (cache in place before mypy runs — AH-151 Lever 3).
   - name: "python:3.11-slim"
     id: lint
-    waitFor: ['install-dependencies']
+    waitFor: ['install-dependencies', 'mypy-cache-restore']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -240,6 +298,15 @@ steps:
           --ignore-missing-imports
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # NOTE: the .mypy_cache SAVE lives in the push-to-main pipeline
+  # (deployment/cd/staging.yaml), NOT here. pr_checks.yaml only runs on PR events,
+  # where the BRANCH_NAME substitution is the head branch (never "main") — so a
+  # save gated on "main" here would never fire. PRs RESTORE the warm cache (the
+  # mypy-cache-restore step above);
+  # main builds produce and upload it. Keep the restore's mypy scope in
+  # staging.yaml's `mypy-warm` step identical to this file's `lint` mypy, or the
+  # cache is useless on PRs (AH-151 Lever 3).
 
   # no-AgentTool-in-chat-tree guard (AH-120 / AH-PRD-15 §7 AC #4):
   # Fails if any AgentTool( constructor exists in the chat-tree 2.0 build
@@ -333,6 +400,22 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Shared frontend install — builds frontend/node_modules once on node:20-slim.
+  # Consumed read-only by frontend-typecheck and frontend-a11y-tests; those
+  # steps drop their own `npm ci` invocations to eliminate the duplicate install
+  # and the latent concurrent-write race into the shared directory.
+  # frontend-e2e-tests keeps its own npm ci (different image — Playwright Ubuntu;
+  # cross-image node_modules portability not yet validated — AH-151 Lever 4).
+  - name: "node:20-slim"
+    id: frontend-install
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        cd frontend && npm ci --prefer-offline
+
   # Frontend TypeScript typecheck gate — enforces CLAUDE.md §6 G-3
   # (`npm run typecheck` passes for frontend TypeScript).
   #
@@ -351,14 +434,13 @@ steps:
   # tracked as a separate follow-up.
   - name: "node:20-slim"
     id: frontend-typecheck
-    waitFor: ['-']
+    waitFor: ['frontend-install']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         set -euo pipefail
         cd frontend
-        npm ci --prefer-offline
         npm run typecheck
 
   # Run Playwright E2E tests for the feature-flag admin-to-hook loop (FF-PRD-03 §5.4).
@@ -375,6 +457,11 @@ steps:
   # engineers can diagnose flaky tests without re-running locally.
   - name: "mcr.microsoft.com/playwright:v1.49.0-jammy"
     id: frontend-e2e-tests
+    # waitFor: ['-'] — this step installs into an ISOLATED node_modules (a copy of
+    # the frontend tree under /workspace/frontend-e2e, built below), so it never
+    # writes the shared /workspace/frontend/node_modules that typecheck/a11y read.
+    # With no shared-dir contention it runs fully parallel with the other frontend
+    # steps; the TS6053 race is removed structurally, not by ordering (AH-151 Lever 4).
     waitFor: ['-']
     entrypoint: /bin/bash
     args:
@@ -388,7 +475,11 @@ steps:
         # explicitly. If anything in the merge-base flow fails (detached HEAD,
         # network error, etc.) we fail open and run the full E2E suite — a
         # spurious 3-minute run is preferable to silently skipping the gate.
-        git fetch --no-tags --depth=50 origin main 2>/dev/null || true
+        #
+        # depth=500 covers ~3 months of commit cadence without the full-history
+        # cost of --unshallow; --depth=50 could miss merge-base on long-lived
+        # feature branches (AH-151 Lever 2).
+        git fetch --no-tags --depth=500 origin main 2>/dev/null || true
         BASE=$$(git merge-base HEAD FETCH_HEAD 2>/dev/null || true)
         if [ -z "$$BASE" ]; then
           echo "Could not determine merge-base with origin/main — running full E2E suite."
@@ -420,10 +511,25 @@ steps:
           sleep 2
         done
 
-        # Install Playwright browsers (Chromium only — saves ~1 GB vs full install).
-        cd frontend
+        # Image-pin contract: frontend/package.json pins @playwright/test to the
+        # exact version bundled in this image (mcr.microsoft.com/playwright:v1.49.0-jammy).
+        # Chromium is already installed globally (/ms-playwright) — no `playwright
+        # install` needed, and browser resolution is independent of where node_modules
+        # lives. When bumping the image version, update the package.json pin to match.
+        #
+        # node_modules isolation (AH-151 Lever 4): `npm ci` has no --prefix and wipes
+        # ./node_modules, so run the whole e2e flow from a COPY of the frontend tree
+        # (sans node_modules) in a sibling dir. This guarantees e2e never writes the
+        # shared /workspace/frontend/node_modules that frontend-typecheck/-a11y read,
+        # removing the TS6053 race structurally. `tar` is always present in the jammy
+        # image (rsync is not). All downstream paths (playwright testDir, the vite
+        # webServer, test-results) are cwd-relative and resolve inside the copy.
+        rm -rf /workspace/frontend-e2e
+        mkdir -p /workspace/frontend-e2e
+        tar --exclude=node_modules --exclude=test-results -C frontend -cf - . \
+          | tar -C /workspace/frontend-e2e -xf -
+        cd /workspace/frontend-e2e
         npm ci --prefer-offline
-        npx playwright install --with-deps chromium
 
         # Run the E2E suite; capture exit code so we can upload artifacts before exiting.
         set +e
@@ -450,21 +556,21 @@ steps:
   # keyboard navigation, and reduced-motion smoke tests).
   # Glob patterns let new a11y test files (src/test/*.test.{ts,tsx}) be picked up
   # automatically without editing this file.
-  # Declared after the other frontend steps so its `waitFor` can reference them —
-  # Cloud Build only permits waitFor on steps defined earlier in the list. a11y
-  # waits on both frontend `npm ci` writers (typecheck + e2e) so its own `npm ci`
-  # never overlaps either into the shared node_modules.
+  # Waits on frontend-install (the shared npm ci that builds node_modules). a11y
+  # only reads node_modules (vitest); it runs no npm ci of its own. It is race-free:
+  # the SOLE writer of frontend/node_modules is frontend-install (which it waits on),
+  # and frontend-e2e-tests installs into an isolated copy (/workspace/frontend-e2e),
+  # so nothing wipes node_modules while this vitest read is in flight (AH-151 Lever 4).
   # See docs/design/components/ui/accessibility-baseline.md for the full gate description.
   - name: "node:20-slim"
     id: frontend-a11y-tests
-    waitFor: ['frontend-e2e-tests', 'frontend-typecheck']
+    waitFor: ['frontend-install']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
         set -euo pipefail
         cd frontend
-        npm ci --prefer-offline
         npx vitest --run src/test/*.test.ts src/test/*.test.tsx
 
   # Validate markdown link integrity using lychee (offline mode — file:// links only).
