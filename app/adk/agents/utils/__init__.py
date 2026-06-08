@@ -2,7 +2,11 @@
 Utilities for supervisor agents.
 """
 
-from .review_pipeline import build_review_pipeline, extract_pipeline_result
+from .review_pipeline import (
+    build_review_pipeline,
+    extract_pipeline_result,
+    is_reviewer_author,
+)
 
 # supervisor_utils is NOT re-exported here — it transitively imports neo4j
 # (via context_loader → neo4j_tools), which is not a dependency of the ADK
@@ -10,4 +14,5 @@ from .review_pipeline import build_review_pipeline, extract_pipeline_result
 __all__ = [
     "build_review_pipeline",
     "extract_pipeline_result",
+    "is_reviewer_author",
 ]

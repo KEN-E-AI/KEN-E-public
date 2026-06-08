@@ -22,6 +22,8 @@ from .review_pipeline import (
     build_review_pipeline,
     extract_iterations,
     extract_pipeline_result,
+    get_reviewer_name,
+    is_reviewer_author,
 )
 
 # ── Fake LLM for behavioral tests ────────────────────────────────────────────
@@ -1766,3 +1768,60 @@ class TestHallucinatedApprovalDetection:
 
         with patch.object(_rp, "_emit_hallucination_span"):
             _check_hallucinated_approval([bad_event], "p")  # must not raise
+
+
+# ── is_reviewer_author() ──────────────────────────────────────────────────────
+
+
+class TestIsReviewerAuthor:
+    """Unit tests for is_reviewer_author() — CH-68 display-filter predicate."""
+
+    # --- True cases (genuine reviewers) ---
+
+    def test_ga_review_reviewer(self):
+        assert is_reviewer_author("ga_review_reviewer") is True
+
+    def test_news_review_reviewer(self):
+        assert is_reviewer_author("news_review_reviewer") is True
+
+    def test_get_reviewer_name_result_is_true(self):
+        """is_reviewer_author recognises whatever get_reviewer_name() returns."""
+        assert is_reviewer_author(get_reviewer_name("any_prefix")) is True
+
+    def test_minimal_valid_reviewer(self):
+        """Single-char prefix 'x_reviewer' is a valid reviewer name."""
+        assert is_reviewer_author("x_reviewer") is True
+
+    # --- False cases (not reviewers) ---
+
+    def test_model(self):
+        assert is_reviewer_author("model") is False
+
+    def test_user(self):
+        assert is_reviewer_author("user") is False
+
+    def test_worker_name(self):
+        assert is_reviewer_author("ga_review_worker") is False
+
+    def test_specialist_name(self):
+        assert is_reviewer_author("google_analytics") is False
+
+    def test_empty_string(self):
+        assert is_reviewer_author("") is False
+
+    def test_none(self):
+        assert is_reviewer_author(None) is False
+
+    def test_bare_reviewer_no_prefix(self):
+        """'reviewer' alone (no underscore prefix) is not a reviewer."""
+        assert is_reviewer_author("reviewer") is False
+
+    def test_underscore_reviewer_empty_prefix(self):
+        """'_reviewer' has an empty prefix — must return False."""
+        assert is_reviewer_author("_reviewer") is False
+
+    def test_non_string_int(self):
+        assert is_reviewer_author(42) is False  # type: ignore[arg-type]
+
+    def test_non_string_list(self):
+        assert is_reviewer_author([]) is False  # type: ignore[arg-type]

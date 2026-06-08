@@ -453,6 +453,29 @@ def get_reviewer_name(output_key_prefix: str) -> str:
     return f"{output_key_prefix}_reviewer"
 
 
+def is_reviewer_author(author: str | None) -> bool:
+    """Return True iff *author* names a review-loop reviewer sub-agent.
+
+    Reviewers are constructed in ``build_review_pipeline()`` at line 382 as
+    ``name=f"{output_key_prefix}_reviewer"``.  Any ``author`` value that ends
+    with ``"_reviewer"`` (with a non-empty prefix) is treated as a reviewer.
+    The predicate is intentionally conservative: ``"reviewer"`` (no prefix) and
+    ``"_reviewer"`` (empty prefix) both return ``False``; ``None`` and non-str
+    values also return ``False``.
+
+    Use this helper in the chat-assembly layer to suppress reviewer-authored
+    text from the user-visible response (CH-68).  Keep the reviewer events
+    flowing through the upstream accumulator and event stream — this predicate
+    gates display only.
+    """
+    if not isinstance(author, str):
+        return False
+    # Require at least one character before "_reviewer" so that the bare string
+    # "_reviewer" is not treated as a reviewer.
+    suffix = "_reviewer"
+    return author.endswith(suffix) and len(author) > len(suffix)
+
+
 def _event_text(event: Any) -> str:
     """Concatenate text parts from an ADK event's content, if any."""
     if not event.content or not event.content.parts:

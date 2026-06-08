@@ -80,6 +80,25 @@ from ..redis_client import get_redis_service
 from ..services.feature_flag_service import is_feature_enabled
 from ..services.ga_credential_helper import GACredentialHelper
 
+# CH-68: reviewer-author predicate for display-layer filtering.  Defined in
+# review_pipeline.py next to the construction site so the naming contract is
+# owned by one module.
+try:
+    from app.adk.agents.utils.review_pipeline import (
+        is_reviewer_author as _is_reviewer_author,
+    )
+except ImportError:  # pragma: no cover — only missing in stripped test envs
+    # NOTE: this fallback MUST be kept in sync with
+    # app.adk.agents.utils.review_pipeline.is_reviewer_author. It only runs in
+    # stripped test environments where app.adk is not importable; deployed
+    # containers always resolve the canonical helper above.
+    def _is_reviewer_author(author: str | None) -> bool:  # type: ignore[misc]
+        return (
+            isinstance(author, str)
+            and author.endswith("_reviewer")
+            and len(author) > len("_reviewer")
+        )
+
 logger = get_structured_logger(__name__)
 
 # Cache TTL constants (seconds)
@@ -1857,8 +1876,17 @@ class AgentEngineClient:
                                     f"Processing dict chunk with keys: {list(chunk.keys())}"
                                 )
 
+                                # CH-68: suppress text from review-loop reviewer sub-agents.
+                                # The function-event skip, DEBUG logging, and other non-text
+                                # handling below are still applied (display-only filter).
+                                _chunk_author = chunk.get("author") or "model"
+                                if _is_reviewer_author(_chunk_author):
+                                    logger.debug(
+                                        "CH-68: suppressing non-streaming chunk from reviewer author=%s",
+                                        _chunk_author,
+                                    )
                                 # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
-                                if "content" in chunk and isinstance(
+                                elif "content" in chunk and isinstance(
                                     chunk["content"], dict
                                 ):
                                     content = chunk["content"]
@@ -1956,7 +1984,16 @@ class AgentEngineClient:
                                     else:
                                         response_parts.append(chunk)
                             elif hasattr(chunk, "content"):
-                                response_parts.append(str(chunk.content))
+                                # CH-68: ADK Event objects carry an author attribute.
+                                # Guard against reviewer events arriving via this branch.
+                                _obj_author = getattr(chunk, "author", None) or "model"
+                                if not _is_reviewer_author(_obj_author):
+                                    response_parts.append(str(chunk.content))
+                                else:
+                                    logger.debug(
+                                        "CH-68: suppressing ADK event chunk from reviewer author=%s",
+                                        _obj_author,
+                                    )
                             else:
                                 response_parts.append(str(chunk))
 
@@ -2197,9 +2234,19 @@ class AgentEngineClient:
                         if isinstance(chunk, dict):
                             # Extract author from the chunk; default to "model".
                             author = chunk.get("author") or "model"
+
+                            # CH-68: suppress text/reasoning yields from review-loop
+                            # reviewer sub-agents.  The accumulator fold above still
+                            # runs so billing / Chat side-table / MER-E counts are
+                            # unaffected (display-only filter).
+                            if _is_reviewer_author(author):
+                                logger.debug(
+                                    "CH-68: suppressing chunk from reviewer author=%s",
+                                    author,
+                                )
                             # Handle actual dictionary response
                             # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
-                            if "content" in chunk and isinstance(
+                            elif "content" in chunk and isinstance(
                                 chunk["content"], dict
                             ):
                                 content = chunk["content"]
@@ -2590,6 +2637,18 @@ async def _stream_completion_sse(
                 # URL and resume marker while the turn is in flight (CH-62).
                 resolved_session_id = text
                 yield f"event: session\ndata: {json.dumps({'session_id': text})}\n\n"
+            elif _is_reviewer_author(author):
+                # CH-68: display-only filter — reviewer sub-agent text/reasoning
+                # is suppressed from the user-visible SSE stream. The accumulator
+                # fold in stream_chat_completion runs before this point, so
+                # billing / side-table / MER-E counts are unchanged.
+                # This guard also ensures _current_author is never updated to a
+                # reviewer author, keeping the sidecar tracker accurate.
+                logger.debug(
+                    "CH-68: suppressing SSE frame from reviewer author=%s channel=%s",
+                    author,
+                    channel,
+                )
             elif channel == "reasoning":
                 yield _format_sse("reasoning", text, _reasoning_seq, author=author)
                 _reasoning_seq += 1
