@@ -492,6 +492,65 @@ def is_reviewer_author(author: str | None) -> bool:
     return author.endswith(suffix) and len(author) > len(suffix)
 
 
+def is_worker_author(author: str | None) -> bool:
+    """Return True iff *author* names a review-loop worker sub-agent.
+
+    Workers are constructed in ``build_review_pipeline()`` as
+    ``name=f"{specialist.name}_worker"``.  Any ``author`` value that ends
+    with ``"_worker"`` (with a non-empty prefix) is treated as a worker.
+    The predicate is intentionally conservative: ``"worker"`` (no prefix) and
+    ``"_worker"`` (empty prefix) both return ``False``; ``None`` and non-str
+    values also return ``False``.
+
+    Use this helper in the chat-assembly layer to buffer worker-authored drafts
+    and flush only the final approved draft per review loop (CH-69).  The
+    accumulator still receives every chunk — this predicate gates display only.
+    """
+    if not isinstance(author, str):
+        return False
+    # Require at least one character before "_worker" so that the bare string
+    # "_worker" is not treated as a worker.
+    suffix = "_worker"
+    return author.endswith(suffix) and len(author) > len(suffix)
+
+
+def worker_author_for_reviewer(reviewer_author: str | None) -> str | None:
+    """Derive the paired worker author name from a reviewer author name.
+
+    Exploits the naming convention:
+        reviewer name  →  ``f"{output_key_prefix}_reviewer"``
+        worker name    →  ``f"{specialist.name}_worker"``
+    where ``output_key_prefix`` defaults to ``f"{specialist.name}_review"``.
+
+    Stripping strategy:
+      1. Strip the trailing ``_reviewer`` suffix.
+      2. If the remainder ends with ``_review``, strip that too.
+      3. Append ``_worker`` to obtain the paired worker name.
+
+    Returns ``None`` for non-reviewer inputs or when the stripping would
+    produce an empty stem (fail-safe: no buffer is dropped on a pairing miss,
+    so the behaviour collapses to the pre-CH-69 state, not a new regression).
+
+    Examples::
+
+        worker_author_for_reviewer("ga_review_reviewer")   → "ga_worker"
+        worker_author_for_reviewer("custom_reviewer")      → "custom_worker"
+        worker_author_for_reviewer("ga_worker")            → None
+        worker_author_for_reviewer(None)                   → None
+    """
+    if not is_reviewer_author(reviewer_author):
+        return None
+    # reviewer_author is a non-empty str ending in "_reviewer" (guaranteed by
+    # is_reviewer_author above).
+    stem = reviewer_author[: -len("_reviewer")]  # type: ignore[index]
+    # Strip the optional trailing "_review" (default output_key_prefix convention).
+    if stem.endswith("_review"):
+        stem = stem[: -len("_review")]
+    if not stem:
+        return None
+    return f"{stem}_worker"
+
+
 def _event_text(event: Any) -> str:
     """Concatenate text parts from an ADK event's content, if any."""
     if not event.content or not event.content.parts:

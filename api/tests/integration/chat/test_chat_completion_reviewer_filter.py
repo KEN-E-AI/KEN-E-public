@@ -100,8 +100,9 @@ async def test_reviewer_text_absent_in_non_streaming():
     assert "absolute date range is missing" not in response, (
         "Reviewer critique must not appear in non-streaming response"
     )
-    # Both worker drafts should be present (D4: intermediate worker drafts not filtered)
-    assert "First draft" in response and "Revised" in response
+    # CH-69: only the final (revised) worker draft appears.
+    assert "Revised" in response, "Final worker draft must be present"
+    assert "First draft" not in response, "Intermediate draft must be suppressed (CH-69)"
 
 
 @pytest.mark.asyncio

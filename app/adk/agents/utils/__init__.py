@@ -6,6 +6,8 @@ from .review_pipeline import (
     build_review_pipeline,
     extract_pipeline_result,
     is_reviewer_author,
+    is_worker_author,
+    worker_author_for_reviewer,
 )
 
 # supervisor_utils is NOT re-exported here — it transitively imports neo4j
@@ -15,4 +17,6 @@ __all__ = [
     "build_review_pipeline",
     "extract_pipeline_result",
     "is_reviewer_author",
+    "is_worker_author",
+    "worker_author_for_reviewer",
 ]

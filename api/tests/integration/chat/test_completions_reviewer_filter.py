@@ -100,12 +100,14 @@ async def test_reviewer_text_suppressed_in_sse():
         )
 
     text_frames = _text_frames(frames)
-    # Only the two worker frames should appear — reviewer text is suppressed.
-    assert len(text_frames) == 2, f"Expected 2 text frames, got {len(text_frames)}: {text_frames}"
+    # CH-69: only the final (revised) worker draft is surfaced — intermediate
+    # drafts are buffered and replaced when the reviewer fires.
+    assert len(text_frames) == 1, f"Expected 1 text frame (final draft only), got {len(text_frames)}: {text_frames}"
 
     combined = "".join(f.split("data: ", 1)[1].strip() for f in text_frames)
     assert "date range is missing" not in combined, "Reviewer critique must not appear in SSE output"
-    assert "First draft" in combined or "Revised" in combined
+    assert "Revised" in combined, "Final worker draft must be present"
+    assert "First draft" not in combined, "Intermediate draft must be suppressed (CH-69)"
 
     # Flush called once (finally block)
     mock_flush.assert_awaited_once()
@@ -113,10 +115,19 @@ async def test_reviewer_text_suppressed_in_sse():
 
 @pytest.mark.asyncio
 async def test_reviewer_reasoning_suppressed_in_sse():
-    """Reviewer-authored reasoning channel is also suppressed (no reasoning SSE frame)."""
+    """Reviewer-authored reasoning channel is suppressed; final-iteration worker
+    reasoning appears.
+
+    Uses a realistic 2-iteration sequence:
+      reasoning(worker) + text(worker) → reviewer → reasoning(worker) + text(worker)
+    CH-69 collapses to the second iteration only; reviewer reasoning is suppressed.
+    """
     items = [
-        ("reasoning", "Worker thinking...", "ga_worker"),
+        ("reasoning", "Worker thinking iteration 1.", "ga_worker"),
+        ("text", "Draft 1.", "ga_worker"),
         ("reasoning", "Reviewer internal critique.", "ga_review_reviewer"),
+        ("text", "Reviewer feedback text.", "ga_review_reviewer"),
+        ("reasoning", "Worker thinking iteration 2.", "ga_worker"),
         ("text", "Final answer.", "ga_worker"),
     ]
 
@@ -133,6 +144,10 @@ async def test_reviewer_reasoning_suppressed_in_sse():
             "kene_api.routers.chat._flush_stream_turn",
             new_callable=AsyncMock,
         ),
+        patch(
+            "kene_api.routers.chat._maybe_set_temp_title",
+            new_callable=AsyncMock,
+        ),
     ):
         frames = await _collect_sse(
             _stream_completion_sse(
@@ -146,11 +161,19 @@ async def test_reviewer_reasoning_suppressed_in_sse():
         )
 
     reasoning_frames = _reasoning_frames(frames)
-    # Only the worker's reasoning frame should appear.
-    assert len(reasoning_frames) == 1
-    data = json.loads(reasoning_frames[0].split("data: ", 1)[1].strip())
-    assert "Reviewer internal critique" not in data["text"]
-    assert "Worker thinking" in data["text"]
+    # Only the final iteration's reasoning appears (iteration 1 + reviewer suppressed).
+    all_reasoning_texts = [
+        json.loads(f.split("data: ", 1)[1].strip())["text"] for f in reasoning_frames
+    ]
+    assert not any("Reviewer internal critique" in t for t in all_reasoning_texts), (
+        "Reviewer reasoning must not appear"
+    )
+    assert not any("iteration 1" in t for t in all_reasoning_texts), (
+        "Iteration 1 reasoning must be suppressed by CH-69"
+    )
+    assert any("iteration 2" in t for t in all_reasoning_texts), (
+        "Final iteration reasoning must appear"
+    )
 
 
 @pytest.mark.asyncio

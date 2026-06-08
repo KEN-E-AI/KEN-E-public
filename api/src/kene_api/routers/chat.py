@@ -80,24 +80,47 @@ from ..redis_client import get_redis_service
 from ..services.feature_flag_service import is_feature_enabled
 from ..services.ga_credential_helper import GACredentialHelper
 
-# CH-68: reviewer-author predicate for display-layer filtering.  Defined in
-# review_pipeline.py next to the construction site so the naming contract is
-# owned by one module.
+# CH-68/CH-69: reviewer-author and worker-author predicates for display-layer
+# filtering.  Defined in review_pipeline.py next to the construction site so
+# the naming contract is owned by one module.
 try:
     from app.adk.agents.utils.review_pipeline import (
         is_reviewer_author as _is_reviewer_author,
     )
+    from app.adk.agents.utils.review_pipeline import (
+        is_worker_author as _is_worker_author,
+    )
+    from app.adk.agents.utils.review_pipeline import (
+        worker_author_for_reviewer as _worker_author_for_reviewer,
+    )
 except ImportError:  # pragma: no cover — only missing in stripped test envs
-    # NOTE: this fallback MUST be kept in sync with
-    # app.adk.agents.utils.review_pipeline.is_reviewer_author. It only runs in
-    # stripped test environments where app.adk is not importable; deployed
-    # containers always resolve the canonical helper above.
+    # NOTE: these fallbacks MUST be kept in sync with
+    # app.adk.agents.utils.review_pipeline.  They only run in stripped test
+    # environments where app.adk is not importable; deployed containers always
+    # resolve the canonical helpers above.
     def _is_reviewer_author(author: str | None) -> bool:  # type: ignore[misc]
         return (
             isinstance(author, str)
             and author.endswith("_reviewer")
             and len(author) > len("_reviewer")
         )
+
+    def _is_worker_author(author: str | None) -> bool:  # type: ignore[misc]
+        return (
+            isinstance(author, str)
+            and author.endswith("_worker")
+            and len(author) > len("_worker")
+        )
+
+    def _worker_author_for_reviewer(reviewer_author: str | None) -> str | None:  # type: ignore[misc]
+        if not _is_reviewer_author(reviewer_author):
+            return None
+        stem = reviewer_author[: -len("_reviewer")]  # type: ignore[index]
+        if stem.endswith("_review"):
+            stem = stem[: -len("_review")]
+        if not stem:
+            return None
+        return f"{stem}_worker"
 
 logger = get_structured_logger(__name__)
 
@@ -1832,6 +1855,22 @@ class AgentEngineClient:
                 # The Agent Engine has stream_query method - let's collect the stream into a single response
                 if hasattr(self.agent_engine, "stream_query"):
                     response_parts = []
+                    # CH-69: per-author worker-draft buffers for the non-
+                    # streaming path.  Mirrors the SSE-path logic: buffer
+                    # worker text until a non-worker event / end-of-stream
+                    # flushes it (final draft approved).  On reviewer arrival,
+                    # the matched worker is added to _ns_pending_reset; its
+                    # buffer is cleared on the next worker event.
+                    _ns_worker_buf: dict[str, list[str]] = {}
+                    _ns_pending_reset: set[str] = set()
+
+                    def _ns_flush_worker_buf() -> None:
+                        """Flush pending worker buffers into response_parts."""
+                        for _parts in list(_ns_worker_buf.values()):
+                            response_parts.extend(_parts)
+                        _ns_worker_buf.clear()
+                        _ns_pending_reset.clear()
+
                     try:
                         loop = asyncio.get_event_loop()
                         t_query = time.time()
@@ -1876,29 +1915,71 @@ class AgentEngineClient:
                                     f"Processing dict chunk with keys: {list(chunk.keys())}"
                                 )
 
-                                # CH-68: suppress text from review-loop reviewer sub-agents.
-                                # The function-event skip, DEBUG logging, and other non-text
-                                # handling below are still applied (display-only filter).
+                                # CH-68/CH-69: route by author before extracting text.
                                 _chunk_author = chunk.get("author") or "model"
                                 if _is_reviewer_author(_chunk_author):
+                                    # CH-68: suppress reviewer text.
+                                    # CH-69: mark the matched worker for buffer-reset
+                                    # on its next event (this iteration is rejected).
+                                    _paired = _worker_author_for_reviewer(_chunk_author)
+                                    if _paired:
+                                        _ns_pending_reset.add(_paired)
                                     logger.debug(
                                         "CH-68: suppressing non-streaming chunk from reviewer author=%s",
                                         _chunk_author,
                                     )
-                                # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
-                                elif "content" in chunk and isinstance(
-                                    chunk["content"], dict
-                                ):
-                                    content = chunk["content"]
-                                    if "parts" in content and isinstance(
-                                        content["parts"], list
+                                else:
+                                    _is_worker = _is_worker_author(_chunk_author)
+                                    if _is_worker and _chunk_author in _ns_pending_reset:
+                                        # Reviewer fired for this worker → new iteration;
+                                        # reset the buffer.
+                                        logger.debug(
+                                            "CH-69: resetting non-streaming buffer for worker=%s (new iteration)",
+                                            _chunk_author,
+                                        )
+                                        _ns_worker_buf.pop(_chunk_author, None)
+                                        _ns_pending_reset.discard(_chunk_author)
+                                    elif not _is_worker:
+                                        # Non-worker event: flush any buffered worker
+                                        # drafts into response_parts first.
+                                        _ns_flush_worker_buf()
+                                    # Route extracted text to the right destination.
+                                    _dest = (
+                                        _ns_worker_buf.setdefault(_chunk_author, [])
+                                        if _is_worker
+                                        else response_parts
+                                    )
+                                    # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
+                                    if "content" in chunk and isinstance(
+                                        chunk["content"], dict
                                     ):
-                                        for part in content["parts"]:
-                                            if (
-                                                isinstance(part, dict)
-                                                and "text" in part
-                                            ):
-                                                response_parts.append(part["text"])
+                                        content = chunk["content"]
+                                        if "parts" in content and isinstance(
+                                            content["parts"], list
+                                        ):
+                                            for part in content["parts"]:
+                                                if (
+                                                    isinstance(part, dict)
+                                                    and "text" in part
+                                                ):
+                                                    _dest.append(part["text"])
+                                                elif isinstance(
+                                                    part, dict
+                                                ) and _is_function_event_part(part):
+                                                    logger.debug(
+                                                        "Skipping function_call/function_response part"
+                                                    )
+                                                else:
+                                                    _dest.append(str(part))
+                                        else:
+                                            _dest.append(str(content))
+                                    # Handle direct structure: {'parts': [{'text': '...'}]}
+                                    elif "parts" in chunk and isinstance(
+                                        chunk["parts"], list
+                                    ):
+                                        for part in chunk["parts"]:
+                                            if isinstance(part, dict) and "text" in part:
+                                                _dest.append(part["text"])
                                             elif isinstance(
                                                 part, dict
                                             ) and _is_function_event_part(part):
@@ -1906,37 +1987,20 @@ class AgentEngineClient:
                                                     "Skipping function_call/function_response part"
                                                 )
                                             else:
-                                                response_parts.append(str(part))
+                                                _dest.append(str(part))
+                                    # Handle string content
+                                    elif "content" in chunk:
+                                        _dest.append(str(chunk["content"]))
                                     else:
-                                        response_parts.append(str(content))
-                                # Handle direct structure: {'parts': [{'text': '...'}]}
-                                elif "parts" in chunk and isinstance(
-                                    chunk["parts"], list
-                                ):
-                                    for part in chunk["parts"]:
-                                        if isinstance(part, dict) and "text" in part:
-                                            response_parts.append(part["text"])
-                                        elif isinstance(
-                                            part, dict
-                                        ) and _is_function_event_part(part):
-                                            logger.debug(
-                                                "Skipping function_call/function_response part"
-                                            )
-                                        else:
-                                            response_parts.append(str(part))
-                                # Handle string content
-                                elif "content" in chunk:
-                                    response_parts.append(str(chunk["content"]))
-                                else:
-                                    # CH-59: a dict chunk with no `content`/`parts` is a
-                                    # contentless ADK control event (e.g. the state-delta
-                                    # event ADK emits when a before_agent_callback writes
-                                    # session state). It carries no user-facing text — skip
-                                    # it instead of appending the raw event dict to the reply.
-                                    logger.debug(
-                                        "Skipping non-text event chunk in non-streaming response (keys=%s)",
-                                        sorted(chunk.keys()),
-                                    )
+                                        # CH-59: a dict chunk with no `content`/`parts` is a
+                                        # contentless ADK control event (e.g. the state-delta
+                                        # event ADK emits when a before_agent_callback writes
+                                        # session state). It carries no user-facing text — skip
+                                        # it instead of appending the raw event dict to the reply.
+                                        logger.debug(
+                                            "Skipping non-text event chunk in non-streaming response (keys=%s)",
+                                            sorted(chunk.keys()),
+                                        )
                             elif isinstance(chunk, str):
                                 logger.debug(
                                     f"Processing string chunk: {chunk[:50]}..."
@@ -1948,6 +2012,10 @@ class AgentEngineClient:
                                     logger.debug("Skipping JSON function event data")
                                     continue
 
+                                # String chunks have no author field — they are never
+                                # worker/reviewer events.  Flush any buffered worker
+                                # drafts before appending (CH-69).
+                                _ns_flush_worker_buf()
                                 if chunk.startswith("{'parts'") and "'text':" in chunk:
                                     try:
                                         import ast
@@ -1985,18 +2053,35 @@ class AgentEngineClient:
                                         response_parts.append(chunk)
                             elif hasattr(chunk, "content"):
                                 # CH-68: ADK Event objects carry an author attribute.
-                                # Guard against reviewer events arriving via this branch.
+                                # CH-69: route by author — buffer workers, mark
+                                # pending-reset on reviewer, flush on non-worker.
                                 _obj_author = getattr(chunk, "author", None) or "model"
-                                if not _is_reviewer_author(_obj_author):
-                                    response_parts.append(str(chunk.content))
-                                else:
+                                if _is_reviewer_author(_obj_author):
+                                    _paired = _worker_author_for_reviewer(_obj_author)
+                                    if _paired:
+                                        _ns_pending_reset.add(_paired)
                                     logger.debug(
                                         "CH-68: suppressing ADK event chunk from reviewer author=%s",
                                         _obj_author,
                                     )
+                                elif _is_worker_author(_obj_author):
+                                    if _obj_author in _ns_pending_reset:
+                                        _ns_worker_buf.pop(_obj_author, None)
+                                        _ns_pending_reset.discard(_obj_author)
+                                    _ns_worker_buf.setdefault(_obj_author, []).append(
+                                        str(chunk.content)
+                                    )
+                                else:
+                                    _ns_flush_worker_buf()
+                                    response_parts.append(str(chunk.content))
                             else:
+                                # Unknown chunk type — flush worker buffers and append.
+                                _ns_flush_worker_buf()
                                 response_parts.append(str(chunk))
 
+                        # End of stream: flush any remaining worker drafts (the
+                        # final approved iteration had no following non-worker event).
+                        _ns_flush_worker_buf()
                         full_response = "".join(response_parts).strip()
 
                         # Clean up function_call/function_response data from the final response
@@ -2623,6 +2708,47 @@ async def _stream_completion_sse(
     try:
         _reasoning_seq = 0
         _current_author = "model"
+        # CH-69: per-author worker-draft buffers.  Each review-loop iteration
+        # appends to the buffer keyed by worker-author name.  The correct signal
+        # for rejection is the reviewer event: when a reviewer fires, the matched
+        # worker is added to _worker_pending_reset; the next event from that
+        # worker clears its buffer (starting fresh for the new iteration).  A
+        # non-worker / non-matched-reviewer event or stream end flushes whatever
+        # is in the buffer (the final approved draft).  The accumulator receives
+        # every chunk upstream so billing / MER-E are unaffected.
+        _worker_text_buf: dict[str, list[str]] = {}
+        _worker_reasoning_buf: dict[str, list[tuple[int, str]]] = {}
+        # Workers whose reviewer has fired since their last flush — their buffer
+        # must be reset on next worker event (the iteration was rejected).
+        _worker_pending_reset: set[str] = set()
+
+        def _collect_worker_flush_frames() -> list[str]:
+            """Return SSE frames for all pending worker buffers and clear them.
+
+            Cannot use yield (async generator cannot contain yield-from); returns
+            a list so the caller can yield each frame in a for loop.
+            """
+            nonlocal _reasoning_seq, _current_author
+            frames: list[str] = []
+            for w_author, text_chunks in list(_worker_text_buf.items()):
+                r_chunks = _worker_reasoning_buf.pop(w_author, [])
+                # Emit reasoning frames first, preserving natural turn order.
+                for _seq, r_text in r_chunks:
+                    frames.append(
+                        _format_sse("reasoning", r_text, _reasoning_seq, author=w_author)
+                    )
+                    _reasoning_seq += 1
+                if text_chunks:
+                    if w_author != _current_author:
+                        frames.append(_format_sse("author", w_author))
+                        _current_author = w_author
+                    for t in text_chunks:
+                        frames.append(_format_sse("text", t, 0))
+            _worker_text_buf.clear()
+            _worker_reasoning_buf.clear()
+            _worker_pending_reset.clear()
+            return frames
+
         async for channel, text, author in agent_client.stream_chat_completion(
             messages=messages,
             user_context=user_context,
@@ -2642,17 +2768,51 @@ async def _stream_completion_sse(
                 # is suppressed from the user-visible SSE stream. The accumulator
                 # fold in stream_chat_completion runs before this point, so
                 # billing / side-table / MER-E counts are unchanged.
-                # This guard also ensures _current_author is never updated to a
-                # reviewer author, keeping the sidecar tracker accurate.
+                # CH-69: mark the matched worker as pending-reset so its buffer is
+                # cleared on the worker's next event (the rejected iteration ends
+                # here; the next worker event opens a fresh iteration).
+                paired_worker = _worker_author_for_reviewer(author)
+                if paired_worker:
+                    _worker_pending_reset.add(paired_worker)
+                    logger.debug(
+                        "CH-69: marking worker=%s for reset on next event (reviewer=%s)",
+                        paired_worker,
+                        author,
+                    )
                 logger.debug(
                     "CH-68: suppressing SSE frame from reviewer author=%s channel=%s",
                     author,
                     channel,
                 )
+            elif _is_worker_author(author):
+                # CH-69: buffer worker text/reasoning — do not yield to SSE yet.
+                # If the reviewer has fired for this worker since last flush, this
+                # is a new iteration — clear the stale buffer first.
+                if author in _worker_pending_reset:
+                    logger.debug(
+                        "CH-69: resetting buffer for worker=%s (new iteration after reviewer)",
+                        author,
+                    )
+                    _worker_text_buf.pop(author, None)
+                    _worker_reasoning_buf.pop(author, None)
+                    _worker_pending_reset.discard(author)
+                if channel == "reasoning":
+                    _worker_reasoning_buf.setdefault(author, []).append(
+                        (_reasoning_seq, text)
+                    )
+                else:
+                    _worker_text_buf.setdefault(author, []).append(text)
             elif channel == "reasoning":
+                # Non-worker reasoning: flush any pending worker buffers first,
+                # then emit this reasoning frame.
+                for frame in _collect_worker_flush_frames():
+                    yield frame
                 yield _format_sse("reasoning", text, _reasoning_seq, author=author)
                 _reasoning_seq += 1
             else:
+                # Non-worker text: flush pending worker buffers, then emit.
+                for frame in _collect_worker_flush_frames():
+                    yield frame
                 # Emit an author sidecar frame when the emitting specialist changes.
                 # Single-author turns (author always "model") produce zero sidecar
                 # frames, preserving backward compatibility with existing clients.
@@ -2660,10 +2820,16 @@ async def _stream_completion_sse(
                     yield _format_sse("author", author)
                     _current_author = author
                 yield _format_sse("text", text, 0)
+        # Normal stream end: flush any remaining worker buffers before [DONE].
+        for frame in _collect_worker_flush_frames():
+            yield frame
         yield "data: [DONE]\n\n"
     except (asyncio.CancelledError, GeneratorExit, Exception):
         # SSE cancellation (GeneratorExit / CancelledError) or an agent-side
         # failure — mark the turn failed so the finally flushes partial counts.
+        # CH-69: do NOT flush worker buffers on cancellation / exception — the
+        # user has disconnected or the turn failed; synthesising buffered text
+        # into a closed channel is incorrect.
         turn_failed = True
         raise
     finally:

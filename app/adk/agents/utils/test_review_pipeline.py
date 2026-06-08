@@ -1918,6 +1918,168 @@ class TestIsReviewerAuthor:
         assert is_reviewer_author([]) is False  # type: ignore[arg-type]
 
 
+# ---------------------------------------------------------------------------
+# CH-69 helpers
+# ---------------------------------------------------------------------------
+
+
+class TestIsWorkerAuthor:
+    """Unit tests for is_worker_author() — CH-69 display-filter predicate."""
+
+    # Import here so the class is self-contained; the module-level import block
+    # above doesn't include these helpers yet.
+    from .review_pipeline import get_worker_name, is_worker_author
+
+    # --- True cases (genuine workers) ---
+
+    def test_ga_worker(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("ga_worker") is True
+
+    def test_news_worker(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("news_worker") is True
+
+    def test_get_worker_name_result_is_true(self):
+        """is_worker_author recognises whatever get_worker_name() returns."""
+        from google.adk.agents import LlmAgent
+
+        from .review_pipeline import get_worker_name, is_worker_author
+        specialist = LlmAgent(name="myspec", model="gemini-2.0-flash", instruction="x")
+        assert is_worker_author(get_worker_name(specialist)) is True
+
+    def test_minimal_valid_worker(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("x_worker") is True
+
+    def test_multi_word_prefix(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("google_analytics_worker") is True
+
+    # --- False cases (not workers) ---
+
+    def test_model(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("model") is False
+
+    def test_user(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("user") is False
+
+    def test_reviewer_name(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("ga_review_reviewer") is False
+
+    def test_specialist_name(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("google_analytics") is False
+
+    def test_empty_string(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("") is False
+
+    def test_none(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author(None) is False
+
+    def test_bare_worker_no_prefix(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("worker") is False
+
+    def test_underscore_worker_empty_prefix(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author("_worker") is False
+
+    def test_non_string_int(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author(42) is False  # type: ignore[arg-type]
+
+    def test_non_string_list(self):
+        from .review_pipeline import is_worker_author
+        assert is_worker_author([]) is False  # type: ignore[arg-type]
+
+
+class TestWorkerAuthorForReviewer:
+    """Unit tests for worker_author_for_reviewer() — CH-69 pairing helper."""
+
+    # --- Default convention: {name}_review_reviewer → {name}_worker ---
+
+    def test_ga_review_reviewer_yields_ga_worker(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("ga_review_reviewer") == "ga_worker"
+
+    def test_news_review_reviewer_yields_news_worker(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("news_review_reviewer") == "news_worker"
+
+    def test_multiword_review_reviewer(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("google_analytics_review_reviewer") == "google_analytics_worker"
+
+    # --- Custom prefix fallback: {stem}_reviewer → {stem}_worker ---
+
+    def test_custom_prefix_without_review_stem(self):
+        """Custom reviewer not following the _review convention: bare stem_reviewer."""
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        # stem = "custom_prefix" (no trailing _review to strip)
+        assert _worker_author_for_reviewer("custom_prefix_reviewer") == "custom_prefix_worker"
+
+    def test_single_char_prefix(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("x_reviewer") == "x_worker"
+
+    # --- Round-trip through get_reviewer_name / get_worker_name ---
+
+    def test_round_trip_via_get_names(self):
+        """_worker_author_for_reviewer(get_reviewer_name(prefix)) == get_worker_name(specialist)."""
+        from google.adk.agents import LlmAgent
+
+        from .review_pipeline import get_reviewer_name, get_worker_name
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        specialist = LlmAgent(name="ga", model="gemini-2.0-flash", instruction="x")
+        reviewer_name = get_reviewer_name("ga_review")
+        expected_worker = get_worker_name(specialist)
+        assert _worker_author_for_reviewer(reviewer_name) == expected_worker
+
+    # --- Non-reviewer inputs → None ---
+
+    def test_non_reviewer_worker_returns_none(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("ga_worker") is None
+
+    def test_non_reviewer_model_returns_none(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("model") is None
+
+    def test_none_input_returns_none(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer(None) is None
+
+    def test_empty_string_returns_none(self):
+        from .review_pipeline import (
+            worker_author_for_reviewer as _worker_author_for_reviewer,
+        )
+        assert _worker_author_for_reviewer("") is None
+
+
 # ── Live-Gemini behavioral regression (AH-155) ────────────────────────────────
 #
 # The instruction-text assertions above prove the guardrails are *present*; they
