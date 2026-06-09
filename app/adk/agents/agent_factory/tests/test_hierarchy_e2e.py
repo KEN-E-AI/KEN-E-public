@@ -224,7 +224,8 @@ class TestRootOnlyBuild:
         """AH-161: each global ``ken_e_sub_agent`` specialist config seeds a
         request_task ``_TaskAgentTool`` (dispatch shim) on the root so ADK's chat
         dispatch loop recognizes its delegation FC.  The supervisor FUNCTION
-        tools (AH-133/AH-144) are unchanged; the root config is excluded."""
+        tools (AH-133/AH-144) plus the default-global ``create_visualization``
+        (AH-PRD-04 follow-up) are unchanged; the root config is excluded."""
         from app.adk.tools.registry.agent_tool_registry import task_mode_supported
 
         if not task_mode_supported():
@@ -239,6 +240,7 @@ class TestRootOnlyBuild:
             if not isinstance(t, _TaskAgentTool)
         }
         assert func_tool_names == {
+            "create_visualization",
             "set_todo_list",
             "update_todo_list",
             "save_pending_supervisor_tasks",

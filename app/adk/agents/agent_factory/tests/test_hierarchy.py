@@ -189,6 +189,10 @@ class TestRootAgentConstruction:
         AH-133: supervisor function tools (set_todo_list, update_todo_list)
         ARE present on the root — they are the coordinator's ledger-management
         surface, not specialist-dispatch tools.
+
+        AH-PRD-04 follow-up: the default-global function tool
+        ``create_visualization`` is also present (tool_ids unset → all
+        default-global function tools attach to the root).
         """
         docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
@@ -196,6 +200,7 @@ class TestRootAgentConstruction:
         tool_names = {getattr(t, "name", None) for t in root.tools}
         assert "set_todo_list" in tool_names
         assert "update_todo_list" in tool_names
+        assert "create_visualization" in tool_names
         # Still no specialist-dispatch tool.
         assert "dispatch_to_" not in " ".join(n or "" for n in tool_names)
 
@@ -208,9 +213,11 @@ class TestRootAgentConstruction:
         attach callback — recognizes the delegation FC.  Without this, the
         specialist is silently never dispatched (the live failure).
 
-        The five supervisor FUNCTION tools are unchanged; the specialist entries
-        are dispatch shims (``_TaskAgentTool``), not function tools.  The root
-        config itself (``ROOT_CONFIG_ID``) is excluded from seeding.
+        The function tools are unchanged by seeding: the five supervisor tools
+        plus the default-global ``create_visualization`` (AH-PRD-04 follow-up,
+        attached because ``tool_ids`` is unset). The specialist entries are
+        dispatch shims (``_TaskAgentTool``), not function tools. The root config
+        itself (``ROOT_CONFIG_ID``) is excluded from seeding.
         """
         from app.adk.tools.registry.agent_tool_registry import task_mode_supported
 
@@ -232,13 +239,16 @@ class TestRootAgentConstruction:
         }
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        # Function tools: still exactly the five supervisor tools (AH-133/AH-144).
+        # Function tools: the five supervisor tools + the default-global
+        # create_visualization (AH-133/AH-144 + AH-PRD-04 follow-up). The seeded
+        # specialist dispatch shims are _TaskAgentTools, excluded by the filter.
         func_tool_names = {
             getattr(t, "name", None)
             for t in root.tools
             if not isinstance(t, _TaskAgentTool)
         }
         assert func_tool_names == {
+            "create_visualization",
             "set_todo_list",
             "update_todo_list",
             "save_pending_supervisor_tasks",
@@ -259,6 +269,19 @@ class TestRootAgentConstruction:
         # Tool-only seed: the placeholders must NOT be dispatchable sub-agents.
         sub_names = {getattr(s, "name", None) for s in root.sub_agents}
         assert "specialist_a" not in sub_names and "specialist_b" not in sub_names
+
+    def test_root_agent_no_duplicate_todo_tools(self) -> None:
+        """AH-PRD-04 follow-up: set_todo_list / update_todo_list are BOTH
+        default_global function tools AND supervisor-provided. The root build
+        must dedupe them so Gemini never sees two identical declarations.
+        """
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
+
+        names = [getattr(t, "name", None) for t in root.tools]
+        assert names.count("set_todo_list") == 1
+        assert names.count("update_todo_list") == 1
+        assert names.count("create_visualization") == 1
 
     def test_root_agent_instruction_suffix_provider_wired(self) -> None:
         """build_hierarchy must pass a composed instruction_suffix_provider that

@@ -89,6 +89,7 @@ from google.adk.agents import BaseAgent, LlmAgent
 from app.adk.agents.agent_factory.config_loader import FirestoreConnectionError
 from app.adk.agents.agent_factory.roster import (
     RosterCapExceededError,
+    dedupe_tools_by_name,
     resolve_specialist_roster,
 )
 from app.adk.agents.agent_factory.specialist_runtime import block_lock_for
@@ -96,6 +97,9 @@ from app.adk.agents.utils.config_cache import get_cached_merged_config
 from app.adk.tools.registry.agent_tool_registry import (
     resolve_agent_subagents,
     resolve_isolated_agent_tools,
+)
+from app.adk.tools.registry.function_tool_registry import (
+    resolve_default_global_tools,
 )
 from app.adk.tools.registry.tool_registry import get_default_registry
 from shared.account_id_utils import validate_account_id
@@ -355,7 +359,12 @@ def _attach_locked(
         _roster = resolve_specialist_roster(
             "ken_e",
             mcp_toolsets={},
-            function_tools=[],
+            # AH-PRD-04 follow-up: feed the default-global function tools (e.g.
+            # ``create_visualization``) as candidates so the per-turn reconcile
+            # honours them like every specialist does. ``[]`` here was the bug
+            # that silently dropped ``function.create_visualization`` from
+            # ``ken_e_chatbot.tool_ids`` — the filter had no candidate to match.
+            function_tools=resolve_default_global_tools(_registry),
             mcp_server_ids=[],
             agent_subagents=resolve_agent_subagents(_registry),
             # AH-PRD-15 re-plan: isolated AgentTools (google_search /
@@ -400,7 +409,11 @@ def _attach_locked(
     #    a fresh identity-miss and a correct re-resolve.
     from app.adk.agents.orchestration.supervisor import get_supervisor_function_tools
 
-    resolved_non_agent: list[Any] = (
+    # dedupe_tools_by_name collapses the set_todo_list / update_todo_list overlap
+    # between the default-global resolve (now fed into ``function_tools=`` above)
+    # and the supervisor set — both are the same registry singletons — so the
+    # rebuilt root.tools never advertises a duplicate declaration to Gemini.
+    resolved_non_agent: list[Any] = dedupe_tools_by_name(
         list(_roster.tools) + get_supervisor_function_tools()
     )
     agent_subs_desired: dict[str, LlmAgent] = {

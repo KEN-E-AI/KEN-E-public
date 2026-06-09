@@ -16,6 +16,7 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
     count_specialist_tool_roster,
+    dedupe_tools_by_name,
     per_server_allowed_tools,
     resolve_specialist_roster,
 )
@@ -913,6 +914,51 @@ class TestResolveSpecialistRosterWithAgentTools:
                     ],
                 ),
             )
+
+
+class TestDedupeToolsByName:
+    """dedupe_tools_by_name — used by the root build paths to collapse the
+    set_todo_list / update_todo_list overlap between the default-global resolve
+    and the supervisor function-tool set (AH-PRD-04 follow-up)."""
+
+    def _named(self, name: str) -> MagicMock:
+        t = MagicMock()
+        t.name = name
+        return t
+
+    def test_keeps_first_occurrence_and_preserves_order(self) -> None:
+        a1, b, a2, c = (
+            self._named("a"),
+            self._named("b"),
+            self._named("a"),
+            self._named("c"),
+        )
+        assert dedupe_tools_by_name([a1, b, a2, c]) == [a1, b, c]
+
+    def test_empty_list_returns_empty(self) -> None:
+        assert dedupe_tools_by_name([]) == []
+
+    def test_no_duplicates_is_identity_order(self) -> None:
+        a, b, c = self._named("a"), self._named("b"), self._named("c")
+        assert dedupe_tools_by_name([a, b, c]) == [a, b, c]
+
+    def test_falls_back_to_dunder_name(self) -> None:
+        """A bare callable (no ``.name``, has ``__name__``) dedupes on __name__."""
+
+        def todo() -> None:
+            pass
+
+        def todo_dup() -> None:
+            pass
+
+        todo_dup.__name__ = "todo"
+        assert dedupe_tools_by_name([todo, todo_dup]) == [todo]
+
+    def test_unnamed_tools_are_always_kept(self) -> None:
+        """Tools with no discoverable name can't be deduped — keep them all."""
+        u1, u2 = object(), object()
+        result = dedupe_tools_by_name([u1, u2])
+        assert result == [u1, u2]
 
 
 if __name__ == "__main__":

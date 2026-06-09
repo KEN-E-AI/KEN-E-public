@@ -173,8 +173,14 @@ class TestSuccessfulResolve:
         assert agent.tools == [tool_a]
 
     def test_null_tool_ids_resolves_to_empty(self) -> None:
-        """tool_ids=None on the config resolves to an empty list (no agent tools
-        are default_global) and replaces the root tools."""
+        """When the resolver yields no tools (mocked empty here) and supervisor
+        tools are suppressed, root.tools is replaced with an empty list.
+
+        (In production with tool_ids=None the resolver returns the default-global
+        function tools — exercised separately in
+        TestDefaultGlobalFunctionTools — so this asserts the plumbing, not the
+        real default-global set.)
+        """
         agent = _make_root_agent(tools=[_make_tool("old_tool")])
         cfg = _make_config(tool_ids=None)
 
@@ -532,6 +538,80 @@ class TestFingerprintCache:
         # A again, A's config unchanged — must re-apply A's tools, not serve B's.
         _attach("acc_A", cfg_a, [tool_x])
         assert agent.tools == [tool_x]
+
+
+# ---------------------------------------------------------------------------
+# AH-PRD-04 follow-up: default-global function tools on the root
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultGlobalFunctionTools:
+    """The per-turn reconcile must feed the default-global function tools (e.g.
+    ``create_visualization``) into the roster resolver as candidates, and dedupe
+    the ``set_todo_list`` / ``update_todo_list`` overlap with the supervisor set.
+
+    Before this fix the root passed ``function_tools=[]``, so the resolver's
+    ``tool_ids`` filter had no candidate to match and silently dropped
+    ``function.create_visualization`` from ``ken_e_chatbot.tool_ids``.
+    """
+
+    def test_default_global_tools_forwarded_as_candidates(self) -> None:
+        """``resolve_default_global_tools`` output is passed verbatim as the
+        ``function_tools=`` candidate list to ``resolve_specialist_roster``."""
+        agent = _make_root_agent(tools=[])
+        cfg = _make_config(tool_ids=["function.create_visualization"])
+        viz = _make_tool("create_visualization")
+        captured: dict[str, Any] = {}
+
+        def _fake_resolver(*_args: Any, **kwargs: Any) -> RosterResolution:
+            captured.update(kwargs)
+            # Mimic the real filter: keep the supplied function-tool candidates.
+            return RosterResolution(tools=list(kwargs["function_tools"]))
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_default_global_tools", return_value=[viz]
+        ), patch.object(
+            rta, "resolve_specialist_roster", side_effect=_fake_resolver
+        ), patch(
+            "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
+            return_value=[],
+        ):
+            attach_root_tools(agent, account_id="acc_viz")
+
+        assert captured["function_tools"] == [viz]
+        assert viz in agent.tools
+
+    def test_rebuild_dedupes_supervisor_and_default_global_overlap(self) -> None:
+        """A tool that appears in BOTH the resolved roster and the supervisor set
+        (set_todo_list) is collapsed to a single entry; first occurrence wins."""
+        agent = _make_root_agent(tools=[])
+        cfg = _make_config(tool_ids=None)
+        roster_todo = _make_tool("set_todo_list")
+        sup_todo = _make_tool("set_todo_list")
+        sup_save = _make_tool("save_pending_supervisor_tasks")
+
+        with patch.object(
+            rta, "get_cached_merged_config", return_value=cfg
+        ), patch.object(
+            rta, "resolve_default_global_tools", return_value=[roster_todo]
+        ), patch.object(
+            rta,
+            "resolve_specialist_roster",
+            return_value=RosterResolution(tools=[roster_todo]),
+        ), patch(
+            "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
+            return_value=[sup_todo, sup_save],
+        ):
+            attach_root_tools(agent, account_id="acc_dedupe")
+
+        names = [getattr(t, "name", None) for t in agent.tools]
+        assert names.count("set_todo_list") == 1
+        assert "save_pending_supervisor_tasks" in names
+        # First occurrence (the roster instance) wins; the supervisor dup is dropped.
+        assert roster_todo in agent.tools
+        assert sup_todo not in agent.tools
 
 
 # ---------------------------------------------------------------------------

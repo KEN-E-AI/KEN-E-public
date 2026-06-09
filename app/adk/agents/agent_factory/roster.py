@@ -211,6 +211,34 @@ def per_server_allowed_tools(
     return result
 
 
+def dedupe_tools_by_name(tools: list[Any]) -> list[Any]:
+    """Return *tools* with later same-name duplicates removed, order preserved.
+
+    A tool's name is read from ``.name`` (ADK ``FunctionTool``/``AgentTool``
+    convention) then ``.__name__`` (bare callable). Tools whose name can't be
+    discovered are always kept — there's nothing reliable to dedupe on.
+
+    First occurrence wins, so callers that need a specific instance to survive
+    should order it first. Used by the root build paths (``hierarchy.py`` and
+    ``root_tools_attacher.py``), where the default-global function tools
+    (``create_visualization``, ``set_todo_list``, ``update_todo_list``) and the
+    always-appended supervisor function tools (``set_todo_list``,
+    ``update_todo_list`` + the pending-task trio) both resolve to the same
+    registry singletons — without this collapse the root would advertise two
+    identical ``set_todo_list`` / ``update_todo_list`` declarations to Gemini.
+    """
+    seen: set[str] = set()
+    result: list[Any] = []
+    for tool in tools:
+        name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
+        if isinstance(name, str):
+            if name in seen:
+                continue
+            seen.add(name)
+        result.append(tool)
+    return result
+
+
 def _filter_function_tools_by_ids(
     function_tools: list[Any], tool_ids: set[str]
 ) -> list[Any]:

@@ -191,17 +191,22 @@ def build_hierarchy(
     # Lazy import: avoids circular import at module-load time since
     # agent_factory/__init__.py imports both hierarchy and specialist_runtime,
     # and specialist_runtime imports config_cache which imports agent_factory.
-    # AH-98: the root is delegation-only (no MCP servers, no function tools),
-    # but it MAY be granted opt-in agent-as-a-tool capabilities — e.g. web
-    # search — by listing ``agent.{name}`` ids in ``ken_e_chatbot.tool_ids``.
-    # Routing the root build through the shared roster resolver means an admin
-    # can give Kinney web search via config alone, with no code change. When
-    # ``tool_ids`` is unset the resolver returns ``[]`` (google_search is opt-in
-    # / not default_global), preserving the historical ``tools=[]`` root.
+    # AH-98: the root carries no MCP servers, but it gets the default-global
+    # function tools (AH-PRD-04 follow-up — see ``function_tools=`` below) and
+    # MAY be granted opt-in agent-as-a-tool capabilities — e.g. web search — by
+    # listing ``agent.{name}`` ids in ``ken_e_chatbot.tool_ids``. Routing the
+    # root build through the shared roster resolver means an admin can give
+    # Kinney web search via config alone, with no code change. When ``tool_ids``
+    # is unset the resolver attaches every default-global function tool (e.g.
+    # ``create_visualization``) but no agent-as-tool (google_search /
+    # numerical_analyst are opt-in / not default_global).
     from app.adk.agents.agent_factory.root_tools_attacher import (
         attach_root_tools_before_agent_callback,
     )
-    from app.adk.agents.agent_factory.roster import resolve_specialist_roster
+    from app.adk.agents.agent_factory.roster import (
+        dedupe_tools_by_name,
+        resolve_specialist_roster,
+    )
     from app.adk.agents.agent_factory.specialist_runtime import (
         available_specialists_provider,
     )
@@ -220,6 +225,9 @@ def build_hierarchy(
         resolve_agent_subagents,
         resolve_isolated_agent_tools,
     )
+    from app.adk.tools.registry.function_tool_registry import (
+        resolve_default_global_tools,
+    )
     from app.adk.tools.registry.tool_registry import get_default_registry
     from app.adk.tracking.callbacks import (
         adk_after_model_callback,
@@ -233,7 +241,14 @@ def build_hierarchy(
     _root_roster = resolve_specialist_roster(
         "ken_e",
         mcp_toolsets={},
-        function_tools=[],
+        # AH-PRD-04 follow-up: feed the default-global function tools (e.g.
+        # ``create_visualization``) as candidates so the root honours them like
+        # every specialist does. With ``tool_ids=None`` the resolver attaches all
+        # of them (default_global semantics); with an explicit allowlist it keeps
+        # only those whose ``function.{name}`` is listed. Passing ``[]`` here was
+        # the bug that silently dropped ``function.create_visualization`` from
+        # ``ken_e_chatbot.tool_ids`` — the filter had no candidate to match.
+        function_tools=resolve_default_global_tools(_default_registry),
         mcp_server_ids=[],
         agent_subagents=resolve_agent_subagents(_default_registry),
         # AH-PRD-15 re-plan: google_search / numerical_analyst resolve as isolated
@@ -243,11 +258,17 @@ def build_hierarchy(
         tool_ids=getattr(root_config, "tool_ids", None),
         registry=_default_registry,
     )
-    # RosterResolution.tools carries the isolated AgentTools (when opted in via
-    # tool_ids); .sub_agents carries any task-mode sub-agents (currently none).
+    # RosterResolution.tools carries the resolved function tools + isolated
+    # AgentTools (when opted in via tool_ids); .sub_agents carries any task-mode
+    # sub-agents (currently none).
     # AH-133: supervisor function tools are appended AFTER resolve_specialist_roster
     # so they bypass the admin tool_ids filter and remain platform-invariant.
-    root_function_tools = list(_root_roster.tools) + get_supervisor_function_tools()
+    # dedupe_tools_by_name collapses the set_todo_list / update_todo_list overlap
+    # between the default-global resolve and the supervisor set (both are the same
+    # registry singletons) so Gemini never sees a duplicate declaration.
+    root_function_tools = dedupe_tools_by_name(
+        list(_root_roster.tools) + get_supervisor_function_tools()
+    )
     root_agent_subagents = _root_roster.sub_agents
 
     def _compose_root_instruction_suffix(ctx: Any) -> str:
