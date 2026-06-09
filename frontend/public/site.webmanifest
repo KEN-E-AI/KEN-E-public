@@ -1,0 +1,25 @@
+{
+  "name": "KEN-E",
+  "short_name": "KEN-E",
+  "icons": [
+    {
+      "src": "favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#7C3AED",
+  "background_color": "#FFFFFF",
+  "display": "standalone"
+}
