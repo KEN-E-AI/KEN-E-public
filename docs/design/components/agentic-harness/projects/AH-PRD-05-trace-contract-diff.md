@@ -154,12 +154,13 @@ Before any AH-PRD-05 implementation PR merges to main, run extractor validation 
 - [ ] MER-E extractors read `node_path` from `task_delegation` summary for branch attribution in fan-out turns (task-mode path: `coordinator@1/task_specialist@…`; fan-out path: `specialist_a@1` / `specialist_b@1`).
 - [ ] Fan-out spans (`fanout`) are correctly attributed as parallel-group parents using `task_ids` + `branch_count`.
 - [ ] LoopAgent review iterations appear as grandchildren of `task_delegation` and are extracted as today.
-- [ ] Old `execute_workflow` pattern is removed from any extractor that searched for it.
-- [ ] Sign-off recorded in §8 Owner Pairing with date and reviewer name.
+- [ ] **(AH-121 re-plan carry-forward.)** MER-E extractors treat the absence of inner grounded-search / code-exec spans inside an `AgentTool` leaf as an accepted `#3984` gap (same class as the §2.1 `google.genai` autopatch carry-forward), and read the leaf's `usage_metadata` from the drained off-state sink (`AH-PRD-15` `agent_tool_billing.py`), NOT from leaf-level events. Locked in CI by `TestIsolatedAgentToolLeafCarryForward` in `test_supervisor_orchestration_fixture.py`.
+- [ ] Retired `execute_workflow` / `invoke_pipeline` span names are removed from any MER-E extractor that searched for them. Locked in CI by `TestRetiredPatterns` in `test_supervisor_orchestration_fixture.py`.
+- [ ] Sign-off recorded in §8 Sign-off table with date and reviewer name.
 
 ---
 
-## §8 Owner Pairing
+## §8 Owner Pairing + Sign-off Table
 
 | Role | Contact |
 |---|---|
@@ -167,6 +168,12 @@ Before any AH-PRD-05 implementation PR merges to main, run extractor validation 
 | MER-E extractor consumer | MER-E team (to be tagged on AH-97 when this doc merges) |
 
 Implementation PRs must include a MER-E sign-off comment confirming extractor readiness before the PR is approved.
+
+### Sign-off record
+
+| Reviewer | Role | Date | Status | PR / Comment ref |
+|---|---|---|---|---|
+| *(MER-E representative)* | MER-E extractor owner | — | **Pending** | Tag this row when §7 checklist passes against the fixture + `TestRetiredPatterns` + `TestIsolatedAgentToolLeafCarryForward` gates |
 
 ---
 

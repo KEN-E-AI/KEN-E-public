@@ -528,3 +528,122 @@ class TestEmissionStatus:
                 "fanout span must be emission_status='deferred' — "
                 "AH-PRD-05 has not shipped yet."
             )
+
+
+# ---------------------------------------------------------------------------
+# Retired-pattern guards (§4 of AH-PRD-05-trace-contract-diff.md)
+#
+# The execute_workflow / invoke_pipeline inner-Runner shape was the anti-pattern
+# documented in AH-75 and explicitly named as retired in §4 of the trace-contract
+# diff.  No span carrying either name must ever appear in a supervisor fixture.
+# ---------------------------------------------------------------------------
+
+
+class TestRetiredPatterns:
+    """Lock §4 Retired Patterns: execute_workflow and invoke_pipeline span names
+    must never appear in the supervisor fixture tree.
+
+    These are the inner-Runner anti-patterns that silently discard sub-agent events
+    (the AH-75 defect). Presence in the fixture would signal extractor authors to
+    search for them, which would produce extractor bugs at runtime.
+    """
+
+    def test_no_execute_workflow_span_anywhere(self, fixture_data: dict) -> None:
+        """execute_workflow spans must not appear anywhere in the fixture tree.
+        This span name is a retired inner-Runner anti-pattern per §4 of
+        AH-PRD-05-trace-contract-diff.md."""
+        every_name = [s.get("name", "") for s in _all_spans(fixture_data)]
+        assert "execute_workflow" not in every_name, (
+            "execute_workflow span appeared in the supervisor fixture — "
+            "this is a retired inner-Runner anti-pattern per "
+            "AH-PRD-05-trace-contract-diff.md §4 and must not be used."
+        )
+
+    def test_no_invoke_pipeline_span_anywhere(self, fixture_data: dict) -> None:
+        """invoke_pipeline spans must not appear anywhere in the fixture tree.
+        This span name is a retired inner-Runner anti-pattern per §4 of
+        AH-PRD-05-trace-contract-diff.md."""
+        every_name = [s.get("name", "") for s in _all_spans(fixture_data)]
+        assert "invoke_pipeline" not in every_name, (
+            "invoke_pipeline span appeared in the supervisor fixture — "
+            "this is a retired inner-Runner anti-pattern per "
+            "AH-PRD-05-trace-contract-diff.md §4 and must not be used."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Isolated AgentTool leaf carry-forward (AH-121 re-plan, §3.3 of
+# AH-PRD-05-trace-contract-diff.md)
+#
+# Built-in-tool leaves (google_search, numerical_analyst) stay AgentTool-isolated
+# inside specialists.  AgentTool.run_async drops their inner events (#3984), so
+# no inner grounded-search / code-exec spans appear in the supervisor fixture.
+# This test class locks that boundary so MER-E cannot accidentally start expecting
+# those spans from the supervisor path.
+#
+# The asserted tokens: "AgentTool" and "off-state sink" — stable substrings in
+# the fixture description that acknowledge the carry-forward gap.  Matching
+# substrings (not full sentences) guards against minor wording drift.
+# ---------------------------------------------------------------------------
+
+
+class TestIsolatedAgentToolLeafCarryForward:
+    """Lock the AH-121 re-plan AC #3 boundary.
+
+    The supervisor fixture's scope is coordinator → task_delegation → fanout.
+    Isolated AgentTool leaves (google_search, numerical_analyst) live INSIDE
+    specialists and are owned by the AH-PRD-15 google_search_task_mode_trace.json
+    fixture — they must NOT appear inside the supervisor fixture tree.
+
+    Additionally, the fixture's top-level description must acknowledge the
+    carry-forward gap so MER-E reading the fixture sees it inline.
+    """
+
+    def test_no_google_search_task_mode_leaf_span(self, fixture_data: dict) -> None:
+        """google_search task-mode-leaf spans must not appear in the supervisor
+        fixture.  Those spans live in the AH-PRD-15-owned
+        google_search_task_mode_trace.json fixture — not here."""
+        every_name = [s.get("name", "") for s in _all_spans(fixture_data)]
+        assert "google_search" not in every_name, (
+            "google_search span appeared in the supervisor fixture — "
+            "AgentTool-isolated leaf spans belong in "
+            "google_search_task_mode_trace.json (AH-PRD-15), not here. "
+            "See AH-PRD-05-trace-contract-diff.md §3.3."
+        )
+
+    def test_no_numerical_analyst_task_mode_leaf_span(
+        self, fixture_data: dict
+    ) -> None:
+        """numerical_analyst task-mode-leaf spans must not appear in the supervisor
+        fixture.  Like google_search, this built-in-tool leaf stays AgentTool-isolated
+        and its representation belongs in the AH-PRD-15-owned fixture, not here."""
+        every_name = [s.get("name", "") for s in _all_spans(fixture_data)]
+        assert "numerical_analyst" not in every_name, (
+            "numerical_analyst span appeared in the supervisor fixture — "
+            "AgentTool-isolated leaf spans belong in the AH-PRD-15-owned "
+            "fixture, not here. See AH-PRD-05-trace-contract-diff.md §3.3."
+        )
+
+    def test_fixture_description_acknowledges_agentool_carry_forward(
+        self, fixture_data: dict
+    ) -> None:
+        """The fixture's top-level description must contain the stable tokens
+        'AgentTool' and 'off-state sink' to signal to MER-E readers that the
+        isolated-leaf gap is intentional and documented.
+
+        This is the MER-E carry-forward acknowledgment lock — not a schema
+        constraint on the description format.  Stable tokens are used (not a
+        full-sentence match) to guard against minor wording drift.
+        """
+        description = fixture_data.get("description", "")
+        assert "AgentTool" in description, (
+            "Fixture description must contain the token 'AgentTool' to "
+            "acknowledge the AH-121 isolated-leaf carry-forward gap. "
+            "See AH-PRD-05-trace-contract-diff.md §3.3."
+        )
+        assert "off-state sink" in description, (
+            "Fixture description must contain the token 'off-state sink' to "
+            "acknowledge that leaf usage_metadata is read from the AH-PRD-15 "
+            "off-state sink, not from leaf-level events. "
+            "See AH-PRD-05-trace-contract-diff.md §3.3."
+        )

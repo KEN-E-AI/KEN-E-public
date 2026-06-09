@@ -1768,3 +1768,435 @@ class TestAgentGoogleSearchTaskModeParity:
             "Check AH-115 (specialist resolver) and AH-116 (root reconciler) for "
             "usage_metadata strip on one path but not the other."
         )
+
+
+# ---------------------------------------------------------------------------
+# TestSupervisorTaskModeBillingParity — AH-147 / AH-PRD-05 §7 AC-5 MERGE BLOCKER.
+#
+# Integration-level gate: when a coordinator(mode='chat') dispatches a
+# task-mode specialist via attach_task_subagent (the production per-turn path),
+# the specialist's usage_metadata reaches the outer Runner stream and the
+# billing pipeline counts its tokens identically to the transfer_to_agent
+# (Mode B) baseline. Uses the CH-10 canonical fixture throughout.
+#
+# attach_task_subagent is tested here (not sub_agents at construction) to exercise
+# the _TaskAgentTool-injection path — construct-time tests would not catch the
+# AH-117 silent no-op failure mode where model_post_init creates the tool but
+# post-construction attach does not.
+# ---------------------------------------------------------------------------
+
+
+class _CoordinatorDispatchesTaskSpecialistStubLlm(BaseLlm):
+    """Coordinator(mode='chat') stub: dispatches test_task_specialist on turn 1, finishes on turn 2.
+
+    ADK 2.0: task-mode sub-agents are exposed as _TaskAgentTool with the sub-agent's
+    name as the tool name (same pattern as _SearchCallerStubLlm's google_search dispatch).
+    """
+
+    model: str = "coordinator_dispatches_task_specialist_stub"
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return ["coordinator_dispatches_task_specialist_stub"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self,
+        llm_request: Any,
+        stream: bool = False,
+    ) -> AsyncIterator[LlmResponse]:
+        # Turn 2: function_response present means task specialist has completed
+        has_function_response = any(
+            getattr(part, "function_response", None) is not None
+            for content in (getattr(llm_request, "contents", None) or [])
+            for part in (getattr(content, "parts", None) or [])
+        )
+        if has_function_response:
+            # No usage_metadata intentionally — only the specialist's tokens count
+            content = Content(role="model", parts=[Part.from_text(text="Task complete.")])
+            yield LlmResponse(content=content, turn_complete=True)
+        else:
+            # Turn 1: dispatch the task-mode specialist
+            func_call = FunctionCall(
+                name="test_task_specialist", args={"query": "analyze traffic data"}
+            )
+            content = Content(role="model", parts=[Part(function_call=func_call)])
+            yield LlmResponse(content=content, turn_complete=False)
+
+
+def _make_task_mode_specialist(name: str = "test_task_specialist") -> LlmAgent:
+    """Return a task-mode LlmAgent backed by _CanonicalStubLlm.
+
+    Callers must call pytest.skip() when task_mode_supported() is False before
+    calling this function — the mode='task' constructor raises on ADK 1.34.x.
+    """
+    return LlmAgent(
+        name=name,
+        model=_CanonicalStubLlm(),
+        mode="task",
+        instruction="Task specialist",
+        disallow_transfer_to_parent=True,
+    )
+
+
+async def _capture_supervisor_task_mode_events(
+    specialist: LlmAgent,
+    query: str = "analyze traffic data",
+) -> list[Any]:
+    """Run coordinator(mode='chat') + task-mode specialist via attach_task_subagent.
+
+    Decision 4 (AH-147): uses attach_task_subagent (not sub_agents at construction)
+    to exercise the production per-turn attach path — a construct-time test would
+    not catch the _TaskAgentTool-injection-trap (AH-117 silent no-op failure mode).
+    """
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    from app.adk.agents.agent_factory.sub_agent_attacher import attach_task_subagent
+
+    coordinator = LlmAgent(
+        name="coordinator",
+        model=_CoordinatorDispatchesTaskSpecialistStubLlm(),
+        mode="chat",
+        instruction="Coordinator that dispatches task specialists.",
+        tools=[],
+    )
+    # Production per-turn attach path: appends specialist and injects _TaskAgentTool
+    # so the coordinator LLM can dispatch 'test_task_specialist' via ctx.run_node.
+    attach_task_subagent(coordinator, specialist)
+
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="supervisor_task_mode_gate", user_id="test_user"
+    )
+    runner = Runner(
+        agent=coordinator,
+        app_name="supervisor_task_mode_gate",
+        session_service=session_service,
+    )
+    events: list[Any] = []
+    async for event in runner.run_async(
+        user_id=session.user_id,
+        session_id=session.id,
+        new_message=genai_types.Content(
+            role="user", parts=[genai_types.Part.from_text(text=query)]
+        ),
+    ):
+        events.append(event)
+    return events
+
+
+class TestSupervisorTaskModeBillingParity:
+    """AH-147 / AH-PRD-05 §7 AC-5 MERGE BLOCKER — probe-1 port.
+
+    Verifies that per-task specialist tokens reach SessionTurnAccumulator and
+    extract_billable_tokens identically to the transfer_to_agent baseline.
+
+    AC (c) is the structural guard that prevents a vacuous pass when the
+    _TaskAgentTool injection silently no-ops (the AH-117 trap): at least one
+    'test_task_specialist'-authored event with non-null usage_metadata must appear
+    before the parity assertions run.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("trial", range(10))
+    async def test_task_mode_accumulator_delta_matches_transfer_baseline(
+        self, trial: int
+    ) -> None:
+        """AC-1 (AH-147): supervisor task-mode accumulator delta == transfer_to_agent baseline.
+
+        AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        specialist_b = _make_deterministic_specialist("test_specialist")
+        specialist_task = _make_task_mode_specialist("test_task_specialist")
+
+        supervisor_events = await _capture_supervisor_task_mode_events(specialist_task)
+        mode_b_events = await _capture_mode_b_events(specialist_b)
+
+        # (c) Structural guard: a vacuous run (no task delegation) would leave
+        # both deltas at zero and the parity assertion would pass spuriously.
+        # Fail here with a specific diagnostic before the parity check.
+        specialist_events_with_usage = [
+            e
+            for e in supervisor_events
+            if getattr(e, "author", None) == "test_task_specialist"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+        assert len(specialist_events_with_usage) >= 1, (
+            f"[trial={trial}] No event with author=='test_task_specialist' and "
+            f"usage_metadata found in supervisor turn. "
+            f"Event authors: {[getattr(e, 'author', None) for e in supervisor_events]}. "
+            "attach_task_subagent likely failed to inject _TaskAgentTool — the AH-117 trap. "
+            "AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER"
+        )
+
+        acc_supervisor = SessionTurnAccumulator()
+        for e in supervisor_events:
+            acc_supervisor.add_event(e)
+        delta_supervisor = acc_supervisor.build_delta()
+
+        acc_b = SessionTurnAccumulator()
+        for e in mode_b_events:
+            acc_b.add_event(e)
+        delta_b = acc_b.build_delta()
+
+        assert _increments_equal(
+            delta_supervisor["input_tokens_total"], delta_b["input_tokens_total"]
+        ), (
+            f"[trial={trial}] input_tokens_total mismatch: "
+            f"supervisor={getattr(delta_supervisor['input_tokens_total'], 'value', delta_supervisor['input_tokens_total'])}, "
+            f"transfer_to_agent={getattr(delta_b['input_tokens_total'], 'value', delta_b['input_tokens_total'])}. "
+            f"Expected both == {_EXPECTED_INPUT}. "
+            "AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER"
+        )
+        assert _increments_equal(
+            delta_supervisor["output_tokens_total"], delta_b["output_tokens_total"]
+        ), (
+            f"[trial={trial}] output_tokens_total mismatch: "
+            f"supervisor={getattr(delta_supervisor['output_tokens_total'], 'value', delta_supervisor['output_tokens_total'])}, "
+            f"transfer_to_agent={getattr(delta_b['output_tokens_total'], 'value', delta_b['output_tokens_total'])}. "
+            f"Expected both == {_EXPECTED_OUTPUT}. "
+            "AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER"
+        )
+        assert _increments_equal(
+            delta_supervisor["reasoning_tokens_total"], delta_b["reasoning_tokens_total"]
+        ), (
+            f"[trial={trial}] reasoning_tokens_total mismatch: "
+            f"supervisor={getattr(delta_supervisor['reasoning_tokens_total'], 'value', delta_supervisor['reasoning_tokens_total'])}, "
+            f"transfer_to_agent={getattr(delta_b['reasoning_tokens_total'], 'value', delta_b['reasoning_tokens_total'])}. "
+            f"Expected both == {_EXPECTED_REASONING}. "
+            "AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("trial", range(10))
+    async def test_task_mode_total_billable_matches_canonical_fixture(
+        self, trial: int
+    ) -> None:
+        """AC-1 (b) (AH-147): task-mode billable total == CH-10 canonical fixture.
+
+        AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        specialist_task = _make_task_mode_specialist("test_task_specialist")
+        supervisor_events = await _capture_supervisor_task_mode_events(specialist_task)
+
+        total = sum(
+            extract_billable_tokens(e).total_billable for e in supervisor_events
+        )
+        assert total == _EXPECTED_TOTAL_BILLABLE, (
+            f"[trial={trial}] supervisor task-mode total_billable={total}, "
+            f"expected {_EXPECTED_TOTAL_BILLABLE} (CH-10 canonical fixture). "
+            "AH-147 / AH-PRD-05 §7 AC-5 — MERGE BLOCKER"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestSupervisorFanOutEventBillingParity — AH-147 / AH-PRD-05 §7 AC-2 MERGE BLOCKER.
+#
+# Integration-level gate: when a coordinator fans out to two task-mode specialists
+# (dispatched sequentially via _llm_agent_wrapper's FC for-loop), BOTH specialists'
+# usage_metadata events must reach the outer Runner stream and the aggregate billable
+# total must equal 2x CH-10 canonical fixture.
+#
+# Note on ADK 2.0 dispatch model: _llm_agent_wrapper.run_llm_agent_as_node processes
+# task FCs sequentially (one await _dispatch_task_fc per FC in a for-loop). A single
+# LLM response with multiple FCs would be dispatched one-by-one. The coordinator stub
+# therefore dispatches specialist_a first, then specialist_b after receiving the first
+# function_response — matching the sequential dispatch reality while still testing that
+# BOTH sets of tokens reach the outer stream.
+# ---------------------------------------------------------------------------
+
+
+async def _capture_supervisor_fan_out_events(
+    specialist_a: LlmAgent,
+    specialist_b: LlmAgent,
+) -> list[Any]:
+    """Fan out two task-mode specialists via ctx.run_node + asyncio.gather.
+
+    Directly models PRD §4.3 shape (AH-PRD-05): both specialists run in parallel;
+    their usage_metadata events must reach the outer event queue (probe-4).
+
+    Uses ctx.run_node directly — same as test_parallel_fan_out_integration.py —
+    because the ADK coordinator+Runner approach ends the turn after the first
+    task specialist completes (the outer while-True loop in run_llm_agent_as_node
+    is not re-entered after a task specialist calls complete_task in this topology).
+    """
+    import asyncio
+
+    from google.adk.agents.context import Context
+    from google.adk.agents.invocation_context import InvocationContext
+    from google.adk.agents.run_config import RunConfig
+    from google.adk.sessions import InMemorySessionService
+
+    svc = InMemorySessionService()
+    session = await svc.create_session(
+        app_name="supervisor_fan_out_billing_gate", user_id="test_user"
+    )
+    ic = InvocationContext(
+        invocation_id="fan-out-billing-gate",
+        session=session,
+        session_service=svc,
+        run_config=RunConfig(),
+    )
+    ic._event_queue = asyncio.Queue()
+    ctx = Context(invocation_context=ic, node=None)
+
+    sentinel = object()
+    events: list[Any] = []
+
+    async def _consume() -> None:
+        while True:
+            item, processed_signal = await ic._event_queue.get()
+            if item is sentinel:
+                return
+            events.append(item)
+            await svc.append_event(session=session, event=item)
+            if processed_signal is not None:
+                processed_signal.set()
+
+    consumer_task = asyncio.create_task(_consume())
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(
+                ctx.run_node(specialist_a, node_input={"query": "ga data"}, use_sub_branch=True),
+                ctx.run_node(specialist_b, node_input={"query": "meta data"}, use_sub_branch=True),
+            ),
+            timeout=15,
+        )
+    finally:
+        await ic._event_queue.put((sentinel, None))
+        await consumer_task
+
+    return events
+
+
+class TestSupervisorFanOutEventBillingParity:
+    """AH-147 / AH-PRD-05 §7 AC-2 MERGE BLOCKER — probe-4 port.
+
+    Verifies that fan-out specialist events carry usage_metadata in the outer
+    Runner stream and that the total billable tokens equals 2x CH-10.
+    """
+
+    @pytest.mark.asyncio
+    async def test_fan_out_branch_events_carry_usage_metadata_in_outer_stream(
+        self,
+    ) -> None:
+        """AC-2 (a) (AH-147): each branch event carries usage_metadata in outer stream.
+
+        AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER (probe-4 port)
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        spec_a = _make_task_mode_specialist("task_specialist_a")
+        spec_b = _make_task_mode_specialist("task_specialist_b")
+
+        events = await _capture_supervisor_fan_out_events(spec_a, spec_b)
+
+        events_a = [
+            e
+            for e in events
+            if getattr(e, "author", None) == "task_specialist_a"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+        events_b = [
+            e
+            for e in events
+            if getattr(e, "author", None) == "task_specialist_b"
+            and getattr(e, "usage_metadata", None) is not None
+        ]
+
+        assert len(events_a) >= 1, (
+            f"No event with author=='task_specialist_a' and usage_metadata found. "
+            f"Event authors: {[getattr(e, 'author', None) for e in events]}. "
+            "task_specialist_a usage_metadata not in outer stream (probe-4 broken). "
+            "AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER"
+        )
+        assert len(events_b) >= 1, (
+            f"No event with author=='task_specialist_b' and usage_metadata found. "
+            f"Event authors: {[getattr(e, 'author', None) for e in events]}. "
+            "task_specialist_b usage_metadata not in outer stream (probe-4 broken). "
+            "AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fan_out_accumulator_total_equals_two_canonical_baselines(
+        self,
+    ) -> None:
+        """AC-2 (b) (AH-147): accumulator delta over fan-out events == 2x CH-10.
+
+        AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER (probe-4 port)
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        spec_a = _make_task_mode_specialist("task_specialist_a")
+        spec_b = _make_task_mode_specialist("task_specialist_b")
+
+        events = await _capture_supervisor_fan_out_events(spec_a, spec_b)
+
+        # Filter to specialist events only (exclude coordinator events)
+        specialist_events = [
+            e
+            for e in events
+            if getattr(e, "author", None) in ("task_specialist_a", "task_specialist_b")
+        ]
+
+        acc = SessionTurnAccumulator()
+        for e in specialist_events:
+            acc.add_event(e)
+        delta = acc.build_delta()
+
+        expected_input = 2 * _EXPECTED_INPUT
+        expected_output = 2 * _EXPECTED_OUTPUT
+
+        assert _increments_equal(delta["input_tokens_total"], expected_input), (
+            f"accumulator input_tokens_total="
+            f"{getattr(delta['input_tokens_total'], 'value', delta['input_tokens_total'])} "
+            f"expected {expected_input} (2 x {_EXPECTED_INPUT}). "
+            "AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER (probe-4 port)"
+        )
+        assert _increments_equal(delta["output_tokens_total"], expected_output), (
+            f"accumulator output_tokens_total="
+            f"{getattr(delta['output_tokens_total'], 'value', delta['output_tokens_total'])} "
+            f"expected {expected_output} (2 x {_EXPECTED_OUTPUT}). "
+            "AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER (probe-4 port)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fan_out_billable_total_equals_two_canonical_baselines(
+        self,
+    ) -> None:
+        """AC-2 (c) (AH-147): billable total over fan-out events == 2x CH-10.
+
+        AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER (probe-4 port)
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("mode= field unavailable (ADK 1.34.x strategy deploy tree)")
+
+        spec_a = _make_task_mode_specialist("task_specialist_a")
+        spec_b = _make_task_mode_specialist("task_specialist_b")
+
+        events = await _capture_supervisor_fan_out_events(spec_a, spec_b)
+
+        total = sum(extract_billable_tokens(e).total_billable for e in events)
+        assert total == 2 * _EXPECTED_TOTAL_BILLABLE, (
+            f"fan-out billable total={total}, "
+            f"expected {2 * _EXPECTED_TOTAL_BILLABLE} (2 x {_EXPECTED_TOTAL_BILLABLE}). "
+            "AH-147 / AH-PRD-05 §7 AC-2 — MERGE BLOCKER (probe-4 port)"
+        )
