@@ -328,3 +328,41 @@ class TestCaseInsensitiveSearch:
         assert resp.status_code == 200
         ids = [c["session_id"] for c in resp.json()["items"]]
         assert match_id in ids
+
+
+# ---------------------------------------------------------------------------
+# A flag-read failure must fall back to the GA side-table path, not the legacy
+# ADK path. The legacy path calls VertexAiSessionService.list_sessions(), which
+# 500s in any environment without a live Agent Engine (e.g. CI e2e), which left
+# the chat sidebar empty and timed out the pagination e2e test.
+# ---------------------------------------------------------------------------
+
+
+class TestFlagReadFailureFallsBackToSideTable:
+    def test_flag_eval_outage_serves_side_table_not_legacy_500(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        db = _emulator_client()
+        sid = f"{_PREFIX}_ff_outage"
+        _seed_session(db, sid, updated_at=_NOW)
+
+        # Simulate a transient Firestore outage during flag evaluation: the
+        # is_feature_enabled helper swallows the error and returns its `default`.
+        # With default=True the GA side-table path runs; the pre-fix default=False
+        # routed to the legacy ADK path, which 500s without a live Agent Engine.
+        from src.kene_api.services import feature_flag_service as ff
+
+        async def _boom(self: Any, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("simulated Firestore outage during flag eval")
+
+        monkeypatch.setattr(ff.FeatureFlagService, "evaluate_batch", _boom)
+
+        resp = _get_conversations(client)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # Side-table shape (ListChatSessionsResponse) carries `items`; the legacy
+        # ConversationListResponse carries `conversations`. Assert we got the
+        # side-table path AND that the seeded row is served.
+        assert "items" in body
+        assert sid in [c["session_id"] for c in body["items"]]

@@ -3498,7 +3498,14 @@ async def list_conversations(
             organization_id=None,
             account_id=account_id,
         )
-        if await is_feature_enabled("chat_v2_enabled", ctx, default=False):
+        # default=True: chat_v2 is GA, and this is a READ path. If the flag
+        # service can't be read (transient Firestore glitch), fall back to the
+        # GA side-table path rather than the legacy ADK path — the latter calls
+        # VertexAiSessionService.list_sessions(), which 500s in any environment
+        # without a live Agent Engine (e.g. CI e2e). This differs deliberately
+        # from the write side-table endpoint, which fails CLOSED (default=False)
+        # so a flag-read outage can't admit an unverified write.
+        if await is_feature_enabled("chat_v2_enabled", ctx, default=True):
             # --- Side-table branch (chat_v2_enabled = true) ---
             # Resolve effective account_id: param → first accessible account.
             # accessible_accounts only returns accounts with explicit permissions;
