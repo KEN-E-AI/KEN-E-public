@@ -133,6 +133,7 @@ This component **does not** depend on the Data Management migration (DM-PRD-00�
 | [UI](../ui/README.md) | UI-PRD-06's `VITE_EXTENSIONS_ENABLED` one-off env flag can migrate to a feature flag as a follow-up (non-blocking — UI team owns the migration timing). |
 | [Agentic Harness](../agentic-harness/README.md) | AH-PRD-02's Agent Factory can gate the factory-driven build path behind a flag during the cut-over from hardcoded specialists. Non-blocking. |
 | Engineering incident response | Any shipped feature can be killed in ≤60 s via `is_active=false`. Documented in `api/CLAUDE.md` runbook section. |
+| [Data Management](../data-management/README.md) | DM-PRD-11 is the canonical concrete case of §7.6 — the `invite_only_signup` flag is a clean global boolean (no targeting), and the org-creation predicate (`caller_may_onboard`) enforces the rule. Pattern: flag toggles whether the predicate runs; the predicate decides. |
 
 ## 4. Design System References
 

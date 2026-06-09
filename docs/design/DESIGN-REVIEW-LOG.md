@@ -2149,4 +2149,43 @@ Decision (PO, 2026-06-08): **keep the hardened role-only server gate** (the more
 
 ---
 
+## Review 49 — DM-PRD-11: Early Release signup gate — flag toggles, org-creation enforces, never the Firebase call
+
+**Date:** 2026-06-09
+**Scope:** Close out DM-PRD-11 by recording the two design decisions that survive the PRD and form conventions for future features: (1) the `invite_only_signup` feature flag is a clean global boolean with no targeting — the security decision lives in `caller_may_onboard`, not in flag targeting; (2) the security boundary is `POST /api/v1/organizations/`, not the Firebase signup, because Firebase Identity Platform `beforeUserCreated` is not configured and an org-less Firebase user is inert.
+
+### Why
+
+DM-PRD-11 introduced a new convention: a feature flag as an on/off switch that controls whether a server-side security predicate runs, but does not itself make the security decision. This tension with `feature-flags/README.md` §7.6 ("flags must not own security-sensitive decisions") needed explicit documentation so future flag owners follow the same pattern rather than putting authorization logic inside flag targeting rules.
+
+The choice of enforcement point (org creation, not Firebase signup) also required recording: `beforeUserCreated` blocking functions depend on Firebase Identity Platform / GCIP + a Cloud Functions deploy lane, neither of which is configured. A pragmatic gate at the only authenticated server write that produces a usable account (`POST /organizations/`) achieves the same isolation without the platform dependency — an org-less Firebase user can hold a Firebase Auth record but cannot read or write any KEN-E data.
+
+Cross-reference: [Review 48](#review-48--dm-prd-11-onboarding-gate-bypasses-on-super_admin-role-only-email-domain-bypass-removed) (2026-06-08) recorded the related decision that the bypass is role-only (`is_super_admin`), not email-domain-based.
+
+### Decision
+
+- **Feature flag (`invite_only_signup`):** registered as a clean global boolean with `default_enabled=false` (ships dark) and no targeting rules. A super-admin flips `default_enabled → true` to enable invite-only globally. The flag evaluator returns `default=False` on any service error (fail-open for signups).
+- **Security predicate (`caller_may_onboard`):** four clauses evaluated in order — (1) `is_super_admin` role bypass; (2) existing org membership; (3) pending invitation for the caller's email; (4) valid, active, unexpired shared Early Release code. The predicate lives in `api/src/kene_api/routers/organizations.py`. The flag controls whether the predicate runs; the predicate decides.
+- **Enforcement point:** `POST /api/v1/organizations/` only. Firebase signup (`createUserWithEmailAndPassword` / Google `signInWithPopup`) is not gated — this is intentional and permanent given the current platform configuration.
+- **Data artifacts:** `app_config/early_release` (global singleton, plaintext code — not an account-scoped resource per Shape B, analogous to `notifications` / `usage_records` Shape C carve-outs); `early_release_redemptions/{user_id}` (record-only, keyed by `user_id` for idempotency).
+- **Brute-force resistance:** rate-limited public `POST /early-release/validate` (IP-keyed `early_release` limiter, `fail_open=False`) + `secrets.compare_digest` constant-time compare + uniform `{valid: false}` response for wrong/expired/inactive codes.
+
+### Consequences
+
+- A non-super-admin user who creates a Firebase Auth account but never completes org creation holds an inert identity — no KEN-E data, no session, no org. This is the accepted trade-off of the pragmatic gate; an optional cleanup job for aged doc-less auth users is out of scope for DM-PRD-11.
+- Future features that want a "soft launch / ring-fence" pattern should follow this model: register a clean global boolean flag with no targeting, put the decision in a server-side predicate, keep the flag evaluation fail-open, and document the pattern in this log.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/components/data-management/README.md` | §2.2 Data Flow — added `app_config/early_release` + `early_release_redemptions/{user_id}`; §3.2 Depended On By — added Feature Flags + UI rows; §5.1 Projects — added DM-PRD-11 row |
+| `docs/design/components/feature-flags/README.md` | §3.2 Depended On By — added Data Management row citing DM-PRD-11 as concrete §7.6 case |
+| `docs/design/components/ui/README.md` | §3.2 Depended On By — added Data Management row citing UI-60/61/62 |
+| `docs/design/components/PROJECT-PLANNER.md` | Added DM-PRD-11 row (status: shipped, release: 1: Foundation) |
+| `api/tests/integration/test_early_release_invariants.py` | New — six end-to-end invariant tests for the §7 ACs |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 49) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

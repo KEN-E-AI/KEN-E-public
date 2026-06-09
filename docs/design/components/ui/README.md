@@ -137,6 +137,7 @@ Every user-facing capability in KEN-E renders through this component's shell and
 | [Knowledge Graph](../knowledge-graph/README.md) | KG-PRD-03's read tools back the redesigned Knowledge section owned by UI-PRD-05. |
 | [Skills](../skills/README.md) | SK-PRD-03 (Skills authoring UI) lives inside UI-PRD-03's `WorkflowsLayout`; SK-PRD-04's agent-builder controls live inside `/workflows/agents`. |
 | [Billing](../billing/README.md) | BL-PRD-04 mounts the `OrganizationStatusBanner` in `LayoutC` and renders the `SubscriptionTab` inside `LayoutSettings` (UI-PRD-02's settings sub-nav). |
+| [Data Management](../data-management/README.md) | UI-60 (signup-page invite-only states), UI-61 (`/admin/early-release` super-admin page), and UI-62 (code-forwarding through `/create-organization`) ship the frontend half of DM-PRD-11's Early Release signup gate. All three mount inside the existing shell and reuse the Feature Flags admin-page + Settings registry patterns — no new shell primitives. |
 
 ## 4. Design System References
 

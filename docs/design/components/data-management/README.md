@@ -85,6 +85,8 @@ industry_keywords, industry-templates, subscription-plans,
 strategy_doc_guides, security_audit_logs, revoked_tokens,
 revoked_tokens_all, oauth_states, integration_credentials,
 optimization_recommendations, health_check
+app_config/early_release                                         # DM-PRD-11 — singleton Early Release access-code config (plaintext)
+early_release_redemptions/{user_id}                              # DM-PRD-11 — keyed by user_id, idempotent
 ```
 
 After DM-PRD-07 ships, `users/{user_id}.permissions.organizations.*` and `users/{user_id}.permissions.account_permissions.*` field trees are migrated into the new `members` subcollections (org-scoped + account-scoped) and removed from the user doc.
@@ -147,6 +149,8 @@ This component publishes no public HTTP API. Its contracts are structural and co
 | [Data Pipeline](../data-pipeline/README.md) | Account-scoped `data_pipeline_jobs` overlay catalog + `data_pipeline_runs` under `accounts/{account_id}/...`. Audits go to `accounts/{account_id}/data_pipeline_audit/*`. |
 | [Chat](../chat/README.md) | Side-table at `accounts/{account_id}/chat_sessions/*` + nested `artifacts/*`. Per-user categories at `users/{user_id}/chat_categories/*` (one of five user-scoped subcollections, alongside `notification_status`, `preferences`, `notifications`, and `security`). DM-PRD-05 user-deletion sweep cleans the user-scoped collection. |
 | [Knowledge Graph](../knowledge-graph/README.md) | KG-PRD-04 (session-end automation) fires through an `is_system=true` project plan — consumes Shape B transitively via Project Tasks and Automations. |
+| [Feature Flags](../feature-flags/README.md) | DM-PRD-11 registered the `invite_only_signup` flag as a clean global boolean with no targeting rules. The flag is on/off only — the security decision lives in the `caller_may_onboard` predicate, not in flag targeting. Concrete case of `feature-flags/README.md` §7.6. |
+| [UI](../ui/README.md) | UI-60 (signup-page invite-only states), UI-61 (`/admin/early-release` super-admin page), and UI-62 (code-forwarding through `/create-organization`) ship the frontend half of DM-PRD-11's Early Release signup gate. All three mount inside the existing shell and reuse the Feature Flags admin-page + Settings registry patterns. |
 | Strategy / Analytics / Monitoring / Alerts (existing subsystems) | Every account-scoped read/write in `strategy_agent/`, `monitoring_sync_service.py`, and `alert_manager.py` migrates to Shape B in DM-PRD-01, DM-PRD-02, and DM-PRD-04. |
 
 ## 4. Design System References
@@ -172,6 +176,7 @@ The component's work is split across project PRDs under [`projects/`](./projects
 | [DM-PRD-08](./projects/DM-PRD-08-production-cutover.md) | Production Cutover | Complete | 1 d | DM-PRD-06 | — |
 | [DM-PRD-09](./projects/DM-PRD-09-regional-cell-foundation.md) | Regional-Cell Foundation | Ready to start | 4–5 d | DM-PRD-08 | DR-PRD-01–DR-PRD-10 (residency program) |
 | [DM-PRD-10](./projects/DM-PRD-10-cross-cell-admin-region-migration.md) | Cross-Cell Admin & Region Migration | Ready to start | 4–5 d | DM-PRD-09 | — |
+| [DM-PRD-11](./projects/DM-PRD-11-early-release-signup-gate.md) | Early Release Signup Gate | Complete | 4–5 d | — | — |
 
 **DM-PRD-09 and DM-PRD-10 are not part of the Shape B migration chain below.** They belong to the data-residency program — a separate cross-component workstream tracked by the "Data Residency (US + EU)" Linear Initiative and spec'd by [`../../data-residency-architecture.md`](../../data-residency-architecture.md). DM-PRD-09 (keystone) depends only on the production cutover and blocks every per-component residency slice (§7.8); DM-PRD-10 (cross-cell admin + supervised region migration, phase 2) builds on DM-PRD-09.
 
