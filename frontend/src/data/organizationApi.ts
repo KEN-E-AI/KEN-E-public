@@ -127,6 +127,7 @@ export async function createOrganization(orgData: {
   subscription: Organization["subscription"];
   billing: Organization["billing"];
   team: Organization["team"];
+  access_code?: string | null;
 }): Promise<Organization> {
   return apiCall<Organization>("/api/v1/organizations/", {
     method: "POST",

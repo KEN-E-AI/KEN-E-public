@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
+import { EARLY_RELEASE_CODE_STORAGE_KEY } from "@/data/earlyReleaseApi";
 import { getDefaultPlan } from "@/data/subscriptionPlansApi";
 import { useToast } from "@/hooks/use-toast";
 import type { Account, Organization } from "@/data/organizationTypes";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Logo } from "@/components/branding/Logo";
-import { Building2 } from "lucide-react";
+import { Building2, KeyRound } from "lucide-react";
 
 type NewOrgFormData = {
   organization_name: string;
@@ -47,6 +48,7 @@ export function CreateOrganization() {
     child_organizations: [],
   });
   const [isCreatingOrganization, setIsCreatingOrganization] = useState(false);
+  const [earlyAccessRequired, setEarlyAccessRequired] = useState(false);
 
   const validateOrganizationData = (
     formData: NewOrgFormData,
@@ -203,11 +205,22 @@ export function CreateOrganization() {
       return;
     }
 
+    const accessCode = sessionStorage.getItem(EARLY_RELEASE_CODE_STORAGE_KEY);
+
     setIsCreatingOrganization(true);
     try {
       const payload = await generateOrganizationPayload(newOrgFormData);
 
-      const newOrg = await createOrganization(payload);
+      const newOrg = await createOrganization({
+        ...payload,
+        // Omit the field entirely when no code is stashed so ordinary
+        // signups do not send access_code: null on every request.
+        ...(accessCode !== null && { access_code: accessCode }),
+      });
+
+      // Clear the stash only after a confirmed successful creation so a
+      // transient error leaves the code available for a retry.
+      sessionStorage.removeItem(EARLY_RELEASE_CODE_STORAGE_KEY);
 
       updateLocalUserState(newOrg.organization_id);
       updateOrganizationMetadata(newOrg);
@@ -218,11 +231,70 @@ export function CreateOrganization() {
 
       navigate("/settings/organization");
     } catch (error) {
-      handleCreationError(error);
+      // "early_access_required" matches the detail string from DM-112's 403
+      // response (source of truth: DM-PRD-11 §4.3 / §6). If that string ever
+      // changes server-side, this branch silently falls through to the generic
+      // toast — grep "early_access_required" to find both sides.
+      if (error instanceof Error && error.message === "early_access_required") {
+        // Clear the stash — the banner offers no retry path, so the code
+        // has no further utility here. Clearing prevents it from bleeding to
+        // a different user if the same tab is later reused.
+        sessionStorage.removeItem(EARLY_RELEASE_CODE_STORAGE_KEY);
+        setEarlyAccessRequired(true);
+      } else {
+        handleCreationError(error);
+      }
     } finally {
       setIsCreatingOrganization(false);
     }
   };
+
+  if (earlyAccessRequired) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="w-full max-w-md animate-page-enter">
+          <div className="text-center mb-8">
+            <div className="mb-2 flex justify-center animate-logo-float">
+              <Logo size="2xl" variant="icon" />
+            </div>
+          </div>
+
+          <div
+            className="h-[3px] rounded-full mb-6 mx-auto w-[80%]"
+            style={{
+              background:
+                "linear-gradient(90deg, #3B82F6, #6366F1, #2EC4B6, #F59E0B)",
+            }}
+          />
+
+          <div
+            data-testid="early-access-banner"
+            className="p-6 rounded-[var(--radius-lg)] bg-gradient-to-r from-[var(--color-violet-500)]/10 to-[var(--color-blue-500)]/10 border-2 border-[var(--color-violet-500)]/30 shadow-lg"
+          >
+            <div className="flex items-start gap-4">
+              <div className="size-12 rounded-[var(--radius-md)] bg-gradient-to-br from-[var(--color-violet-500)] to-[var(--color-blue-500)] flex items-center justify-center shrink-0">
+                <KeyRound className="size-6 text-white" aria-hidden="true" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold mb-1">Early access required</p>
+                <p className="text-sm text-[var(--color-text-secondary)] mb-4">
+                  KEN-E is currently invite-only. Your access code could not be
+                  used to create this workspace. Please contact support to get
+                  started.
+                </p>
+                <a
+                  href="mailto:support@ken-e.com"
+                  className="text-sm text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors underline"
+                >
+                  Contact Support
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4 relative overflow-hidden">
