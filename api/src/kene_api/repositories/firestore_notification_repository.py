@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from google.cloud import firestore
-from google.cloud.firestore_v1.field_path import FieldPath
 
 from ..models.kene_models import (
     Notification,
@@ -194,7 +193,16 @@ class FirestoreNotificationRepository(NotificationRepository):
         user_id: str,
         notification_ids: list[str],
     ) -> dict[str, dict[str, Any]]:
-        """Get user's statuses for specific notifications from Firestore."""
+        """Get user's statuses for specific notifications from Firestore.
+
+        Reads the status docs directly by reference via ``get_all`` rather than
+        a ``document_id() in [...]`` filter: Firestore rejects bare string IDs
+        in a ``__key__`` filter ("__key__ filter value must be a Key"), and
+        ``get_all`` is unbounded (no 10-element ``in`` limit) and needs no index.
+        """
+        if not notification_ids:
+            return {}
+
         status_collection = (
             self.db.collection("users")
             .document(user_id)
@@ -202,15 +210,10 @@ class FirestoreNotificationRepository(NotificationRepository):
         )
 
         def _fetch_all_statuses() -> dict[str, dict[str, Any]]:
+            refs = [status_collection.document(nid) for nid in notification_ids]
             statuses: dict[str, dict[str, Any]] = {}
-            for i in range(0, len(notification_ids), 10):
-                batch_ids = notification_ids[i : i + 10]
-                docs = status_collection.where(
-                    filter=firestore.FieldFilter(
-                        FieldPath.document_id(), "in", batch_ids
-                    )
-                ).stream()
-                for doc in docs:
+            for doc in self.db.get_all(refs):
+                if doc.exists:
                     statuses[doc.id] = doc.to_dict()
             return statuses
 
@@ -231,6 +234,7 @@ class FirestoreNotificationRepository(NotificationRepository):
         )
 
         update_data: dict[str, str] = {
+            "notification_id": notification_id,
             "status": status.value,
             "updated_at": datetime.now().isoformat(),
         }
@@ -240,7 +244,10 @@ class FirestoreNotificationRepository(NotificationRepository):
         elif status == NotificationStatus.ARCHIVED:
             update_data["archived_at"] = datetime.now().isoformat()
 
-        await asyncio.to_thread(status_ref.update, update_data)
+        # Statuses are created lazily, so the doc usually does not exist on the
+        # user's first interaction. ``set(merge=True)`` creates-or-merges; a
+        # plain ``update`` 404s ("no entity to update") on the first mark-read.
+        await asyncio.to_thread(status_ref.set, update_data, merge=True)
 
     async def get_user_preferences(
         self, user_id: str
