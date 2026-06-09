@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from src.kene_api.chat.side_table import (
     ChatSessionSideTableService,
     _doc_path,
@@ -365,3 +368,327 @@ class TestRecomputeSearchText:
             "CATEGORY",
         )
         assert result == "title category summary"
+
+
+# ---------------------------------------------------------------------------
+# resolve_session_for_user — unit tests (CH-70)
+# ---------------------------------------------------------------------------
+
+
+def _make_adk_session(state: dict) -> MagicMock:
+    sess = MagicMock()
+    sess.state = state
+    return sess
+
+
+def _make_session_service_mock(
+    state: dict | None = None,
+    *,
+    raises: Exception | None = None,
+    return_none: bool = False,
+) -> MagicMock:
+    svc = MagicMock()
+    if raises is not None:
+        svc.get_session = AsyncMock(side_effect=raises)
+    elif return_none:
+        svc.get_session = AsyncMock(return_value=None)
+    else:
+        session = _make_adk_session(state if state is not None else {"account_id": "acc_1"})
+        svc.get_session = AsyncMock(return_value=session)
+    return svc
+
+
+async def _org_resolver_ok(account_id: str) -> str | None:
+    return "org_1"
+
+
+async def _org_resolver_none(account_id: str) -> str | None:
+    return None
+
+
+async def _drain_tasks(coro: Any) -> Any:
+    """Run a coroutine and drain all tasks it schedules (e.g., heal tasks).
+
+    resolve_session_for_user fires a heal task via asyncio.create_task. Without
+    draining, asyncio.run() cancels the task before it executes and assertions
+    on its side-effects (logs, create() calls) would be unreliable.
+    """
+    result = await coro
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+    return result
+
+
+class TestResolveSessionForUser:
+    """Unit tests for ChatSessionSideTableService.resolve_session_for_user (CH-70)."""
+
+    # (a) Side-table hit — returns the existing row, no ADK call.
+    def test_fast_path_returns_existing_row(self) -> None:
+        row = _base_row(session_id="sess_1", user_id="user_1")
+        db = _make_collection_group_result([row])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(state={"account_id": "acc_1"})
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_1",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is not None
+        assert result.session_id == "sess_1"
+        assert result.account_id == "acc_1"
+        # ADK get_session should NOT have been called
+        session_service.get_session.assert_not_called()
+
+    # (b) Side-table miss + ADK has session → returns synthesised metadata with account_id
+    #     AND the heal task calls create() with the resolved org_id.
+    def test_fallback_returns_synthesised_metadata_with_account_id(self) -> None:
+        db = _make_collection_group_result([])  # side-table miss
+        svc = ChatSessionSideTableService(db=db)
+        # Stub out create so the heal task doesn't hit Firestore
+        svc.create = MagicMock(return_value=MagicMock())
+        session_service = _make_session_service_mock(state={"account_id": "acc_adk"})
+
+        result = asyncio.run(
+            _drain_tasks(
+                svc.resolve_session_for_user(
+                    user_id="user_1",
+                    session_id="sess_adk",
+                    session_service=session_service,
+                    app_name="ken_e_chatbot",
+                    org_id_resolver=_org_resolver_ok,
+                )
+            )
+        )
+
+        assert result is not None
+        assert result.account_id == "acc_adk"
+        assert result.session_id == "sess_adk"
+        assert result.user_id == "user_1"
+        session_service.get_session.assert_called_once()
+        # Heal task should have called create() — verifies the heal actually ran
+        svc.create.assert_called_once()
+
+    # (c) Side-table miss + ADK has no session → returns None.
+    def test_fallback_returns_none_when_adk_has_no_session(self) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(return_none=True)
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_missing",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None
+
+    # (d) Side-table miss + ADK has session but state lacks account_id → returns None.
+    def test_fallback_returns_none_when_state_has_no_account_id(self) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(state={})  # no account_id
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_no_account",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None
+
+    # (d2) Path-traversal guard: account_id containing "/" is rejected.
+    def test_fallback_returns_none_when_account_id_contains_path_separator(self) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        # Crafted account_id that could be used for Firestore path traversal
+        session_service = _make_session_service_mock(
+            state={"account_id": "acc_victim/../injected"}
+        )
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_traversal",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None
+
+    # (e) Heal-write failure → still returns synthesised metadata and emits WARN.
+    def test_fallback_returns_metadata_even_when_heal_write_fails(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        svc.create = MagicMock(side_effect=RuntimeError("Firestore unavailable"))
+        session_service = _make_session_service_mock(state={"account_id": "acc_heal_fail"})
+
+        with caplog.at_level("WARNING"):
+            result = asyncio.run(
+                _drain_tasks(
+                    svc.resolve_session_for_user(
+                        user_id="user_1",
+                        session_id="sess_heal_fail",
+                        session_service=session_service,
+                        app_name="ken_e_chatbot",
+                        org_id_resolver=_org_resolver_ok,
+                    )
+                )
+            )
+
+        assert result is not None
+        assert result.account_id == "acc_heal_fail"
+        # heal-write failure is logged as a warning; message contains "self-heal"
+        heal_warns = [r.getMessage() for r in caplog.records if "self-heal" in r.getMessage()]
+        assert any("failed" in m or "skipped" in m for m in heal_warns)
+
+    # (f) ADK raises an exception → returns None (no error propagated).
+    def test_fallback_returns_none_when_adk_raises(self) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(raises=ValueError("ADK error"))
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_error",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None
+
+    # (g) No org_id_resolver → heal is skipped but synthesised metadata is returned.
+    def test_no_resolver_skips_heal_but_returns_metadata(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        svc.create = MagicMock()
+        session_service = _make_session_service_mock(state={"account_id": "acc_no_resolver"})
+
+        with caplog.at_level("WARNING"):
+            result = asyncio.run(
+                _drain_tasks(
+                    svc.resolve_session_for_user(
+                        user_id="user_1",
+                        session_id="sess_no_resolver",
+                        session_service=session_service,
+                        app_name="ken_e_chatbot",
+                        # No org_id_resolver — heal is skipped
+                    )
+                )
+            )
+
+        assert result is not None
+        assert result.account_id == "acc_no_resolver"
+        # create should NOT have been called since resolver is None
+        svc.create.assert_not_called()
+        # A warning should be emitted for the skip; message contains "self-heal"
+        heal_warns = [r.getMessage() for r in caplog.records if "self-heal" in r.getMessage()]
+        assert len(heal_warns) >= 1
+
+    # (h) Org resolver returns None → heal is skipped but synthesised metadata is returned.
+    def test_none_org_id_skips_heal_returns_metadata(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        svc.create = MagicMock()
+        session_service = _make_session_service_mock(state={"account_id": "acc_no_org"})
+
+        with caplog.at_level("WARNING"):
+            result = asyncio.run(
+                _drain_tasks(
+                    svc.resolve_session_for_user(
+                        user_id="user_1",
+                        session_id="sess_no_org",
+                        session_service=session_service,
+                        app_name="ken_e_chatbot",
+                        org_id_resolver=_org_resolver_none,
+                    )
+                )
+            )
+
+        assert result is not None
+        assert result.account_id == "acc_no_org"
+        svc.create.assert_not_called()
+        # A warning should be emitted for the skip; message contains "self-heal"
+        heal_warns = [r.getMessage() for r in caplog.records if "self-heal" in r.getMessage()]
+        assert len(heal_warns) >= 1
+
+    # (i) Tombstoned side-table row present + ADK still has the session →
+    #     deny (None) and do NOT fall back to ADK (CH-70 leak guard).
+    def test_tombstoned_row_denies_without_adk_fallback(self) -> None:
+        row = _base_row(deleted_at=datetime.now(timezone.utc))
+        db = _make_collection_group_result([row])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(state={"account_id": "acc_1"})
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_1",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None
+        # The ADK fallback must never run for a tombstoned session, or a
+        # soft-deleted conversation would re-surface during the grace window.
+        session_service.get_session.assert_not_called()
+
+    # (j) ADK get_session RAISES ValueError on cross-user access (google-adk
+    #     2.0.0 does NOT return None). The broad except MUST convert it to None
+    #     (→ 404); this pins the security boundary against a future except-narrow.
+    def test_resolve_denies_cross_user_when_adk_raises_value_error(self) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(
+            raises=ValueError("Session sess_x does not belong to user user_1.")
+        )
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_x",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None
+
+    # (k) Hardening: a non-str account_id in ADK state must not raise (the
+    #     path-traversal guard would TypeError on ``"/" in <int>``) — return None.
+    def test_fallback_returns_none_when_account_id_not_str(self) -> None:
+        db = _make_collection_group_result([])
+        svc = ChatSessionSideTableService(db=db)
+        session_service = _make_session_service_mock(state={"account_id": 123})
+
+        result = asyncio.run(
+            svc.resolve_session_for_user(
+                user_id="user_1",
+                session_id="sess_bad_account",
+                session_service=session_service,
+                app_name="ken_e_chatbot",
+            )
+        )
+
+        assert result is None

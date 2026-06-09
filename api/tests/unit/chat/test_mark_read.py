@@ -13,7 +13,7 @@ References: CH-PRD-02 §5.5, §6, §7 AC-7.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -95,11 +95,16 @@ class TestMarkConversationRead:
         user_id: str = "user_1",
         limiter: MarkReadRateLimiter | None = None,
     ) -> MarkReadResponse:
-        """Helper: run the handler with mocked side-table service and limiter."""
+        """Helper: run the handler with mocked side-table service and limiter.
+
+        ``meta`` is what ``resolve_session_for_user`` returns — None for 404,
+        a ChatSessionMetadata for the happy path.
+        """
         from src.kene_api.routers import chat as chat_module
 
         fake_svc = MagicMock()
-        fake_svc.find_session_for_user.return_value = meta
+        # resolve_session_for_user is async — use AsyncMock.
+        fake_svc.resolve_session_for_user = AsyncMock(return_value=meta)
         fake_svc.update_from_delta.return_value = None
 
         user_ctx = _make_user_context(user_id=user_id)
@@ -149,7 +154,7 @@ class TestMarkConversationRead:
         meta = _make_meta(last_viewed_at=recent)
 
         fake_svc = MagicMock()
-        fake_svc.find_session_for_user.return_value = meta
+        fake_svc.resolve_session_for_user = AsyncMock(return_value=meta)
         _limiter = MarkReadRateLimiter(max_requests=1000, window_seconds=60)
         user_ctx = _make_user_context()
 
@@ -190,7 +195,7 @@ class TestMarkConversationRead:
 
         meta = _make_meta(last_viewed_at=None)
         fake_svc = MagicMock()
-        fake_svc.find_session_for_user.return_value = meta
+        fake_svc.resolve_session_for_user = AsyncMock(return_value=meta)
         _limiter = MarkReadRateLimiter(max_requests=1000, window_seconds=60)
         user_ctx = _make_user_context()
 
@@ -221,6 +226,42 @@ class TestMarkConversationRead:
         )
         assert "last_viewed_at" in delta
         assert "updated_at" in delta
+
+    def test_returns_200_when_update_raises_not_found(self) -> None:
+        """CH-70: a session resolved via the ADK fallback has no side-table row
+        yet, so update() raises NotFound. The handler must still return 200
+        (best-effort, deferred to heal), not propagate a 500."""
+        from google.cloud.exceptions import NotFound
+        from src.kene_api.routers import chat as chat_module
+
+        # last_viewed_at=None so the 5s dedup is skipped and the write is attempted.
+        meta = _make_meta(last_viewed_at=None)
+        fake_svc = MagicMock()
+        fake_svc.resolve_session_for_user = AsyncMock(return_value=meta)
+        fake_svc.update_from_delta = MagicMock(side_effect=NotFound("missing"))
+        _limiter = MarkReadRateLimiter(max_requests=1000, window_seconds=60)
+        user_ctx = _make_user_context()
+
+        import asyncio
+
+        async def _call() -> MarkReadResponse:
+            with (
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=fake_svc
+                ),
+                patch.object(chat_module, "mark_read_limiter", _limiter),
+            ):
+                from src.kene_api.routers.chat import mark_conversation_read
+
+                return await mark_conversation_read(
+                    session_id="sess_1",
+                    user_context=user_ctx,
+                )
+
+        resp = asyncio.run(_call())
+        # 200 with a fresh stamp, despite the missing row.
+        assert isinstance(resp.last_viewed_at, datetime)
+        fake_svc.update_from_delta.assert_called_once()
 
     def test_429_when_rate_limit_exceeded(self) -> None:
         """61st call in window raises 429 before reaching the side-table."""

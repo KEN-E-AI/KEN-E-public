@@ -194,3 +194,54 @@ class TestMarkReadEndpointIntegration:
             self._run_handler()
 
         assert exc_info.value.status_code == 404
+
+    def test_200_from_adk_fallback_when_side_table_missing(self) -> None:
+        """CH-70: no side-table row, but ADK has the session → mark-read returns
+        200 (best-effort stamp), not 500. update() on the absent row raises
+        NotFound, which the handler swallows and defers to the heal task."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, PropertyMock
+
+        from src.kene_api.auth.models import UserContext
+        from src.kene_api.chat.mark_read_limiter import MarkReadRateLimiter
+        from src.kene_api.chat.side_table import ChatSessionSideTableService
+        from src.kene_api.routers import chat as chat_module
+
+        # No _seed_session — the side-table row is absent (setup_method deleted it).
+        adk_session = MagicMock()
+        adk_session.state = {"account_id": _ACCOUNT_ID}
+        mock_session_service = MagicMock()
+        mock_session_service.get_session = AsyncMock(return_value=adk_session)
+
+        svc = ChatSessionSideTableService(db=self.db)
+        limiter = MarkReadRateLimiter(max_requests=1000, window_seconds=60)
+        user_ctx = UserContext(
+            user_id=_USER_ID,
+            email="test@example.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+
+        async def _call() -> Any:
+            with (
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=svc
+                ),
+                patch.object(chat_module, "mark_read_limiter", limiter),
+                patch.object(
+                    type(chat_module.agent_client),
+                    "session_service",
+                    new_callable=PropertyMock,
+                    return_value=mock_session_service,
+                ),
+            ):
+                from src.kene_api.routers.chat import mark_conversation_read
+
+                return await mark_conversation_read(
+                    session_id=_SESSION_ID,
+                    user_context=user_ctx,
+                )
+
+        resp = asyncio.run(_call())
+        # 200 with a fresh stamp despite the absent (synthesized) row.
+        assert resp.last_viewed_at is not None

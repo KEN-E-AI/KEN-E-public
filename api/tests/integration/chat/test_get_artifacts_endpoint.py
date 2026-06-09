@@ -195,7 +195,118 @@ class TestGetArtifactsEndpointIntegration:
         assert resp.items[0].artifact_index.artifact_id == "art_newer"
         assert resp.items[1].artifact_index.artifact_id == "art_older"
 
-    def test_404_when_session_missing_from_side_table(self) -> None:
+    def test_200_from_adk_fallback_when_side_table_missing(self) -> None:
+        """Returns 200 via ADK fallback when side-table row is missing but ADK has the session."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import chat as chat_module
+
+        # No side-table row seeded — artifact subcollection also empty.
+        # ADK session mock has account_id in state.
+        adk_session = MagicMock()
+        adk_session.state = {"account_id": _ACCOUNT_ID}
+        mock_session_service = MagicMock()
+        mock_session_service.get_session = AsyncMock(return_value=adk_session)
+
+        import asyncio
+
+        from src.kene_api.auth.models import UserContext
+        from src.kene_api.chat.side_table import ChatSessionSideTableService
+
+        svc = ChatSessionSideTableService(db=self.db)
+        mock_storage = _make_mock_storage_client()
+        user_ctx = UserContext(
+            user_id=_USER_ID,
+            email="test@example.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+
+        from unittest.mock import PropertyMock
+
+        async def _call() -> Any:
+            with (
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=svc
+                ),
+                patch.object(chat_module, "WEAVE_AVAILABLE", False),
+                patch.object(
+                    type(chat_module.agent_client),
+                    "session_service",
+                    new_callable=PropertyMock,
+                    return_value=mock_session_service,
+                ),
+                patch(
+                    "src.kene_api.chat.artifacts._get_storage_client",
+                    return_value=mock_storage,
+                ),
+            ):
+                from src.kene_api.routers.chat import get_session_artifacts
+
+                return await get_session_artifacts(
+                    session_id=_SESSION_ID,
+                    user_context=user_ctx,
+                )
+
+        resp = asyncio.run(_call())
+        assert resp.items == []  # empty artifacts — not an error
+
+    def test_404_for_tombstoned_session_even_when_adk_has_it(self) -> None:
+        """CH-70: a soft-deleted side-table row returns 404 even when ADK still
+        has the session — the fallback must NOT re-expose deleted artifacts
+        during the orphan-scan grace window."""
+        import asyncio
+        from unittest.mock import AsyncMock, PropertyMock
+
+        from fastapi import HTTPException
+        from src.kene_api.auth.models import UserContext
+        from src.kene_api.chat.side_table import ChatSessionSideTableService
+        from src.kene_api.routers import chat as chat_module
+
+        # Tombstoned side-table row, but ADK still has the session.
+        _seed_session(self.db, deleted_at=datetime.now(timezone.utc))
+        adk_session = MagicMock()
+        adk_session.state = {"account_id": _ACCOUNT_ID}
+        mock_session_service = MagicMock()
+        mock_session_service.get_session = AsyncMock(return_value=adk_session)
+
+        svc = ChatSessionSideTableService(db=self.db)
+        user_ctx = UserContext(
+            user_id=_USER_ID,
+            email="test@example.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+
+        async def _call() -> Any:
+            with (
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=svc
+                ),
+                patch.object(chat_module, "WEAVE_AVAILABLE", False),
+                patch.object(
+                    type(chat_module.agent_client),
+                    "session_service",
+                    new_callable=PropertyMock,
+                    return_value=mock_session_service,
+                ),
+            ):
+                from src.kene_api.routers.chat import get_session_artifacts
+
+                return await get_session_artifacts(
+                    session_id=_SESSION_ID,
+                    user_context=user_ctx,
+                )
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(_call())
+
+        assert exc_info.value.status_code == 404
+        # Ownership denied at the side-table layer — ADK must not be consulted.
+        mock_session_service.get_session.assert_not_called()
+
+    def test_404_when_session_missing_from_both_side_table_and_adk(self) -> None:
+        """Returns 404 when session is missing from both side-table and ADK."""
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as exc_info:

@@ -5,15 +5,25 @@ Shape B layout: accounts/{account_id}/chat_sessions/{session_id}
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 
+from google.adk.sessions.base_session_service import GetSessionConfig
 from google.cloud import firestore
 
 from ..dependencies import get_firestore_client
 from ..models.chat import ChatSessionMetadata
+
+logger = logging.getLogger(__name__)
+
+# Fire-and-forget heal tasks are stored here so they are not garbage-collected
+# before they complete (satisfies RUF006).  The done-callback discards each
+# reference on completion, keeping the set bounded.
+_heal_tasks: set[asyncio.Task[Any]] = set()
 
 STUCK_THRESHOLD = timedelta(minutes=10)
 
@@ -199,12 +209,12 @@ class ChatSessionSideTableService:
         self,
         user_id: str,
         session_id: str,
+        *,
+        include_tombstoned: bool = False,
     ) -> ChatSessionMetadata | None:
         """Locate a session by (user_id, session_id) without knowing account_id.
 
         Issues a collection-group query filtered by both equality conditions.
-        Returns the row only when it exists, belongs to user_id, and is not
-        tombstoned (deleted_at is None).
 
         This is the canonical lookup for endpoints whose URL carries only
         session_id — callers resolve account_id from the returned metadata.
@@ -212,9 +222,17 @@ class ChatSessionSideTableService:
         Args:
             user_id: The authenticated user's ID.
             session_id: The ADK session ID.
+            include_tombstoned: When ``False`` (default), a tombstoned row
+                (``deleted_at`` set) is treated as not-found and ``None`` is
+                returned — collapsing "no row" and "deleted row" into one
+                result. When ``True``, the row is returned even if tombstoned,
+                so the caller can distinguish the two states (used by
+                ``resolve_session_for_user`` to deny deleted sessions without
+                falling back to ADK).
 
         Returns:
-            ChatSessionMetadata if found and owned by user_id, else None.
+            ChatSessionMetadata if found and owned by user_id (and, unless
+            ``include_tombstoned``, not tombstoned), else None.
         """
         query = (
             self._db.collection_group("chat_sessions")
@@ -229,9 +247,223 @@ class ChatSessionSideTableService:
         if not doc.exists:
             return None
         meta = ChatSessionMetadata(**doc.to_dict())
-        if meta.deleted_at is not None:
+        if meta.deleted_at is not None and not include_tombstoned:
             return None
         return meta
+
+    async def resolve_session_for_user(
+        self,
+        user_id: str,
+        session_id: str,
+        session_service: Any,
+        app_name: str,
+        *,
+        org_id_resolver: Callable[[str], Awaitable[str | None]] | None = None,
+        model_id: str = "",
+    ) -> ChatSessionMetadata | None:
+        """Resolve session ownership, falling back to ADK when the side-table row is missing.
+
+        Fast path: finds the side-table row via ``find_session_for_user``.  A
+        tombstoned (soft-deleted) row short-circuits to ``None`` *without*
+        consulting ADK, so a deleted session is never re-exposed during the ADK
+        orphan-scan grace window (the ADK session outlives the side-table
+        tombstone).
+
+        Slow path (side-table miss): calls
+        ``session_service.get_session(app_name, user_id, session_id)``.  ADK
+        scopes sessions by ``user_id`` at the platform layer — google-adk 2.0.0
+        ``VertexAiSessionService.get_session`` *raises* ``ValueError`` when the
+        session belongs to another user (it does NOT return ``None``).  That
+        raise is caught by the broad ``except`` below and converted to ``None``
+        (→ 404), so a successful return is itself proof of ownership.  On ADK
+        hit, synthesises a ``ChatSessionMetadata`` in memory from
+        ``session.state["account_id"]`` and schedules a best-effort self-heal
+        write via ``asyncio.create_task``.
+
+        Only ``account_id`` (and ``last_viewed_at=None``) are guaranteed accurate
+        on the synthesised path.  Callers must not rely on other fields.
+
+        Args:
+            user_id: Authenticated user ID.
+            session_id: ADK session ID.
+            session_service: ADK ``VertexAiSessionService`` instance.
+            app_name: ADK app name (``"ken_e_chatbot"``).
+            org_id_resolver: Optional async callable
+                ``(account_id: str) -> str | None``.  Used inside the heal task
+                to persist a complete side-table row.  When ``None``, the heal
+                is skipped with a WARN log.
+            model_id: Model ID stored in the synthesised row (callers do not
+                read this field on the fallback path; defaults to ``""``).
+
+        Returns:
+            ``ChatSessionMetadata`` if the session is owned by ``user_id``,
+            ``None`` otherwise.
+        """
+        loop = asyncio.get_running_loop()
+
+        # ------------------------------------------------------------------
+        # Fast path — side-table row exists (zero extra latency for live rows)
+        # ------------------------------------------------------------------
+        meta = await loop.run_in_executor(
+            None,
+            lambda: self.find_session_for_user(
+                user_id=user_id, session_id=session_id, include_tombstoned=True
+            ),
+        )
+        if meta is not None:
+            if meta.deleted_at is not None:
+                # Tombstoned row — deny and do NOT fall back to ADK. The ADK
+                # session outlives the side-table tombstone (orphan-scan grace
+                # window), so falling back here would re-expose a deleted session.
+                return None
+            return meta
+
+        # ------------------------------------------------------------------
+        # Slow path — side-table miss; try ADK as the authoritative source
+        # ------------------------------------------------------------------
+        try:
+            adk_session = await session_service.get_session(
+                app_name=app_name,
+                user_id=user_id,
+                session_id=session_id,
+                # Ownership only needs the session resource (user_id +
+                # state["account_id"]); num_recent_events=0 skips the events.list
+                # network round-trip (google-adk 2.0.0 — re-verify on ADK bumps).
+                config=GetSessionConfig(num_recent_events=0),
+            )
+        except Exception as exc:
+            # SECURITY BOUNDARY — do NOT narrow this except to specific types.
+            # google-adk 2.0.0 get_session RAISES ValueError on cross-user
+            # access; that raise MUST be caught here and converted to None (→ 404)
+            # so a caller cannot tell "someone else's session" from "no session".
+            # Fail closed on any error — a misconfigured IAM policy then surfaces
+            # via error_type rather than silently 404-ing all users.
+            logger.warning(
+                "chat.side_table: ADK get_session failed (treating as not-found)",
+                extra={
+                    "action": "side_table_adk_fallback_error",
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            return None
+
+        if adk_session is None:
+            return None
+
+        state: dict[str, Any] = getattr(adk_session, "state", {}) or {}
+        account_id = state.get("account_id", "")
+        # ADK session state is untyped; reject non-str, empty, or path-traversal
+        # values — account_id is used as a Firestore document-path segment, so a
+        # crafted "/" or ".." would escape the intended sub-path.
+        if (
+            not isinstance(account_id, str)
+            or not account_id
+            or "/" in account_id
+            or ".." in account_id
+        ):
+            return None
+
+        # Emit the observability signal — distinct from the heal-failure log.
+        logger.warning(
+            "chat.side_table: side-table miss — ADK fallback used for ownership check",
+            extra={
+                "action": "side_table_self_heal_triggered",
+                "session_id": session_id,
+                "user_id": user_id,
+                "account_id": account_id,
+            },
+        )
+
+        # Synthesise in-memory metadata (only account_id is guaranteed accurate).
+        synthesized = ChatSessionMetadata(
+            session_id=session_id,
+            user_id=user_id,
+            account_id=account_id,
+            organization_id="",
+            model_id=model_id,
+        )
+
+        # ------------------------------------------------------------------
+        # Best-effort heal — schedule via create_task so it never blocks the
+        # read response.  All exceptions are swallowed and logged at WARN.
+        # ------------------------------------------------------------------
+        _svc_ref = self
+        _session_id = session_id
+        _user_id = user_id
+        _account_id = account_id
+        _model_id = model_id or "gemini-2.5-flash"
+        _resolver = org_id_resolver
+
+        async def _heal_task() -> None:
+            try:
+                if _resolver is None:
+                    logger.warning(
+                        "chat.side_table: self-heal skipped — no org_id_resolver",
+                        extra={
+                            "action": "side_table_self_heal_failed",
+                            "session_id": _session_id,
+                            "account_id": _account_id,
+                            "error_type": "NoResolver",
+                        },
+                    )
+                    return
+                org_id = await _resolver(_account_id)
+                if org_id is None:
+                    logger.warning(
+                        "chat.side_table: self-heal skipped — org_id unresolvable",
+                        extra={
+                            "action": "side_table_self_heal_failed",
+                            "session_id": _session_id,
+                            "account_id": _account_id,
+                            "error_type": "NoOrgId",
+                        },
+                    )
+                    return
+                _loop = asyncio.get_running_loop()
+                try:
+                    await _loop.run_in_executor(
+                        None,
+                        lambda: _svc_ref.create(
+                            session_id=_session_id,
+                            user_id=_user_id,
+                            account_id=_account_id,
+                            organization_id=org_id,
+                            model_id=_model_id,
+                        ),
+                    )
+                except Exception as create_exc:
+                    from google.api_core.exceptions import AlreadyExists
+
+                    if isinstance(create_exc, AlreadyExists):
+                        # A concurrent request already healed the row — not an error.
+                        logger.debug(
+                            "chat.side_table: self-heal skipped — row already exists",
+                            extra={
+                                "action": "side_table_self_heal_duplicate",
+                                "session_id": _session_id,
+                                "account_id": _account_id,
+                            },
+                        )
+                    else:
+                        raise
+            except Exception as exc:
+                logger.warning(
+                    "chat.side_table: self-heal write failed (non-fatal)",
+                    extra={
+                        "action": "side_table_self_heal_failed",
+                        "session_id": _session_id,
+                        "account_id": _account_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+
+        task = asyncio.create_task(_heal_task())
+        _heal_tasks.add(task)
+        task.add_done_callback(_heal_tasks.discard)
+
+        return synthesized
 
     def tombstone(self, account_id: str, session_id: str) -> datetime:
         """Soft-delete: set deleted_at and updated_at to now. Returns deleted_at."""

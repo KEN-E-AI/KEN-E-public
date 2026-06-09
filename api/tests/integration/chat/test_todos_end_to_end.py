@@ -178,12 +178,58 @@ class TestTodosEndpointIntegration:
         assert resp.todo_lists[0].list_id == "current"
         assert resp.todo_lists[1].list_id == "old"
 
-    def test_404_when_session_missing_from_side_table(self) -> None:
-        """Returns 404 when session does not exist in Firestore."""
+    def test_200_from_adk_fallback_when_side_table_missing(self) -> None:
+        """Returns 200 via ADK fallback when side-table row is missing but ADK has the session."""
+        # No side-table row seeded — only ADK session service mock has the session.
+        state = {
+            "account_id": _ACCOUNT_ID,
+            "todo_lists": {
+                "supervisor_ledger": _valid_raw(
+                    list_id="supervisor_ledger",
+                    title="Supervisor Ledger",
+                    is_current=True,
+                    created_at="2026-04-01T10:00:00Z",
+                ),
+            },
+        }
+        # ADK mock returns a session with account_id in state
+        svc = _make_session_service(state=state)
+        resp = self._run_handler(session_id=_SESSION_ID, session_service=svc)
+        assert len(resp.todo_lists) == 1
+        assert resp.todo_lists[0].list_id == "supervisor_ledger"
+
+    def test_404_for_tombstoned_session_even_when_adk_has_it(self) -> None:
+        """CH-70: a soft-deleted side-table row returns 404 even when ADK still
+        has the session — the fallback must NOT re-expose deleted conversations
+        during the orphan-scan grace window."""
         from fastapi import HTTPException
 
+        _seed_session(self.db)
+        # Tombstone the row (the ADK session is reaped later by the orphan scan).
+        self.db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}").update(
+            {"deleted_at": datetime.now(timezone.utc)}
+        )
+        # ADK still has the session with todo_lists — pre-fix this leaked as 200.
+        state = {
+            "account_id": _ACCOUNT_ID,
+            "todo_lists": {"supervisor_ledger": _valid_raw(is_current=True)},
+        }
+        svc = _make_session_service(state=state)
         with pytest.raises(HTTPException) as exc_info:
-            self._run_handler(session_id="sess_does_not_exist")
+            self._run_handler(session_id=_SESSION_ID, session_service=svc)
+
+        assert exc_info.value.status_code == 404
+        # Ownership is denied at the side-table layer — ADK must not be consulted.
+        svc.get_session.assert_not_called()
+
+    def test_404_when_session_missing_from_both_side_table_and_adk(self) -> None:
+        """Returns 404 when session is missing from both side-table and ADK."""
+        from fastapi import HTTPException
+
+        # ADK returns None — no session at all
+        svc = _make_session_service(raises=Exception("not found"))
+        with pytest.raises(HTTPException) as exc_info:
+            self._run_handler(session_id="sess_does_not_exist", session_service=svc)
 
         assert exc_info.value.status_code == 404
 

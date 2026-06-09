@@ -1,7 +1,7 @@
 """Unit tests for GET /conversations/{session_id}/todos (CH-41).
 
 Tests cover:
-- 404 when find_session_for_user returns None.
+- 404 when resolve_session_for_user returns None.
 - 200 with empty list when ADK session has no todo_lists key.
 - 200 with sorted/validated lists when state has valid + malformed entries.
 - 200 with empty list when ADK get_session raises an exception.
@@ -95,11 +95,17 @@ def _run_handler(
     session_service: MagicMock | None = None,
     user_id: str = "user_1",
 ) -> ListTodosResponse:
-    """Run get_session_todos with patched dependencies."""
+    """Run get_session_todos with patched dependencies.
+
+    ``meta`` is what ``resolve_session_for_user`` returns — None to exercise
+    the 404 path, a ChatSessionMetadata instance for the 200 path.
+    ``session_service`` controls what ``list_todo_lists`` reads from ADK state.
+    """
     from src.kene_api.routers import chat as chat_module
 
     fake_svc = MagicMock()
-    fake_svc.find_session_for_user.return_value = meta
+    # resolve_session_for_user is now async — use AsyncMock so await works.
+    fake_svc.resolve_session_for_user = AsyncMock(return_value=meta)
 
     _session_service = session_service or _make_session_service(state={})
 

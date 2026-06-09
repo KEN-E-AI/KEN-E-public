@@ -17,6 +17,7 @@ import vertexai
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
+from google.cloud.exceptions import NotFound
 from pydantic import BaseModel, Field, computed_field
 
 from shared.artifact_models import Artifact
@@ -3771,6 +3772,11 @@ async def mark_conversation_read(
         ``{"last_viewed_at": "<iso>"}`` so the client can optimistically
         flip the sidebar status indicator without waiting for the next poll.
 
+    For a legacy/dev session resolved via the ADK fallback (no side-table row
+    yet), the stamp is best-effort: the write is skipped if the row does not
+    exist — the self-heal task persists the canonical row and the next
+    mark-read stamps it — but the response still reports ``now``.
+
     Note: ``chat_v2_enabled`` does not gate this endpoint — per api/CLAUDE.md
     that flag only disables the internal side-table update path; public chat
     endpoints are unaffected.
@@ -3782,9 +3788,13 @@ async def mark_conversation_read(
     svc = get_chat_side_table_service()
     user_id = user_context.user_id
 
-    meta = await loop.run_in_executor(
-        None,
-        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    meta = await svc.resolve_session_for_user(
+        user_id=user_id,
+        session_id=session_id,
+        session_service=agent_client.session_service,
+        app_name=APP_NAME,
+        org_id_resolver=_get_organization_id_for_account,
+        model_id=_get_agent_model_id(),
     )
     if meta is None:
         raise HTTPException(
@@ -3803,14 +3813,31 @@ async def mark_conversation_read(
             return MarkReadResponse(last_viewed_at=lva)
 
     account_id = meta.account_id
-    await loop.run_in_executor(
-        None,
-        lambda: svc.update_from_delta(
-            account_id=account_id,
-            session_id=session_id,
-            delta={"last_viewed_at": now, "updated_at": now},
-        ),
-    )
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: svc.update_from_delta(
+                account_id=account_id,
+                session_id=session_id,
+                delta={"last_viewed_at": now, "updated_at": now},
+            ),
+        )
+    except NotFound:
+        # The side-table row was synthesized via the ADK fallback and is not
+        # persisted yet (legacy/dev session). Firestore .update() cannot touch a
+        # missing doc, so skip the write rather than 500: resolve_session_for_user
+        # already scheduled the self-heal create, and the next mark-read stamps
+        # the canonical row. Still report ``now`` so the client flips the unread
+        # indicator optimistically.
+        logger.warning(
+            "chat.mark_read: side-table row absent; stamp deferred to heal",
+            extra=log_context(
+                component="chat",
+                action="mark_read_row_absent_deferred_to_heal",
+                account_id=account_id,
+                extra={"session_id": session_id},
+            ),
+        )
     return MarkReadResponse(last_viewed_at=now)
 
 
@@ -3856,13 +3883,16 @@ async def get_session_todos(
 
     No rate limit (pure read, low cost per PRD §2).
     """
-    loop = asyncio.get_running_loop()
     svc = get_chat_side_table_service()
     user_id = user_context.user_id
 
-    meta = await loop.run_in_executor(
-        None,
-        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    meta = await svc.resolve_session_for_user(
+        user_id=user_id,
+        session_id=session_id,
+        session_service=agent_client.session_service,
+        app_name=APP_NAME,
+        org_id_resolver=_get_organization_id_for_account,
+        model_id=_get_agent_model_id(),
     )
     if meta is None:
         raise HTTPException(
@@ -3912,7 +3942,7 @@ async def get_session_artifacts(
     Ownership-gated: returns 404 for any session the authenticated user does
     not own on the current account (same no-existence-leak contract as
     mark-read and todos). Tombstoned sessions are treated as not-found
-    automatically by ``find_session_for_user``.
+    automatically by ``resolve_session_for_user``.
 
     No rate limit (pure read, low cost per PRD §2).
 
@@ -3929,9 +3959,13 @@ async def get_session_artifacts(
     svc = get_chat_side_table_service()
     user_id = user_context.user_id
 
-    meta = await loop.run_in_executor(
-        None,
-        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    meta = await svc.resolve_session_for_user(
+        user_id=user_id,
+        session_id=session_id,
+        session_service=agent_client.session_service,
+        app_name=APP_NAME,
+        org_id_resolver=_get_organization_id_for_account,
+        model_id=_get_agent_model_id(),
     )
     if meta is None:
         raise HTTPException(
