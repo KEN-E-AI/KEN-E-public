@@ -482,3 +482,64 @@ class TestSingleton:
         assert tracker1 is not tracker2
 
         await reset_usage_tracker()
+
+
+class _RecordingQuery:
+    """Firestore query stub that records `.where()` calls.
+
+    Fails the test if `.where()` is ever called positionally (the deprecated
+    form) so the FieldFilter migration can't silently regress.
+    """
+
+    def __init__(self) -> None:
+        self.filters: list = []
+        self.positional_where_calls = 0
+
+    def where(self, *args, filter=None, **kwargs):  # mirrors the Firestore query API
+        if args:
+            self.positional_where_calls += 1
+        if filter is not None:
+            self.filters.append(filter)
+        return self
+
+    def stream(self):
+        return iter([])
+
+
+class _RecordingClient:
+    def __init__(self, query: _RecordingQuery) -> None:
+        self._query = query
+
+    def collection(self, _name: str) -> _RecordingQuery:
+        return self._query
+
+
+class TestQueryEventsUsesFieldFilter:
+    """The Firestore query branch must use keyword FieldFilter, not positional
+    .where() (deprecated and broken on a google-cloud-firestore bump)."""
+
+    @pytest.mark.asyncio
+    async def test_query_events_builds_keyword_fieldfilters(self) -> None:
+        from google.cloud.firestore_v1 import FieldFilter
+
+        query = _RecordingQuery()
+        tracker = UsageTracker()
+        tracker._use_firestore = True
+        tracker._client = _RecordingClient(query)
+
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+        await tracker._query_events(start, end, "acct1", "org1")
+
+        # No positional .where() calls survived the migration.
+        assert query.positional_where_calls == 0
+        # Two timestamp bounds + account_id + organization_id.
+        assert [(f.field_path, f.op_string) for f in query.filters] == [
+            ("timestamp", ">="),
+            ("timestamp", "<="),
+            ("account_id", "=="),
+            ("organization_id", "=="),
+        ]
+        assert all(isinstance(f, FieldFilter) for f in query.filters)
+        assert query.filters[2].value == "acct1"
+        assert query.filters[3].value == "org1"

@@ -361,19 +361,37 @@ class UsageTracker:
         """
         if self.client and self._use_firestore:
             try:
+                # FieldFilter is imported via the firestore module (it re-exports
+                # it) rather than google.cloud.firestore_v1: importing the v1
+                # submodule in this mypy-checked tree makes mypy resolve the
+                # google.cloud namespace and then flag every sibling
+                # `from google.cloud import firestore` as attr-defined. Kept local
+                # so the module still imports without firestore installed.
+                from google.cloud import firestore
+
                 collection = self.client.collection(self.COLLECTION_NAME)
 
                 start_str = start_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
                 end_str = end_date.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-                query = collection.where("timestamp", ">=", start_str)
-                query = query.where("timestamp", "<=", end_str)
+                query = collection.where(
+                    filter=firestore.FieldFilter("timestamp", ">=", start_str)
+                )
+                query = query.where(
+                    filter=firestore.FieldFilter("timestamp", "<=", end_str)
+                )
 
                 if account_id:
-                    query = query.where("account_id", "==", account_id)
+                    query = query.where(
+                        filter=firestore.FieldFilter("account_id", "==", account_id)
+                    )
 
                 if organization_id:
-                    query = query.where("organization_id", "==", organization_id)
+                    query = query.where(
+                        filter=firestore.FieldFilter(
+                            "organization_id", "==", organization_id
+                        )
+                    )
 
                 docs = query.stream()
                 return [doc.to_dict() for doc in docs]
