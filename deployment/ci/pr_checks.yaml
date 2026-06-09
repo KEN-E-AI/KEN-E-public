@@ -563,6 +563,11 @@ steps:
         exit $$E2E_EXIT
     env:
       - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'
+      # CI=true activates playwright.config's CI branches: retries:2 (self-heals a
+      # cold-start blip), forbidOnly, a fresh (non-reused) webServer, and the
+      # global-setup stack warm-up that absorbs the first-sign-in cold-start before
+      # any test counts (AH-159). Cloud Build does not set CI by default.
+      - 'CI=true'
 
   # Run frontend accessibility test suite (axe-core, WCAG contrast, focus-ring audit,
   # keyboard navigation, and reduced-motion smoke tests).

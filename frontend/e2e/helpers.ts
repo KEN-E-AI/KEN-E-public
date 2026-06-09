@@ -186,7 +186,9 @@ export async function signInAs(
   page: Page,
   email: string,
   password: string,
+  options: { redirectTimeoutMs?: number } = {},
 ): Promise<void> {
+  const { redirectTimeoutMs = 45_000 } = options;
   // Load a neutral page first so clearBrowserStorage can run on the right origin.
   await page.goto("/sign-in", { waitUntil: "domcontentloaded" });
   await clearBrowserStorage(page);
@@ -208,14 +210,15 @@ export async function signInAs(
   await page.click('button[type="submit"]');
 
   // Wait until the URL is no longer /sign-in (redirect on successful auth).
-  // 45s (not 20s): the FIRST signInAs of a serial 1-worker e2e run absorbs the
-  // whole backend cold-start (FastAPI + auth emulator + the Neo4j connection
+  // Default 45s (not 20s): the FIRST signInAs of a serial 1-worker e2e run absorbs
+  // the whole backend cold-start (FastAPI + auth emulator + the Neo4j connection
   // storm, since the e2e stack ships no Neo4j) under the AH-151 parallel-DAG CPU
-  // contention, so the post-login redirect can exceed 20s for whichever spec
-  // runs first. Warm runs still redirect in <8s; this only raises the ceiling
-  // before failing.
+  // contention, so the post-login redirect can exceed 20s for whichever spec runs
+  // first. Warm runs still redirect in <8s; this only raises the ceiling before
+  // failing. The CI global-setup warm-up (AH-159) passes a wider override to pay
+  // that cold-start once, before any test counts, so the suite proper starts warm.
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), {
-    timeout: 45_000,
+    timeout: redirectTimeoutMs,
   });
 }
 

@@ -2,6 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  // CI-only stack warm-up: pays the first-sign-in cold-start (Vite dev-mode lazy
+  // compile + cold auth-emulator + cold backend) once, before any test counts, so
+  // the serial suite starts warm instead of failing the first spec (AH-159).
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -68,5 +72,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
-  outputDir: "test-results",
+  // Sibling of the html report (test-results/html) under test-results/ — both are
+  // uploaded to GCS on failure, but neither nests in the other, so the html
+  // reporter never clears the trace/screenshot artifacts (the clash CI=true would
+  // otherwise trigger now that the html reporter is active).
+  outputDir: "test-results/output",
 });
