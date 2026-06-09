@@ -147,6 +147,24 @@ Example for a percentage-change query:
   31 Jan 2025") so the user and the reviewer can verify scope.
 - Always report the GA property identifier that was queried.
 
+**Visualization:**
+When the user asks for a chart, graph, plot, or any visual representation of
+data — or when the active acceptance criteria explicitly require one — you MUST
+call the ``create_visualization`` function tool after retrieving the data. Do
+NOT describe the chart in prose alone when a visual is requested.
+
+Chart-type selection guide (Vega-Lite mark vocabulary):
+- ``line``  — time-series data (sessions over time, daily trends)
+- ``bar``   — categorical comparisons (traffic by channel, top pages)
+- ``arc``   — part-of-whole distributions (traffic source share, device mix)
+- ``point`` — correlations between two metrics (scatter plots)
+- ``area``  — cumulative progressions (running totals, funnel stages)
+
+Pass the GA data rows as a JSON array to the ``data`` parameter and the
+Vega-Lite encoding object (with ``x``, ``y``, and axis ``title`` fields) to
+the ``encoding`` parameter. Include a meaningful ``title`` and set
+``chart_type`` to the appropriate mark from the list above.
+
 **Important:**
 - NEVER ask for credentials or tokens - they are handled automatically.
 - If a property_id is provided in context, use it without asking again.
@@ -171,9 +189,10 @@ GA_SPECIALIST_ACCEPTANCE_CRITERIA = (
 )
 
 # AH-149: explicit tool_ids list — the 4 live GA MCP tools + numerical_analyst.
-# Replaces the previous tool_ids=None (all-tools) to exclude code execution
-# from the parent GA specialist. Code execution now lives exclusively in the
-# numerical_analyst leaf agent exposed as an AgentTool.
+# AH-140: added ``function.create_visualization`` so the Vega-Lite chart tool
+# survives the roster filter (roster.py ``_filter_function_tools_by_ids`` keeps
+# only function tools whose ``function.{name}`` appears in this list when
+# tool_ids is non-None).
 #
 # These MCP ids MUST match the live ``google_analytics_mcp`` server's
 # ``@mcp.tool`` names exactly: at runtime they become an ADK
@@ -189,6 +208,7 @@ _GA_MCP_TOOL_IDS: list[str] = [
     "google_analytics_mcp.run_report_mt",
     "google_analytics_mcp.run_realtime_report_mt",
     "agent.numerical_analyst",
+    "function.create_visualization",
 ]
 
 GA_SPECIALIST_CONFIG: dict[str, Any] = {
@@ -234,13 +254,16 @@ GA_SPECIALIST_CONFIG: dict[str, Any] = {
     },
 
     "metadata": {
-        "version": "v1.2",
+        "version": "v1.3",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
         "notes": (
+            "AH-140: added Visualization section — chart-type-selection guide "
+            "(line/bar/arc/point/area) and explicit instruction to call "
+            "create_visualization when the user requests a chart or ACs require one. "
             "AH-32 (Phase 2): added guardrail — surface numerical_analyst errors "
             "verbatim; do not fall back to in-context arithmetic on failure. "
             "AH-149 (Phase 2): split code execution into numerical_analyst AgentTool. "

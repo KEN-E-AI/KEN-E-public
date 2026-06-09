@@ -350,6 +350,10 @@ async def test_sse_event_ordering_with_artifacts():
     assert "artifacts" in payload
     assert len(payload["artifacts"]) == 1
     assert payload["artifacts"][0]["type"] == "visualization"
+    # AH-140: the SSE payload carries the full Vega-Lite v6 spec (AC-9 §7).
+    assert payload["artifacts"][0]["spec"]["$schema"] == (
+        "https://vega.github.io/schema/vega-lite/v6.json"
+    )
 
 
 # ---------------------------------------------------------------------------

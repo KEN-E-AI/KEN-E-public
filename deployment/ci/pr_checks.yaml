@@ -218,6 +218,12 @@ steps:
   # artifact test is @pytest.mark.llm but uses deterministic fakes (no creds /
   # no network), so it runs in the credential-less CI image like the GA e2e
   # files already listed here.
+  # AH-140 / AH-PRD-04 §7 AC-8: test_data_visualization_e2e.py (deterministic
+  # review-loop + invalid-JSON tool tests; @pytest.mark.llm cases self-skip
+  # without Gemini creds) and the GA-specialist seed test
+  # (scripts/tests/test_migrate_ga_specialist_to_firestore.py — fully mocked via
+  # FakeFirestoreClient) were added without CI coverage. The seed test carries
+  # the function.create_visualization tool_id guardrail; the paths below gate it.
   # -m "not slow": deselects @pytest.mark.slow tests (e.g. test_mcp_pool_stress.py
   # p95-latency assertion) on PRs — concurrent api steps on a shared 8-vCPU machine
   # can inflate latencies and cause false-positive failures (AH-151 D6 / AH-150).
@@ -241,6 +247,8 @@ steps:
           app/adk/agents/tests/test_user_built_ga_agent_e2e.py \
           app/adk/agents/tests/test_agent_tool_billing.py \
           app/adk/agents/tests/test_supervisor_e2e_artifacts.py \
+          app/adk/agents/tests/test_data_visualization_e2e.py \
+          app/adk/agents/scripts/tests/test_migrate_ga_specialist_to_firestore.py \
           app/adk/mcp_config/tests/ \
           app/adk/security/tests/ \
           app/adk/tracking/tests/ \

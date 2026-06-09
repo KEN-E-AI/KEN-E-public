@@ -3,7 +3,7 @@
 AH-149 (Phase 2): assertions updated to reflect the numerical_analyst split:
   - ``code_execution_enabled`` is now ``False`` (was ``True``).
   - ``model`` is now ``gemini-2.5-flash`` (was ``gemini-2.0-flash``).
-  - ``tool_ids`` is an explicit 5-item list (was ``None``).
+  - ``tool_ids`` is an explicit 6-item list (was ``None``; AH-140 added function.create_visualization).
 
 Coverage map:
   (a) ``GA_SPECIALIST_CONFIG`` carries every ``AUDIT_FIELDS`` entry with the
@@ -90,12 +90,16 @@ def test_prd_required_fields_present() -> None:
         "default_acceptance_criteria must be a non-empty string"
     )
 
-    # AH-149: explicit tool_ids list of 5 entries (4 live GA MCP tools + agent.numerical_analyst).
+    # AH-149: explicit tool_ids list (4 live GA MCP tools + agent.numerical_analyst).
+    # AH-140: added function.create_visualization — 6 entries total.
     tool_ids = config["tool_ids"]
     assert isinstance(tool_ids, list), "tool_ids must be a list (AH-149)"
-    assert len(tool_ids) == 5, f"tool_ids must have 5 entries; got {len(tool_ids)}: {tool_ids}"
+    assert len(tool_ids) == 6, f"tool_ids must have 6 entries; got {len(tool_ids)}: {tool_ids}"
     assert "agent.numerical_analyst" in tool_ids, (
         "tool_ids must contain 'agent.numerical_analyst'"
+    )
+    assert "function.create_visualization" in tool_ids, (
+        "tool_ids must contain 'function.create_visualization' (AH-140)"
     )
     ga_mcp_ids = [t for t in tool_ids if t.startswith("google_analytics_mcp.")]
     assert len(ga_mcp_ids) == 4, (
@@ -294,11 +298,12 @@ def test_idempotency_agent_doc_is_written(monkeypatch: pytest.MonkeyPatch) -> No
     assert agent_doc["code_execution_enabled"] is False
     assert agent_doc["mcp_servers"] == ["google_analytics_mcp"]
     assert agent_doc["default_acceptance_criteria"] == script.GA_SPECIALIST_ACCEPTANCE_CRITERIA
-    # AH-149: tool_ids is the explicit 5-entry list.
+    # AH-149: tool_ids is the explicit list; AH-140 added function.create_visualization (6 entries).
     tool_ids = agent_doc["tool_ids"]
     assert isinstance(tool_ids, list)
-    assert len(tool_ids) == 5
+    assert len(tool_ids) == 6
     assert "agent.numerical_analyst" in tool_ids
+    assert "function.create_visualization" in tool_ids
 
 
 def test_idempotency_mcp_kind_preserved_when_cloud_run(
@@ -429,13 +434,22 @@ def _fresh_catalogue_registry() -> Any:
 
 
 def test_ga_seed_tool_ids_subset_of_catalogue() -> None:
-    """Every ``google_analytics_mcp.*`` id in the seed must be a catalogued GA
-    tool, and ``agent.numerical_analyst`` must be a catalogued agent tool."""
+    """Every id in the seed must be resolvable at runtime:
+    - ``google_analytics_mcp.*`` must be a catalogued GA tool.
+    - ``agent.*`` must be a catalogued agent tool.
+    - ``function.*`` must be registered in the function-tool registry.
+    """
+    import app.adk.tools.function_tools.create_visualization  # noqa: F401 — side-effect import
+    from app.adk.tools.registry.function_tool_registry import (
+        snapshot_function_tool_registry,
+    )
+
     registry = _fresh_catalogue_registry()
     ga_catalogue = {
         t.name for t in registry.list_tools() if t.mcp_server == "google_analytics_mcp"
     }
     agent_catalogue = {t.name for t in registry.list_agent_tools()}
+    function_catalogue = set(snapshot_function_tool_registry().keys())
 
     for tid in script._GA_MCP_TOOL_IDS:
         server, _, name = tid.partition(".")
@@ -447,6 +461,12 @@ def test_ga_seed_tool_ids_subset_of_catalogue() -> None:
         elif server == "agent":
             assert name in agent_catalogue, (
                 f"seed agent tool {tid!r} is not catalogued: {sorted(agent_catalogue)}"
+            )
+        elif server == "function":
+            assert name in function_catalogue, (
+                f"seed function tool {tid!r} is not in the function-tool registry "
+                f"{sorted(function_catalogue)} — roster._filter_function_tools_by_ids "
+                "would silently drop it"
             )
         else:  # pragma: no cover - defensive
             raise AssertionError(f"unexpected tool_id namespace in seed: {tid!r}")
