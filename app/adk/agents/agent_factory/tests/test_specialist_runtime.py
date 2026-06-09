@@ -5727,6 +5727,48 @@ class TestBranchFailureSentinelCallbackWiring:
             f"got {state['stub_result']!r}"
         )
 
+    def test_sentinel_callback_writes_sentinel_on_dict_shape_ledger(self) -> None:
+        """(d') AH-161 follow-up regression: the sentinel must fire on the
+        PRODUCTION ledger shape ``{list_id, title, items}`` written by
+        ``set_todo_list`` — not only the legacy bare-list shape used by (d) above.
+
+        Before the fix, ``make_branch_failure_sentinel_after_agent_callback`` read
+        ``todo_lists["supervisor_ledger"]`` and iterated it directly; on the dict
+        shape that walks the dict's KEYS (strings) and ``item.get(...)`` raises
+        ``AttributeError`` — swallowed by the callback's ``except`` so the sentinel
+        was silently never written. The list-shape test (d) masked it. The fix
+        routes through ``_extract_ledger_items`` (handles both shapes).
+        """
+        from app.adk.agents.orchestration.supervisor import (
+            BRANCH_ERROR_SENTINEL_PREFIX,
+            make_branch_failure_sentinel_after_agent_callback,
+        )
+
+        cb = make_branch_failure_sentinel_after_agent_callback("stub_specialist")
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": {
+                    "list_id": "supervisor_ledger",
+                    "title": "Test ledger",
+                    "items": [
+                        {
+                            "assignee": "stub_specialist",
+                            "status": "pending",
+                            "result_key": "stub_result",
+                        }
+                    ],
+                }
+            }
+        }
+        ctx = _FakeCallbackCtx(state)
+        cb(ctx)
+        assert str(state.get("stub_result", "")).startswith(
+            BRANCH_ERROR_SENTINEL_PREFIX
+        ), (
+            "Sentinel must fire on the production dict-shaped ledger "
+            f"(would have been silently dropped pre-fix); state={state!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Helpers for TestBranchFailureSentinelCallbackWiring

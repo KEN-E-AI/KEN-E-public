@@ -1229,6 +1229,146 @@ class TestTransferToAgentLedgerGuardCallback:
         result = await cb(self._tool("transfer_to_agent"), {}, object())
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_guard_blocks_transfer_through_real_runner(self) -> None:
+        """AH-160 end-to-end: with an active multi-item ledger, a coordinator that
+        emits ``transfer_to_agent`` through a real ``Runner`` is intercepted by the
+        before_tool_callback — the transfer target NEVER runs and the model
+        receives the blocking error as the tool result.
+
+        The other guard tests call the callback directly; this drives the real
+        ADK dispatch path so the wiring (``canonical_before_tool_callbacks`` firing
+        for the injected ``transfer_to_agent`` tool) is exercised, not assumed.
+        """
+        from collections.abc import AsyncIterator
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models.base_llm import BaseLlm
+        from google.adk.models.llm_response import LlmResponse
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types as genai_types
+        from google.genai.types import Content, FunctionCall, Part
+        from pydantic import PrivateAttr
+
+        from app.adk.agents.orchestration.supervisor import (
+            transfer_to_agent_ledger_guard_before_tool_callback,
+        )
+
+        TARGET = "blocked_specialist"
+
+        # Transfer target: if the guard fails to block, this runs and emits text.
+        class _TargetLlm(BaseLlm):
+            model: str = "guard_target_stub"
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["guard_target_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                yield LlmResponse(
+                    content=Content(
+                        role="model",
+                        parts=[Part(text="TARGET RAN — should not happen")],
+                    ),
+                    turn_complete=True,
+                )
+
+        # Coordinator: emits transfer_to_agent once, then a final text turn.
+        class _CoordinatorLlm(BaseLlm):
+            model: str = "guard_coordinator_stub"
+            _transferred: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["guard_coordinator_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._transferred:
+                    self._transferred = True
+                    fc = FunctionCall(
+                        name="transfer_to_agent", args={"agent_name": TARGET}
+                    )
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(
+                            role="model",
+                            parts=[Part(text="Re-planned: dispatching tasks.")],
+                        ),
+                        turn_complete=True,
+                    )
+
+        target = LlmAgent(name=TARGET, model=_TargetLlm(), instruction="Specialist.")
+        coordinator = LlmAgent(
+            name="ken_e",
+            model=_CoordinatorLlm(),
+            mode="chat",
+            instruction="Coordinate.",
+            sub_agents=[target],  # makes transfer_to_agent a real injected tool
+            before_tool_callback=transfer_to_agent_ledger_guard_before_tool_callback,
+        )
+
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="guard_runner_test",
+            user_id="u",
+            state=_ledger_state([_item("a", "pending"), _item("b", "pending")]),
+        )
+        runner = Runner(
+            agent=coordinator,
+            app_name="guard_runner_test",
+            session_service=session_service,
+        )
+
+        events: list[Any] = []
+        async for event in runner.run_async(
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user", parts=[genai_types.Part(text="do the multi-step thing")]
+            ),
+        ):
+            events.append(event)
+
+        authors = [getattr(e, "author", None) for e in events]
+        # The transfer target must NEVER have run.
+        assert TARGET not in authors, (
+            f"guard failed: transfer_to_agent reached the target. authors={authors}"
+        )
+
+        # The blocking error must have been fed back as the transfer's tool result.
+        blocked = False
+        for e in events:
+            content = getattr(e, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                fr = getattr(part, "function_response", None)
+                if fr is None or getattr(fr, "name", None) != "transfer_to_agent":
+                    continue
+                resp = getattr(fr, "response", None)
+                if isinstance(resp, dict) and (
+                    resp.get("error")
+                    == "transfer_to_agent_disabled_during_supervisor_ledger"
+                    or any(
+                        isinstance(v, dict)
+                        and v.get("error")
+                        == "transfer_to_agent_disabled_during_supervisor_ledger"
+                        for v in resp.values()
+                    )
+                ):
+                    blocked = True
+        assert blocked, (
+            "guard's blocking error was not returned as the transfer_to_agent tool "
+            f"result. events authors={authors}"
+        )
+
 
 class TestSupervisorInstructionForbidsTransferDuringLedger:
     def test_fragment_forbids_transfer_during_ledger_execution(self) -> None:

@@ -357,13 +357,16 @@ KEN-E handles work that spans more than one LLM turn or more than one session th
 
 ### 8.1 In-Session Multi-Step Workflows
 
-**Supervisor-orchestration model (AH-PRD-05, spec-ready, ADK 2.0 — [PLANNED]).** KEN-E's in-session multi-step orchestration uses the ADK 2.0 supervisor model (AH-99 GO-confirmed, 2026-06-01):
+**Supervisor-orchestration model (AH-PRD-05) — shipped & live in dev (AH-160 + AH-161, PR #958, 2026-06-09).** KEN-E's in-session multi-step orchestration uses the ADK 2.0 supervisor model:
 
-- **Coordinator:** `LlmAgent(mode='chat')` — decomposes the user request into a TODO ledger, drives per-task delegation, and synthesizes results.
-- **Specialist leaves:** `LlmAgent(mode='task')` — invoked via ADK's delegation primitive; call-and-return so the coordinator regains control after each task.
-- **Fan-out:** `ctx.run_node` + `asyncio.gather` for independent parallel tasks.
-- **Review loops:** `LoopAgent` leaves wrap per-task delegations when acceptance criteria are set (AH-PRD-01; deprecated in ADK 2.0 but functional).
+- **Coordinator:** `LlmAgent(mode='chat')` — decomposes the user request into a `supervisor_ledger`, drives per-task delegation, and synthesizes results.
+- **Specialist leaves:** `LlmAgent(mode='task')` — dispatched by emitting `FunctionCall(name=<specialist doc_id>)` (the **bare** doc_id; `request_task_<name>` is a myth); call-and-return so the coordinator regains control after each task. `transfer_to_agent` and task dispatch are mutually exclusive per instance, so specialist dispatch is **request_task-only**.
+- **Fan-out:** `ctx.run_node` for independent parallel tasks.
+- **Result surfacing:** a task specialist returns its complete answer via `finish_task` (the node `output` → synthesized function-response). Task specialists are **never** review-wrapped — a review `LoopAgent` has no `finish_task` and would return `{"output": None}` (review wrapping applies to chat-mode/`transfer_to_agent` specialists only).
+- **Deploy-time seed:** ADK snapshots the dispatch `tools_dict` before the per-turn attach callback, so each global specialist's delegation tool is seeded onto the deploy-time `root.tools` (`hierarchy._seed_specialist_dispatch_tools`) or it is never recognized.
 - **Parity:** Task-mode inner `usage_metadata` reaches the outer Runner stream natively (probe-1 + probe-4) — no custom event bridge; Billing, Chat, MER-E contracts preserved.
+
+*Four non-obvious ADK constraints govern this dispatch — see [`agentic-harness/mcp-architecture.md` §"ADK 2.0 … constraints" #7–#9](design/components/agentic-harness/mcp-architecture.md) and [AH-PRD-05 §0](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md).*
 
 **Example (budget-shift optimisation):**
 1. Coordinator decomposes: "Increase budgets for best-performing Meta Ads campaigns" → TODO ledger: GA engagement query + Meta Ads spend query + synthesis + approval-required budget-change task.
@@ -372,7 +375,7 @@ KEN-E handles work that spans more than one LLM turn or more than one session th
 4. Coordinator returns the plan and awaits user approval (approval-via-conversation-turns continuation).
 5. On approval: Meta Ads budget-change task runs; coordinator returns the final result.
 
-**Implementation gate:** the ADK 2.0 Foundation PRD ([AH-PRD-13](design/components/agentic-harness/projects/AH-PRD-13-adk2-foundation.md)) (`google-adk` 1.34.1 → 2.0.0). The single-specialist `transfer_to_agent` R1 runtime is unaffected. Full spec: [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md). Decision: [DESIGN-REVIEW-LOG Review 44](design/DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20).
+**Status:** built on the ADK 2.0 Foundation PRD ([AH-PRD-13](design/components/agentic-harness/projects/AH-PRD-13-adk2-foundation.md)) (`google-adk` 1.34.1 → 2.0.0); dispatch wired and validated end-to-end in dev (AH-160 + AH-161, PR #958 — single-task and multi-task ledger turns). The single-specialist `transfer_to_agent` runtime is unaffected. Full spec: [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md). Decision: [DESIGN-REVIEW-LOG Review 44](design/DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20).
 
 > **Note:** `execute_workflow` / `invoke_pipeline` (inner-Runner patterns) are explicitly NOT the recommended implementation shape — they reintroduce the AH-75 billing/tracing defect (see AH-PRD-09 §4.6 and AH-PRD-05 §2). The supervisor model described above is the correct target.
 

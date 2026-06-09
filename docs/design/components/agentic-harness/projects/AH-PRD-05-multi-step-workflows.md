@@ -1,6 +1,6 @@
 # AH-PRD-05 — Multi-Step Workflow Orchestration (Supervisor Model)
 
-**Status:** Ready (spec) — implementation requires ADK 2.0 (Foundation PRD [AH-PRD-13](./AH-PRD-13-adk2-foundation.md))
+**Status:** Implemented — supervisor `request_task` dispatch live in dev and validated end-to-end (AH-160 + AH-161, PR #958, 2026-06-09); single-task and multi-task ledger turns confirmed. Built on ADK 2.0 (Foundation PRD [AH-PRD-13](./AH-PRD-13-adk2-foundation.md)).
 **Owner team:** Core AI / Agent Platform
 **Blocked by:** [AH-PRD-01](./AH-PRD-01-review-loop-framework.md) (`build_review_pipeline()`), [AH-PRD-02](./AH-PRD-02-agent-factory.md) (agent factory), [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md) (first specialist); the **ADK 2.0 Foundation PRD ([AH-PRD-13](./AH-PRD-13-adk2-foundation.md))** (primary gate — the `google-adk` 1.34.1 → 2.0.0 unpin + breaking-change migration lives there). [AH-PRD-04](./AH-PRD-04-data-visualization.md) (artifact threading — soft; artifact-threading scope in §2 ships when AH-PRD-04 is available but is not the primary implementation gate)
 **Parallel with:** Knowledge-Graph (KG-PRD-04 / KG-PRD-05), Skills SK-PRDs, Performance SE-PRD-05 / PE-PRDs
@@ -10,6 +10,21 @@
 > **This PRD is the supervisor-orchestration implementation spec** (rewritten AH-97, 2026-06-01). The prior re-scoping banner ("architecture-refresh, do not implement as written") is removed — the ADK 2.0 supervisor-orchestration model is now **GO-confirmed** (AH-99 live validation) and this document is the canonical target architecture. Decision: [DESIGN-REVIEW-LOG Review 44](../../../DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20).
 >
 > **HARD RULE — do NOT implement the `execute_workflow()` / `invoke_pipeline()` inner-Runner shape on ADK 1.x.** AH-75 (see [AH-PRD-09](./AH-PRD-09-per-turn-dispatch.md) §4.6) proved that any inner-Runner / `AgentTool` call-and-return path silently discards inner sub-agent events, which **breaks the Billing token meter, Chat status tracking, MER-E Weave traces, the review loop, and UI streaming**. The `execute_workflow` / `invoke_pipeline` pattern is preserved below only as a named anti-pattern for documentation purposes.
+
+---
+
+## 0. Implementation status & verified ADK constraints (AH-160 / AH-161, 2026-06-09)
+
+The supervisor model is **live in dev and validated end-to-end** (PR #958): a single-specialist query dispatches once and returns the answer; a multi-step comparison query writes a `supervisor_ledger`, dispatches the specialist per task (call-and-return, chat-loop re-entry), runs `numerical_analyst` nested inside a task, marks ledger items complete, and synthesizes across results — with the AH-160 `transfer_to_agent` guard holding throughout.
+
+Four ADK constraints were discovered the hard way during implementation and **supersede the relevant prose below**. Full detail (with file/line references and the reproducing tests) lives in [`mcp-architecture.md` §"ADK 2.0 agent-as-tool & tool-composition constraints" #7–#9](../mcp-architecture.md). Summary:
+
+1. **The delegation tool name is the bare specialist `doc_id`** (e.g. `google_analytics_specialist`) — **not** `request_task_<name>` (a myth that `ValueError`s). `_get_transfer_targets` excludes `mode='task'` from `transfer_to_agent`, so a specialist is reachable by transfer XOR by its task tool — KEN-E is **request_task-only** for specialists.
+2. **Never review-wrap a `mode='task'` specialist.** A review-wrapped `LoopAgent` has no `finish_task`, so dispatching it as a task node returns `{"output": None}` and the coordinator gets an empty result. `_build_specialist` routes `mode='task'` to the bare path always. **This corrects §1/§5's "each per-task delegation is *optionally* wrapped in the review `LoopAgent`"** — review wrapping applies to chat-mode specialists only; re-introducing review *inside* a task specialist is deferred.
+3. **A task node surfaces its result ONLY via `finish_task`** — the specialist must call it and put the **complete** answer in `result` (KEN-E appends `_TASK_RESULT_INSTRUCTION`). A bare task agent that emits text without `finish_task` instead **suspends** (`NodeInterruptedError` via `wait_for_output`).
+4. **ADK snapshots the dispatch `tools_dict` before the per-turn `before_agent_callback`** — so per-turn-attached specialist tools are invisible to dispatch recognition. Fix: `hierarchy._seed_specialist_dispatch_tools` seeds a placeholder `_TaskAgentTool` per global `ken_e_sub_agent` specialist onto the deploy-time `root.tools` (a bounded, intentional deploy-time read; the real per-turn specialist is what `find_agent` dispatches).
+
+**Known follow-ups:** the AH-141 branch-failure sentinel (`make_branch_failure_sentinel_after_agent_callback`) still reads the ledger with the wrong shape (iterates the `{list_id,title,items}` dict's keys → `AttributeError` swallowed → sentinel never written); it should reuse `_extract_ledger_items`. The chat UI's To-Do-list / Documents panels fail to load the (correctly-written) ledger — a Chat-component side-table read-path issue tracked as [CH-70](https://linear.app/ken-e/issue/CH-70).
 
 ---
 

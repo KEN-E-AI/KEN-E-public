@@ -337,10 +337,13 @@ def make_branch_failure_sentinel_after_agent_callback(
             else:
                 state_view = dict(state_obj)
 
-            todo_lists = state_view.get("todo_lists")
-            if not todo_lists:
-                return
-            ledger_items = todo_lists.get("supervisor_ledger")
+            # AH-161 follow-up: read items via the shared helper so the ledger's
+            # ``{list_id, title, items}`` dict shape (written by ``set_todo_list``)
+            # is handled correctly.  Iterating ``todo_lists["supervisor_ledger"]``
+            # directly walks the dict's KEYS (strings) and ``item.get(...)`` raises
+            # ``AttributeError`` — swallowed by the ``except`` below, so the
+            # sentinel was silently never written on the live multi-task path.
+            ledger_items = _extract_ledger_items(state_view)
             if not ledger_items:
                 return
 
