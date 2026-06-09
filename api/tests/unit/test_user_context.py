@@ -9,8 +9,6 @@ from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import (
     get_current_user_context,
     get_optional_user_context,
-    require_account_access,
-    require_organization_access,
 )
 
 
@@ -511,94 +509,3 @@ class TestGetOptionalUserContext:
                 mock_request, credentials, mock_firestore
             )
             assert result == expected_context
-
-
-class TestRequireAccountAccess:
-    """Test require_account_access function."""
-
-    def test_require_account_access_granted(self):
-        """Test that access is granted when user has permission."""
-        user = UserContext(
-            user_id="test-user",
-            email="test@example.com",
-            account_permissions={"acc_1": "admin"},
-            organization_permissions={},
-        )
-
-        check_fn = require_account_access("acc_1")
-        # Should not raise
-        check_fn(user)
-
-    def test_require_account_access_denied_no_access(self):
-        """Test that access is denied when user lacks permission."""
-        user = UserContext(
-            user_id="test-user",
-            email="test@example.com",
-            account_permissions={"acc_1": "admin"},
-            organization_permissions={},
-        )
-
-        check_fn = require_account_access("acc_2")
-        with mock.patch("asyncio.create_task"):
-            with pytest.raises(HTTPException) as exc_info:
-                check_fn(user)
-
-        assert exc_info.value.status_code == 403
-        assert "Access denied to account acc_2" in exc_info.value.detail
-
-    def test_require_account_access_with_roles(self):
-        """Test that access requires specific roles when specified."""
-        user = UserContext(
-            user_id="test-user",
-            email="test@example.com",
-            account_permissions={"acc_1": "viewer"},
-            organization_permissions={},
-        )
-
-        # Should succeed with correct role
-        check_fn = require_account_access("acc_1", ["viewer", "admin"])
-        with mock.patch("asyncio.create_task"):
-            check_fn(user)
-
-        # Should fail with wrong role
-        check_fn = require_account_access("acc_1", ["admin"])
-        with mock.patch("asyncio.create_task"):
-            with pytest.raises(HTTPException) as exc_info:
-                check_fn(user)
-
-        assert exc_info.value.status_code == 403
-        assert "with role in ['admin']" in exc_info.value.detail
-
-
-class TestRequireOrganizationAccess:
-    """Test require_organization_access function."""
-
-    def test_require_organization_access_granted(self):
-        """Test that access is granted when user has permission."""
-        user = UserContext(
-            user_id="test-user",
-            email="test@example.com",
-            account_permissions={},
-            organization_permissions={"org_1": "admin"},
-        )
-
-        check_fn = require_organization_access("org_1")
-        # Should not raise
-        check_fn(user)
-
-    def test_require_organization_access_denied(self):
-        """Test that access is denied when user lacks permission."""
-        user = UserContext(
-            user_id="test-user",
-            email="test@example.com",
-            account_permissions={},
-            organization_permissions={"org_1": "admin"},
-        )
-
-        check_fn = require_organization_access("org_2")
-        with mock.patch("asyncio.create_task"):
-            with pytest.raises(HTTPException) as exc_info:
-                check_fn(user)
-
-        assert exc_info.value.status_code == 403
-        assert "Access denied to organization org_2" in exc_info.value.detail

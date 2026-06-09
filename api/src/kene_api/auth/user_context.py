@@ -1,6 +1,5 @@
 """User context and authentication utilities."""
 
-import asyncio
 import hmac
 import logging
 import time
@@ -529,79 +528,3 @@ async def check_account_access(
         )
         raise HTTPException(status_code=403, detail="forbidden")
     return user
-
-
-def require_account_access(
-    account_id: str,
-    required_roles: list[str] | None = None,
-) -> Any:
-    """Verify user has access to an account.
-
-    To be used within route handlers after getting user context.
-
-    Args:
-        account_id: The account ID to check
-        required_roles: Optional list of required roles
-
-    Raises:
-        HTTPException: If access is denied
-    """
-
-    def check_access(user: UserContext) -> None:
-        if not user.has_account_access(account_id, required_roles):
-            role_msg = f" with role in {required_roles}" if required_roles else ""
-
-            audit_logger = get_audit_logger()
-            asyncio.create_task(
-                audit_logger.log_access_denied(
-                    user_id=user.user_id,
-                    resource_type="account",
-                    resource_id=account_id,
-                    required_permission=str(required_roles) if required_roles else None,
-                )
-            )
-
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied to account {account_id}{role_msg}",
-            )
-
-    return check_access
-
-
-def require_organization_access(
-    organization_id: str,
-    required_roles: list[str] | None = None,
-) -> Any:
-    """Verify user has access to an organization.
-
-    To be used within route handlers after getting user context.
-
-    Args:
-        organization_id: The organization ID to check
-        required_roles: Optional list of required roles
-
-    Raises:
-        HTTPException: If access is denied
-    """
-
-    def check_access(user: UserContext) -> None:
-        if not user.has_organization_access(organization_id, required_roles):
-            role_msg = f" with role in {required_roles}" if required_roles else ""
-
-            audit_logger = get_audit_logger()
-            asyncio.create_task(
-                audit_logger.log_access_denied(
-                    user_id=user.user_id,
-                    resource_type="organization",
-                    resource_id=organization_id,
-                    required_permission=str(required_roles) if required_roles else None,
-                )
-            )
-
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied to organization {organization_id}{role_msg}",
-            )
-
-    return check_access
