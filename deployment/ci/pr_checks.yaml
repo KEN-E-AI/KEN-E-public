@@ -31,13 +31,11 @@
 #     `frontend-typecheck` and `frontend-a11y-tests` both `waitFor:
 #     ['frontend-install']` and only READ node_modules (no `npm ci` of their own),
 #     so neither races the writer.
-#   * `frontend-e2e-tests` runs on the Playwright image and needs its own install
-#     (cross-image node_modules is not portable). Rather than wipe the shared dir
-#     with its own `npm ci` (the old TS6053 race), it installs into an ISOLATED
-#     copy of the frontend tree under `/workspace/frontend-e2e` (`npm ci` has no
-#     --prefix), so it NEVER touches `frontend/node_modules`. That makes it fully
-#     independent (`waitFor: ['-']`) and removes the race structurally rather than
-#     by timing (AH-151 Lever 4). markdown-link-check is independent (`waitFor: ['-']`).
+#   * The Playwright E2E suite is NOT in this build — it runs in its own trigger
+#     (deployment/ci/pr_checks_e2e.yaml), gated on frontend + feature-flag
+#     `included_files`, so backend/docs-only PRs never start it. It is therefore
+#     not a frontend/node_modules writer here either. markdown-link-check is
+#     independent (`waitFor: ['-']`).
 steps:
   # Install uv package manager and sync dependencies. Sole builder of the root
   # /workspace/.venv (persisted across steps); all root-venv steps waitFor this.
@@ -424,8 +422,8 @@ steps:
   # Consumed read-only by frontend-typecheck and frontend-a11y-tests; those
   # steps drop their own `npm ci` invocations to eliminate the duplicate install
   # and the latent concurrent-write race into the shared directory.
-  # frontend-e2e-tests keeps its own npm ci (different image — Playwright Ubuntu;
-  # cross-image node_modules portability not yet validated — AH-151 Lever 4).
+  # The Playwright E2E suite runs in a separate build (pr_checks_e2e.yaml) and
+  # does its own npm ci there, so it is not a consumer of this shared dir.
   - name: "node:20-slim"
     id: frontend-install
     waitFor: ['-']
@@ -463,129 +461,13 @@ steps:
         cd frontend
         npm run typecheck
 
-  # Run Playwright E2E tests for the feature-flag admin-to-hook loop (FF-PRD-03 §5.4).
-  # Starts Firestore + Auth emulators, seeds test users, runs the FastAPI backend at TTL=1s,
-  # then exercises SC-1…SC-4 (domain_match, default, kill_switch, dev_override) via a headless
-  # Chromium browser.
-  #
-  # Path-filter guard: the step exits 0 immediately when no changed file touches
-  # frontend/** or the feature-flag service/router source, avoiding unnecessary ~3-min runs
-  # for unrelated PRs.  Cloud Build doesn't support per-step fileFilter natively, so the
-  # guard is implemented inline with `git diff --name-only`.
-  #
-  # Artifact upload: test-results/ (screenshots + traces) is copied to GCS on failure so
-  # engineers can diagnose flaky tests without re-running locally.
-  - name: "mcr.microsoft.com/playwright:v1.49.0-jammy"
-    id: frontend-e2e-tests
-    # waitFor: ['-'] — this step installs into an ISOLATED node_modules (a copy of
-    # the frontend tree under /workspace/frontend-e2e, built below), so it never
-    # writes the shared /workspace/frontend/node_modules that typecheck/a11y read.
-    # With no shared-dir contention it runs fully parallel with the other frontend
-    # steps; the TS6053 race is removed structurally, not by ordering (AH-151 Lever 4).
-    waitFor: ['-']
-    entrypoint: /bin/bash
-    args:
-      - "-c"
-      - |
-        set -euo pipefail
-
-        # Path-filter guard — skip step when no relevant files changed.
-        # NOTE: shell vars are escaped as $$ to avoid Cloud Build substitution parsing.
-        # Cloud Build's checkout has no remote-tracking refs, so fetch main
-        # explicitly. If anything in the merge-base flow fails (detached HEAD,
-        # network error, etc.) we fail open and run the full E2E suite — a
-        # spurious 3-minute run is preferable to silently skipping the gate.
-        #
-        # depth=500 covers ~3 months of commit cadence without the full-history
-        # cost of --unshallow; --depth=50 could miss merge-base on long-lived
-        # feature branches (AH-151 Lever 2).
-        git fetch --no-tags --depth=500 origin main 2>/dev/null || true
-        BASE=$$(git merge-base HEAD FETCH_HEAD 2>/dev/null || true)
-        if [ -z "$$BASE" ]; then
-          echo "Could not determine merge-base with origin/main — running full E2E suite."
-        else
-          CHANGED=$$(git diff --name-only "$$BASE" HEAD)
-          RELEVANT=$$(echo "$$CHANGED" | grep -E \
-            '^frontend/|^api/src/kene_api/services/feature_flag_service\.py$|^api/src/kene_api/routers/(feature_flags|admin_feature_flags)\.py$' \
-            || true)
-          if [ -z "$$RELEVANT" ]; then
-            echo "No feature-flag or frontend files changed — skipping E2E suite."
-            exit 0
-          fi
-        fi
-
-        # Start the emulator + backend stack in the background.
-        bash deployment/ci/scripts/start_e2e_stack.sh &
-        STACK_PID=$!
-
-        # Wait for the backend to accept requests (start_e2e_stack.sh waits
-        # internally, but add a belt-and-suspenders poll here in case the
-        # script exits early). 503 is acceptable: Neo4j is not in the E2E
-        # stack, so the app reports "degraded" while still serving FF endpoints.
-        for i in $$(seq 1 30); do
-          CODE=$$(curl -s -o /dev/null -w "%{http_code}" \
-            http://127.0.0.1:8000/health 2>/dev/null || echo "000")
-          case "$$CODE" in
-            200|503) echo "Backend ready (HTTP $$CODE)."; break ;;
-          esac
-          sleep 2
-        done
-
-        # Image-pin contract: frontend/package.json pins @playwright/test to the
-        # exact version bundled in this image (mcr.microsoft.com/playwright:v1.49.0-jammy).
-        # Chromium is already installed globally (/ms-playwright) — no `playwright
-        # install` needed, and browser resolution is independent of where node_modules
-        # lives. When bumping the image version, update the package.json pin to match.
-        #
-        # node_modules isolation (AH-151 Lever 4): `npm ci` has no --prefix and wipes
-        # ./node_modules, so run the whole e2e flow from a COPY of the frontend tree
-        # (sans node_modules) in a sibling dir. This guarantees e2e never writes the
-        # shared /workspace/frontend/node_modules that frontend-typecheck/-a11y read,
-        # removing the TS6053 race structurally. `tar` is always present in the jammy
-        # image (rsync is not). All downstream paths (playwright testDir, the vite
-        # webServer, test-results) are cwd-relative and resolve inside the copy.
-        rm -rf /workspace/frontend-e2e
-        mkdir -p /workspace/frontend-e2e
-        tar --exclude=node_modules --exclude=test-results -C frontend -cf - . \
-          | tar -C /workspace/frontend-e2e -xf -
-        cd /workspace/frontend-e2e
-        npm ci --prefer-offline
-
-        # Run the E2E suite; capture exit code so we can upload artifacts before exiting.
-        set +e
-        npx playwright test
-        E2E_EXIT=$?
-        set -e
-
-        # Upload test-results to GCS on failure for post-mortem inspection.
-        # ${PROJECT_ID} and ${BUILD_ID} are Cloud Build built-in substitutions (intentional, not escaped).
-        if [ $$E2E_EXIT -ne 0 ] && [ -d test-results ] && [ "$(ls -A test-results)" ]; then
-          gsutil -m cp -r test-results \
-            "gs://${PROJECT_ID}-logs-data/build-logs/${BUILD_ID}/playwright-test-results/" \
-            || echo "WARNING: artifact upload failed (non-fatal)."
-        fi
-
-        # Kill the process group so all emulator children are cleaned up.
-        STACK_PGID=$(ps -o pgid= $$STACK_PID 2>/dev/null | tr -d ' ' || true)
-        [ -n "$$STACK_PGID" ] && kill -- "-$${STACK_PGID}" 2>/dev/null || true
-        exit $$E2E_EXIT
-    env:
-      - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'
-      # CI=true activates playwright.config's CI branches: retries:2 (self-heals a
-      # cold-start blip), forbidOnly, a fresh (non-reused) webServer, and the
-      # global-setup stack warm-up that absorbs the first-sign-in cold-start before
-      # any test counts (AH-159). Cloud Build does not set CI by default.
-      - 'CI=true'
-
   # Run frontend accessibility test suite (axe-core, WCAG contrast, focus-ring audit,
   # keyboard navigation, and reduced-motion smoke tests).
   # Glob patterns let new a11y test files (src/test/*.test.{ts,tsx}) be picked up
   # automatically without editing this file.
   # Waits on frontend-install (the shared npm ci that builds node_modules). a11y
   # only reads node_modules (vitest); it runs no npm ci of its own. It is race-free:
-  # the SOLE writer of frontend/node_modules is frontend-install (which it waits on),
-  # and frontend-e2e-tests installs into an isolated copy (/workspace/frontend-e2e),
-  # so nothing wipes node_modules while this vitest read is in flight (AH-151 Lever 4).
+  # the SOLE writer of frontend/node_modules is frontend-install, which it waits on.
   # See docs/design/components/ui/accessibility-baseline.md for the full gate description.
   - name: "node:20-slim"
     id: frontend-a11y-tests

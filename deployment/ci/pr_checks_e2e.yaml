@@ -1,0 +1,99 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Standalone Playwright E2E build, fired by its own `pr-checks-e2e` trigger
+# (deployment/terraform/build_triggers.tf) gated on `included_files` =
+# frontend + feature-flag source. Splitting E2E into its own trigger replaces
+# the previous inline path-filter, which could never work: the E2E step runs in
+# the Playwright image with a depth-1 detached checkout, no git remote, and no
+# git credentials, so `git fetch origin main` always failed and the merge-base
+# guard always ran the full suite anyway. `included_files` gates at the trigger
+# level instead, so backend/docs-only PRs never start this build.
+#
+# Because this build runs ONLY the e2e step, there is no shared
+# frontend/node_modules to protect — it installs directly into frontend/ rather
+# than the isolated /workspace/frontend-e2e copy the in-pr_checks step needed
+# (that copy existed solely to avoid the TS6053 race with typecheck/a11y).
+steps:
+  # Run Playwright E2E tests for the feature-flag admin-to-hook loop (FF-PRD-03 §5.4).
+  # Starts Firestore + Auth emulators, seeds test users, runs the FastAPI backend at TTL=1s,
+  # then exercises SC-1…SC-4 (domain_match, default, kill_switch, dev_override) via a headless
+  # Chromium browser.
+  #
+  # Artifact upload: test-results/ (screenshots + traces) is copied to GCS on failure so
+  # engineers can diagnose flaky tests without re-running locally.
+  - name: "mcr.microsoft.com/playwright:v1.49.0-jammy"
+    id: frontend-e2e-tests
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+
+        # Start the emulator + backend stack in the background.
+        # NOTE: shell vars are escaped as $$ to avoid Cloud Build substitution parsing.
+        bash deployment/ci/scripts/start_e2e_stack.sh &
+        STACK_PID=$!
+
+        # Wait for the backend to accept requests (start_e2e_stack.sh waits
+        # internally, but add a belt-and-suspenders poll here in case the
+        # script exits early). 503 is acceptable: Neo4j is not in the E2E
+        # stack, so the app reports "degraded" while still serving FF endpoints.
+        for i in $$(seq 1 30); do
+          CODE=$$(curl -s -o /dev/null -w "%{http_code}" \
+            http://127.0.0.1:8000/health 2>/dev/null || echo "000")
+          case "$$CODE" in
+            200|503) echo "Backend ready (HTTP $$CODE)."; break ;;
+          esac
+          sleep 2
+        done
+
+        # Image-pin contract: frontend/package.json pins @playwright/test to the
+        # exact version bundled in this image (mcr.microsoft.com/playwright:v1.49.0-jammy).
+        # Chromium is already installed globally (/ms-playwright) — no `playwright
+        # install` needed. When bumping the image version, update the package.json pin.
+        cd frontend
+        npm ci --prefer-offline
+
+        # Run the E2E suite; capture exit code so we can upload artifacts before exiting.
+        set +e
+        npx playwright test
+        E2E_EXIT=$?
+        set -e
+
+        # Upload test-results to GCS on failure for post-mortem inspection.
+        # ${PROJECT_ID} and ${BUILD_ID} are Cloud Build built-in substitutions (intentional, not escaped).
+        if [ $$E2E_EXIT -ne 0 ] && [ -d test-results ] && [ "$(ls -A test-results)" ]; then
+          gsutil -m cp -r test-results \
+            "gs://${PROJECT_ID}-logs-data/build-logs/${BUILD_ID}/playwright-test-results/" \
+            || echo "WARNING: artifact upload failed (non-fatal)."
+        fi
+
+        # Kill the process group so all emulator children are cleaned up.
+        STACK_PGID=$(ps -o pgid= $$STACK_PID 2>/dev/null | tr -d ' ' || true)
+        [ -n "$$STACK_PGID" ] && kill -- "-$${STACK_PGID}" 2>/dev/null || true
+        exit $$E2E_EXIT
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'
+      # CI=true activates playwright.config's CI branches: retries:2 (self-heals a
+      # cold-start blip), forbidOnly, a fresh (non-reused) webServer, and the
+      # global-setup stack warm-up that absorbs the first-sign-in cold-start before
+      # any test counts (AH-159). Cloud Build does not set CI by default.
+      - 'CI=true'
+
+logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
+options:
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  machineType: E2_HIGHCPU_8

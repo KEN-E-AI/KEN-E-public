@@ -48,6 +48,42 @@ resource "google_cloudbuild_trigger" "pr_checks" {
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
 
+# a2. Create PR E2E checks trigger (split out of pr-checks).
+# The Playwright E2E step used to live inside pr_checks.yaml behind an inline
+# git-diff path-filter, but that filter could never work: the E2E step runs in
+# the Playwright image with a depth-1 detached checkout, no git remote, and no
+# git credentials, so `git fetch origin main` always failed and the merge-base
+# guard always fell open to the full suite. `included_files` gates at the trigger
+# level instead — this trigger fires only when a PR touches the frontend or the
+# feature-flag source the E2E suite exercises, so backend/docs-only PRs never
+# start it. The harness files (pr_checks_e2e.yaml, start_e2e_stack.sh) are
+# included so changes to the E2E setup itself re-run the suite.
+resource "google_cloudbuild_trigger" "pr_checks_e2e" {
+  name            = "pr-checks-e2e"
+  project         = var.cicd_runner_project_id
+  location        = var.region
+  description     = "Trigger for PR Playwright E2E checks (frontend + feature-flag scope)"
+  service_account = resource.google_service_account.cicd_runner_sa.id
+
+  repository_event_config {
+    repository = "projects/${var.cicd_runner_project_id}/locations/${var.region}/connections/${var.host_connection_name}/repositories/${var.repository_name}"
+    pull_request {
+      branch = "main"
+    }
+  }
+
+  filename = "deployment/ci/pr_checks_e2e.yaml"
+  included_files = [
+    "frontend/**",
+    "api/src/kene_api/services/feature_flag_service.py",
+    "api/src/kene_api/routers/feature_flags.py",
+    "api/src/kene_api/routers/admin_feature_flags.py",
+    "deployment/ci/pr_checks_e2e.yaml",
+    "deployment/ci/scripts/start_e2e_stack.sh",
+  ]
+  depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
+}
+
 # b. Create CD pipeline trigger
 resource "google_cloudbuild_trigger" "cd_pipeline" {
   name            = "cd-pipeline"
