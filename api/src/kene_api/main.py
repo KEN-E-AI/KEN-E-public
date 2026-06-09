@@ -299,6 +299,28 @@ async def _super_admin_required_handler(
     return JSONResponse(status_code=403, content={"error": "super_admin_required"})
 
 
+# App-wide safety net: map Neo4j driver connectivity failures to a graceful 503
+# instead of letting them escape as a raw 500 + ASGI traceback (information
+# disclosure). Catches routes that let ServiceUnavailable propagate (e.g. the
+# notifications account-id pre-fetch); routes that already convert DB errors
+# locally are unaffected, and HTTPException still passes through FastAPI's own
+# handler untouched.
+from neo4j.exceptions import ServiceUnavailable
+
+
+@app.exception_handler(ServiceUnavailable)
+async def _neo4j_unavailable_handler(
+    request: Request, exc: ServiceUnavailable
+) -> JSONResponse:
+    logger.warning(
+        "Neo4j unavailable on %s %s: %s", request.method, request.url.path, exc
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database service unavailable. Please try again later."},
+    )
+
+
 # Include routers
 app.include_router(auth.router)  # Auth router already has its prefix
 app.include_router(admin.router)  # Super-admin role management (DM-81); has its prefix

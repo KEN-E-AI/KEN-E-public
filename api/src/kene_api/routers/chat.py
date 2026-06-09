@@ -3868,6 +3868,10 @@ async def get_conversation_history(
 
         return history
 
+    except HTTPException:
+        # Pass through deliberate HTTP responses (e.g. the 404 above) instead of
+        # rewrapping them as a generic 500.
+        raise
     except Exception as e:
         logger.error(f"Error getting conversation history {session_id}: {e!s}")
         raise HTTPException(

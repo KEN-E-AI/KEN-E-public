@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from neo4j.exceptions import ServiceUnavailable
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
@@ -190,6 +191,10 @@ async def get_notifications(
 
         return notifications
 
+    except ServiceUnavailable:
+        # Let Neo4j outages reach the app-wide 503 handler rather than masking
+        # them as a generic 500.
+        raise
     except Exception as e:
         logger.error(f"Error fetching notifications: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch notifications")
