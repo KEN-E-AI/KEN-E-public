@@ -216,6 +216,7 @@ my_env.tfvars
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/worktrees/
 
 # Temporary test/investigation scripts
 temp_scripts/
