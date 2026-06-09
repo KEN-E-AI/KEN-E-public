@@ -379,13 +379,44 @@ class TestSupervisorInstructionFragment:
 
         assert SUPERVISOR_INSTRUCTION_FRAGMENT.startswith("## Multi-Task Decomposition")
 
-    def test_fragment_mentions_transfer_to_agent_for_single_specialist(self) -> None:
-        """AC-2: single-specialist queries must fall through to transfer_to_agent."""
+    def test_fragment_mentions_transfer_to_agent_hard_rule(self) -> None:
+        """AH-161: the HARD RULE forbidding transfer_to_agent once a ledger exists
+        must still be present in the fragment (even though the single-step fast path
+        now uses request_task_<name> directly instead of transfer_to_agent)."""
         from app.adk.agents.orchestration.supervisor import (
             SUPERVISOR_INSTRUCTION_FRAGMENT,
         )
 
         assert "transfer_to_agent" in SUPERVISOR_INSTRUCTION_FRAGMENT
+
+    def test_fragment_dispatches_by_bare_doc_id_tool_name(self) -> None:
+        """AH-161 (corrected): the real ADK delegation tool is named after the
+        specialist's bare ``doc_id`` (``_TaskAgentTool.name == agent.name``), NOT
+        ``request_task_<id>``.  The fragment must instruct dispatch by the
+        ``doc_id``-named tool and explicitly disabuse the model of the
+        non-existent ``request_task_`` prefix."""
+        from app.adk.agents.orchestration.supervisor import (
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+        )
+
+        frag = SUPERVISOR_INSTRUCTION_FRAGMENT
+        # Dispatch is by the doc_id-named tool.
+        assert "doc_id`-named tool" in frag
+        # The model must be told request_task_<id> is NOT a real tool.
+        assert "no" in frag and "request_task_<id>" in frag
+        # Worked example calls the bare tool name, never the request_task_ prefix.
+        assert "google_analytics_specialist(query=" in frag
+        assert "request_task_google_analytics_specialist(" not in frag
+        # Fast path still describes a single self-contained step.
+        assert "single self-contained step" in frag
+        # transfer_to_agent must NOT be mentioned as the fast path (it may only
+        # appear in the HARD RULE that forbids it while a ledger is active).
+        fast_path_start = frag.index("**Fast path**")
+        hard_rule_start = frag.index("**HARD RULE")
+        fast_path_section = frag[fast_path_start:hard_rule_start]
+        assert "transfer_to_agent" not in fast_path_section, (
+            "Fast path section must not mention transfer_to_agent"
+        )
 
     def test_fragment_mentions_requires_approval(self) -> None:
         """Spend-changing tasks must include the requires_approval marker."""
@@ -409,7 +440,10 @@ class TestSupervisorInstructionFragment:
             SUPERVISOR_INSTRUCTION_FRAGMENT,
         )
 
-        assert "### Dispatching ready tasks (parallel vs. sequential)" in SUPERVISOR_INSTRUCTION_FRAGMENT
+        assert (
+            "### Dispatching ready tasks (parallel vs. sequential)"
+            in SUPERVISOR_INSTRUCTION_FRAGMENT
+        )
 
     def test_fragment_mentions_in_the_same_turn(self) -> None:
         """AH-141: the fragment must instruct the LLM to emit parallel FCs in the SAME turn."""
@@ -1043,7 +1077,199 @@ class TestWrapTaskInReview:
         Parity assertion: the two validators must agree so the ledger can never
         generate a result_key that wrap_task_in_review would reject.
         """
-        valid_key = "ga_result"  # accepted by both _RESULT_KEY_PATTERN and _VALID_PREFIX_RE
+        valid_key = (
+            "ga_result"  # accepted by both _RESULT_KEY_PATTERN and _VALID_PREFIX_RE
+        )
         spec = self._make_specialist()
         result = self._wrap(spec, "Be specific.", valid_key)
         assert result is not spec  # non-empty criteria → pipeline returned
+
+
+# ---------------------------------------------------------------------------
+# TestTransferToAgentLedgerGuard (AH-160)
+# ---------------------------------------------------------------------------
+
+
+def _ledger_state(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a session-state dict whose supervisor_ledger holds ``items``.
+
+    Mirrors the shape ``set_todo_list`` writes:
+    ``state["todo_lists"]["supervisor_ledger"] = {"list_id", "title", "items"}``.
+    """
+    return {
+        "todo_lists": {
+            "supervisor_ledger": {
+                "list_id": "supervisor_ledger",
+                "title": "Test ledger",
+                "items": items,
+            }
+        }
+    }
+
+
+def _item(
+    item_id: str, status: str, assignee: str = "google_analytics_specialist"
+) -> dict[str, Any]:
+    return {"item_id": item_id, "text": item_id, "status": status, "assignee": assignee}
+
+
+class TestHasActiveSupervisorLedger:
+    def _run(self, state: Any) -> bool:
+        from app.adk.agents.orchestration.supervisor import has_active_supervisor_ledger
+
+        return has_active_supervisor_ledger(state)
+
+    def test_no_todo_lists_returns_false(self) -> None:
+        assert self._run({}) is False
+
+    def test_no_supervisor_ledger_returns_false(self) -> None:
+        assert self._run({"todo_lists": {"other": {"items": []}}}) is False
+
+    def test_single_item_ledger_returns_false(self) -> None:
+        # A degenerate 1-item ledger is not "multi-task" — guard must not fire.
+        assert self._run(_ledger_state([_item("a", "pending")])) is False
+
+    def test_two_pending_items_returns_true(self) -> None:
+        state = _ledger_state([_item("a", "pending"), _item("b", "pending")])
+        assert self._run(state) is True
+
+    def test_one_nonterminal_among_completed_returns_true(self) -> None:
+        state = _ledger_state([_item("a", "completed"), _item("b", "dispatched")])
+        assert self._run(state) is True
+
+    def test_all_terminal_returns_false(self) -> None:
+        # A finished prior-turn workflow must NOT block a later transfer.
+        state = _ledger_state([_item("a", "completed"), _item("b", "failed")])
+        assert self._run(state) is False
+
+    def test_missing_status_treated_as_pending(self) -> None:
+        state = _ledger_state(
+            [{"item_id": "a", "text": "a"}, {"item_id": "b", "text": "b"}]
+        )
+        assert self._run(state) is True
+
+    def test_legacy_bare_list_shape_handled(self) -> None:
+        # Defensive: a bare-list ledger value (not the dict-with-items shape).
+        state = {
+            "todo_lists": {
+                "supervisor_ledger": [_item("a", "pending"), _item("b", "pending")]
+            }
+        }
+        assert self._run(state) is True
+
+    def test_malformed_state_does_not_raise(self) -> None:
+        assert self._run({"todo_lists": "not-a-dict"}) is False
+        assert self._run(None) is False
+
+
+class TestTransferToAgentLedgerGuardCallback:
+    def _callback(self):
+        from app.adk.agents.orchestration.supervisor import (
+            transfer_to_agent_ledger_guard_before_tool_callback,
+        )
+
+        return transfer_to_agent_ledger_guard_before_tool_callback
+
+    def _tool(self, name: str) -> Any:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(name=name)
+
+    def _ctx(self, state: Any) -> Any:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(state=state)
+
+    @pytest.mark.asyncio
+    async def test_non_transfer_tool_is_allowed(self) -> None:
+        cb = self._callback()
+        state = _ledger_state([_item("a", "pending"), _item("b", "pending")])
+        result = await cb(self._tool("set_todo_list"), {}, self._ctx(state))
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transfer_without_ledger_is_allowed(self) -> None:
+        cb = self._callback()
+        result = await cb(
+            self._tool("transfer_to_agent"),
+            {"agent_name": "google_analytics_specialist"},
+            self._ctx({}),
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transfer_with_active_multi_item_ledger_is_blocked(self) -> None:
+        cb = self._callback()
+        state = _ledger_state([_item("a", "pending"), _item("b", "pending")])
+        result = await cb(
+            self._tool("transfer_to_agent"),
+            {"agent_name": "google_analytics_specialist"},
+            self._ctx(state),
+        )
+        assert isinstance(result, dict)
+        assert result["error"] == "transfer_to_agent_disabled_during_supervisor_ledger"
+        # Steers the model to the specialist's doc_id-named delegation tool (the
+        # real ADK tool name), not the non-existent request_task_ prefix (AH-161).
+        assert "doc_id" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_transfer_with_all_terminal_ledger_is_allowed(self) -> None:
+        cb = self._callback()
+        state = _ledger_state([_item("a", "completed"), _item("b", "completed")])
+        result = await cb(
+            self._tool("transfer_to_agent"),
+            {"agent_name": "google_analytics_specialist"},
+            self._ctx(state),
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_missing_state_degrades_open(self) -> None:
+        cb = self._callback()
+        result = await cb(self._tool("transfer_to_agent"), {}, object())
+        assert result is None
+
+
+class TestSupervisorInstructionForbidsTransferDuringLedger:
+    def test_fragment_forbids_transfer_during_ledger_execution(self) -> None:
+        from app.adk.agents.orchestration.supervisor import (
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+        )
+
+        frag = SUPERVISOR_INSTRUCTION_FRAGMENT
+        # The hard rule and the closed escape hatch must be present.
+        assert "transfer_to_agent" in frag
+        assert "request_task_" in frag
+        assert "one-way" in frag.lower()
+        assert "share the same assignee" in frag or "share one assignee" in frag
+
+
+class TestSupervisorInstructionDecompositionTrigger:
+    """AH-160 (option A): decomposition must key on steps/approval, not specialist count."""
+
+    def _fragment(self) -> str:
+        from app.adk.agents.orchestration.supervisor import (
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+        )
+
+        return SUPERVISOR_INSTRUCTION_FRAGMENT
+
+    def test_trigger_is_steps_not_specialist_count(self) -> None:
+        frag = self._fragment()
+        assert "NOT how many distinct specialists are involved" in frag
+
+    def test_multi_step_single_specialist_still_decomposes(self) -> None:
+        frag = self._fragment()
+        # The escape hatch ("one specialist can do all of it") must be closed.
+        # (Anchor on a phrase that survives markdown line-wrapping.)
+        assert "even if a single specialist performs" in frag
+        assert "Do not collapse a multi-step request" in frag
+
+    def test_fast_path_is_single_step_not_single_specialist(self) -> None:
+        frag = self._fragment()
+        assert "single self-contained step" in frag
+
+    def test_approval_gate_requires_supervisor_path(self) -> None:
+        frag = self._fragment()
+        assert "approval gate" in frag
+        assert "transfer_to_agent cannot" in frag or "cannot pause for approval" in frag

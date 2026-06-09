@@ -220,23 +220,43 @@ class TestRootOnlyBuild:
         callbacks = root.before_agent_callback or []
         assert attach_specialists_before_agent_callback in callbacks
 
-    def test_extra_specialist_configs_do_not_add_tools(self) -> None:
-        """Specialist Firestore docs exist but must NOT add tools to the root
-        beyond the platform-invariant supervisor tools (AH-133)."""
+    def test_extra_specialist_configs_seed_dispatch_tools(self) -> None:
+        """AH-161: each global ``ken_e_sub_agent`` specialist config seeds a
+        request_task ``_TaskAgentTool`` (dispatch shim) on the root so ADK's chat
+        dispatch loop recognizes its delegation FC.  The supervisor FUNCTION
+        tools (AH-133/AH-144) are unchanged; the root config is excluded."""
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
         root = _run_build_hierarchy(_E2E_DOCS)
-        tool_names = {getattr(t, "name", None) for t in root.tools}
-        # Only supervisor tools — no per-specialist additions.
-        # AH-144 added save/resume/clear pending tools.
-        assert tool_names == {
+        func_tool_names = {
+            getattr(t, "name", None)
+            for t in root.tools
+            if not isinstance(t, _TaskAgentTool)
+        }
+        assert func_tool_names == {
             "set_todo_list",
             "update_todo_list",
             "save_pending_supervisor_tasks",
             "resume_pending_supervisor_tasks",
             "clear_pending_supervisor_tasks",
         }
+        dispatch_names = {
+            getattr(t, "name", None)
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool)
+        }
+        assert dispatch_names == {"analytics_specialist", "ads_specialist"}
+        assert "ken_e_chatbot" not in dispatch_names
 
-    def test_single_firestore_read_for_root_config(self) -> None:
-        """build_hierarchy reads only the root config, not all specialist configs."""
+    def test_deploytime_reads_root_plus_one_per_global_specialist(self) -> None:
+        """build_hierarchy reads the root config once, then one read per global
+        specialist config to seed its request_task dispatch tool (AH-161).  The
+        root config is not re-read by the seed (excluded by ROOT_CONFIG_ID)."""
         import app.adk.agents.agent_factory.hierarchy as h
         from app.adk.agents.agent_factory.config_loader import _load_and_merge
 
@@ -258,8 +278,15 @@ class TestRootOnlyBuild:
         ):
             h.build_hierarchy(db=_FakeFirestoreDb(_E2E_DOCS))
 
-        # Only the root config should be loaded.
-        assert load_calls == ["ken_e_chatbot"]
+        # Root config once (build), plus one seed read per global specialist.
+        assert load_calls[0] == "ken_e_chatbot"
+        assert sorted(load_calls) == [
+            "ads_specialist",
+            "analytics_specialist",
+            "ken_e_chatbot",
+        ]
+        # ken_e_chatbot is NOT re-read by the seed.
+        assert load_calls.count("ken_e_chatbot") == 1
 
 
 # ---------------------------------------------------------------------------

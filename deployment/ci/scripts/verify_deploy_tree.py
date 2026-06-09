@@ -288,6 +288,32 @@ def main() -> int:
             from google.adk.tools.function_tool import FunctionTool
 
             for tool in root_agent.tools:
+                # Agent-delegation tools (AgentTool / _TaskAgentTool — e.g. the
+                # AH-161 request_task dispatch shims seeded onto the deploy-time
+                # root for each global ken_e_sub_agent specialist) are NOT
+                # FunctionTools: they have no `.func`, and the get_type_hints /
+                # FunctionTool-declaration validation below is function-tool
+                # specific (it guards against cloudpickle silently dropping a
+                # *function's* parameter schema). Validate only that they survive
+                # a cloudpickle round-trip — the deploy invariant — and skip the
+                # function-schema checks that don't apply to them.
+                if not isinstance(tool, FunctionTool):
+                    try:
+                        cloudpickle.loads(cloudpickle.dumps(tool))
+                        logger.info(
+                            "  PASS cloudpickle round-trip (non-function tool): %s",
+                            getattr(tool, "name", type(tool).__name__),
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "FAIL Check 3 (non-function tool) for %s: %s",
+                            getattr(tool, "name", tool),
+                            exc,
+                            exc_info=True,
+                        )
+                        return 1
+                    continue
+
                 fn = getattr(tool, "func", tool) if hasattr(tool, "func") else tool
                 try:
                     blob = cloudpickle.dumps(fn)

@@ -426,12 +426,22 @@ def _attach_locked(
     #    case; equality (``==``) would be unreliable for ADK tool objects without
     #    a defined __eq__.
     from app.adk.agents.agent_factory.sub_agent_attacher import (
+        _is_task_dispatchable,
         _make_task_agent_tool,
     )
 
     desired_tools: list[Any] = list(resolved_non_agent)
     for sub in root.sub_agents:
-        if getattr(sub, "name", None) in agent_subs_desired:
+        # AH-161: wrap a _TaskAgentTool for EVERY task-dispatchable sub-agent —
+        # both agent-as-tool catalogue entries (agent_subs_desired) AND the
+        # per-turn specialists pinned by attach_specialists_before_agent_callback
+        # (which runs earlier in the root's before_agent_callback chain). This
+        # callback owns root.tools (step below does root.tools[:] = desired_tools),
+        # so restricting the wrap to agent_subs_desired dropped the specialist
+        # delegation tools on every rebuild — the coordinator then emitted e.g.
+        # google_analytics_specialist(...) and ADK raised "Tool 'google_analytics_
+        # specialist' not found", silently breaking request_task dispatch in prod.
+        if _is_task_dispatchable(sub):
             task_tool = _make_task_agent_tool(sub)
             if task_tool is not None:
                 desired_tools.append(task_tool)

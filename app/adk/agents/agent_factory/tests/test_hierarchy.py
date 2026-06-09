@@ -199,13 +199,26 @@ class TestRootAgentConstruction:
         # Still no specialist-dispatch tool.
         assert "dispatch_to_" not in " ".join(n or "" for n in tool_names)
 
-    def test_root_agent_tool_count_unchanged_with_extra_configs(self) -> None:
-        """Extra specialist configs in Firestore must not add tools to the root
-        — specialists are resolved per-turn, not at deploy time.
+    def test_root_seeds_dispatch_tools_for_specialists_keeps_function_tools(
+        self,
+    ) -> None:
+        """AH-161: build_hierarchy seeds a request_task ``_TaskAgentTool`` on the
+        deploy-time root for each global ``ken_e_sub_agent`` specialist so ADK's
+        chat dispatch loop — which snapshots ``tools_dict`` BEFORE the per-turn
+        attach callback — recognizes the delegation FC.  Without this, the
+        specialist is silently never dispatched (the live failure).
 
-        AH-133/AH-144: only the five supervisor function tools are present on
-        the root; extra specialist configs do not expand that set.
+        The five supervisor FUNCTION tools are unchanged; the specialist entries
+        are dispatch shims (``_TaskAgentTool``), not function tools.  The root
+        config itself (``ROOT_CONFIG_ID``) is excluded from seeding.
         """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
         extra_spec = {
             "instruction": "You are specialist A.",
             "model": "gemini-2.0-flash",
@@ -219,16 +232,33 @@ class TestRootAgentConstruction:
         }
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        # Only the five supervisor tools — no per-specialist additions.
-        # AH-144 added save/resume/clear pending tools.
-        tool_names = {getattr(t, "name", None) for t in root.tools}
-        assert tool_names == {
+        # Function tools: still exactly the five supervisor tools (AH-133/AH-144).
+        func_tool_names = {
+            getattr(t, "name", None)
+            for t in root.tools
+            if not isinstance(t, _TaskAgentTool)
+        }
+        assert func_tool_names == {
             "set_todo_list",
             "update_todo_list",
             "save_pending_supervisor_tasks",
             "resume_pending_supervisor_tasks",
             "clear_pending_supervisor_tasks",
         }
+
+        # AH-161: a dispatch shim is seeded for each global ken_e_sub_agent
+        # specialist (default ken_e_sub_agent=True), but NOT for the root config.
+        dispatch_names = {
+            getattr(t, "name", None)
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool)
+        }
+        assert dispatch_names == {"specialist_a", "specialist_b"}, dispatch_names
+        assert "ken_e_chatbot" not in dispatch_names
+
+        # Tool-only seed: the placeholders must NOT be dispatchable sub-agents.
+        sub_names = {getattr(s, "name", None) for s in root.sub_agents}
+        assert "specialist_a" not in sub_names and "specialist_b" not in sub_names
 
     def test_root_agent_instruction_suffix_provider_wired(self) -> None:
         """build_hierarchy must pass a composed instruction_suffix_provider that
@@ -825,6 +855,117 @@ class TestAfterModelCallbackWiring:
             "adk_after_model_callback must precede capture_last_model_output_after_model_callback "
             "(ordering violation: thought parts would appear in temp:_last_model_output)"
         )
+
+
+# ---------------------------------------------------------------------------
+# AH-161: _seed_specialist_dispatch_tools
+# ---------------------------------------------------------------------------
+
+
+class TestSeedSpecialistDispatchTools:
+    """AH-161: the deploy-time root must carry a request_task ``_TaskAgentTool``
+    for every global ``ken_e_sub_agent`` specialist so ADK's chat dispatch loop
+    (which snapshots ``tools_dict`` BEFORE the per-turn attach callback) can
+    recognize the delegation FC.  Without this seed the specialist is silently
+    never dispatched in deployment (the live "I'll report back" failure)."""
+
+    @staticmethod
+    def _fake_db(doc_ids: list[str]) -> Any:
+        db = MagicMock()
+        refs = [MagicMock(id=d) for d in doc_ids]
+        db.collection.return_value.list_documents.return_value = refs
+        return db
+
+    def test_seeds_tool_for_global_ken_e_sub_agent_only(self) -> None:
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        from app.adk.agents.agent_factory import hierarchy as h
+
+        root = LlmAgent(name="ken_e", model="gemini-2.0-flash", instruction="root")
+        root.sub_agents = []
+        db = self._fake_db(["ga_specialist", "ken_e_chatbot", "broken_one"])
+
+        def _fake_load_and_merge(db_: Any, doc_id: str, account_id: Any) -> Any:
+            if doc_id == "broken_one":
+                raise RuntimeError("disabled / unresolvable")
+            cfg = MagicMock()
+            cfg.model = "gemini-2.0-flash"
+            cfg.description = f"{doc_id} desc"
+            cfg.instruction = "spec"
+            # Only ga_specialist is a delegation specialist.
+            cfg.ken_e_sub_agent = doc_id == "ga_specialist"
+            return cfg
+
+        with patch(
+            "app.adk.agents.agent_factory.hierarchy._load_and_merge",
+            side_effect=_fake_load_and_merge,
+        ):
+            h._seed_specialist_dispatch_tools(root, db, None)
+
+        task_tools = [t for t in root.tools if isinstance(t, _TaskAgentTool)]
+        names = {getattr(t, "name", None) for t in task_tools}
+        # Only the global ken_e_sub_agent specialist is seeded; the root config
+        # (ken_e_sub_agent=False) and the unresolvable doc are not.
+        assert names == {"ga_specialist"}, f"seeded tool names = {names}"
+        # Tool-only seed: the placeholder must NOT be a dispatchable sub-agent.
+        assert all(
+            getattr(s, "name", None) != "ga_specialist" for s in root.sub_agents
+        ), "placeholder must not be added to sub_agents (it must never dispatch)"
+
+    def test_listing_failure_degrades_without_raising(self) -> None:
+        from app.adk.agents.agent_factory import hierarchy as h
+
+        root = LlmAgent(name="ken_e", model="gemini-2.0-flash", instruction="root")
+        root.sub_agents = []
+        db = MagicMock()
+        db.collection.return_value.list_documents.side_effect = RuntimeError("boom")
+
+        # Must not raise; root.tools left unchanged.
+        before = list(root.tools)
+        h._seed_specialist_dispatch_tools(root, db, None)
+        assert list(root.tools) == before
+
+    def test_skips_doc_already_carrying_a_dispatch_tool(self) -> None:
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        from app.adk.agents.agent_factory import hierarchy as h
+
+        # Root already has a tool named "ga_specialist" (e.g. a registry
+        # agent-as-tool sub); the seed must not add a duplicate.
+        existing = MagicMock()
+        existing.name = "ga_specialist"
+        root = LlmAgent(
+            name="ken_e", model="gemini-2.0-flash", instruction="root", tools=[existing]
+        )
+        root.sub_agents = []
+        db = self._fake_db(["ga_specialist"])
+
+        def _fake_load_and_merge(db_: Any, doc_id: str, account_id: Any) -> Any:
+            cfg = MagicMock()
+            cfg.model = "gemini-2.0-flash"
+            cfg.description = "desc"
+            cfg.instruction = "spec"
+            cfg.ken_e_sub_agent = True
+            return cfg
+
+        with patch(
+            "app.adk.agents.agent_factory.hierarchy._load_and_merge",
+            side_effect=_fake_load_and_merge,
+        ):
+            h._seed_specialist_dispatch_tools(root, db, None)
+
+        # No _TaskAgentTool added — the existing entry already covers the name.
+        assert not [t for t in root.tools if isinstance(t, _TaskAgentTool)]
 
 
 if __name__ == "__main__":

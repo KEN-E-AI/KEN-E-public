@@ -345,6 +345,26 @@ def _clear_list_cache_for_tests() -> None:
 # Specialist construction (Phase 2 — direct Firestore MCP fetch)
 # ---------------------------------------------------------------------------
 
+# AH-161: appended to a task-mode specialist's instruction so the COMPLETE
+# user-facing answer is returned to the coordinator.  In ADK call-and-return,
+# the coordinator receives only the ``finish_task`` ``result`` (the task node's
+# output) — never the specialist's free-text turns.  ADK's own finish_task
+# instruction ("call finish_task by itself with no accompanying text") pushes
+# the model to write the answer as text and then signal completion with a
+# summary; this directive redirects the full answer into ``result``.
+_TASK_RESULT_INSTRUCTION = (
+    "## Returning Your Result\n"
+    "You are running as a delegated task for a coordinator agent. The "
+    "coordinator receives ONLY the `result` value you pass to the `finish_task` "
+    "tool — it does NOT see any text you write before calling `finish_task`. "
+    "Therefore, when you call `finish_task`, put your COMPLETE, final, "
+    "user-facing answer in the `result` parameter — including every number, "
+    "table, figure, and explanation the user asked for. Do NOT pass a status "
+    "summary such as 'Task completed' or 'Retrieved the data'; a brief "
+    "acknowledgement is not an acceptable result. The `result` you return is "
+    "exactly what the user will see."
+)
+
 
 def _build_specialist(
     config: MergedAgentConfig,
@@ -370,8 +390,15 @@ def _build_specialist(
     ``LlmAgent(mode='task')`` so the supervisor coordinator can delegate to
     this specialist and regain control after it completes (call-and-return
     primitive).  When ``None`` (default), the existing chat-mode path is
-    preserved byte-for-byte.  Both the single-pass and review-pipeline paths
-    inherit the caller's ``mode`` value.
+    preserved byte-for-byte.
+
+    AH-161: ``mode='task'`` is ALWAYS single-pass — never review-wrapped — even
+    when ``default_acceptance_criteria`` is set.  A review-wrapped ``LoopAgent``
+    dispatched via the task-delegation path yields node ``output=None`` (a
+    ``LoopAgent`` has no ``finish_task`` mechanism), so the coordinator gets an
+    empty function-response and the worker's draft is silently lost.  Only the
+    bare ``LlmAgent(mode='task')`` surfaces its answer via ``finish_task``.  The
+    review-pipeline wrap therefore applies to chat-mode specialists only.
 
     Mirrors the pre-AH-PRD-09 specialist-build path from ``hierarchy.py`` (now
     deleted from the deploy-time loop) so the per-turn resolver preserves
@@ -670,6 +697,14 @@ def _build_specialist(
         config_doc_id=name,
         mode=mode,
         additional_after_tool_callbacks=_additional_after_tool or None,
+        # AH-161: task-mode specialists run as delegated tasks; the coordinator
+        # receives ONLY the ``finish_task`` ``result`` (the node output), never
+        # the specialist's free text.  Without this directive the specialist
+        # writes the real answer as text and passes a status summary
+        # ("Task completed…") to finish_task, so the coordinator synthesizes a
+        # dataless reply.  Appended only for mode='task' (chat-mode specialists
+        # surface their text directly via transfer_to_agent and are unaffected).
+        instruction_suffix=(_TASK_RESULT_INSTRUCTION if mode == "task" else ""),
     )
 
     # AH-75: prevent multi-turn "stuck on specialist" routing. ADK's Runner
@@ -814,15 +849,31 @@ def _build_specialist(
             after.append(ah35_callback)
         agent.after_agent_callback = after
 
-    if not criteria:
+    if not criteria or mode == "task":
         # Single-pass path: the raw LlmAgent already carries
         # weave_after_agent_callback (from build_agent); insert ours before it.
+        #
+        # AH-161: ``mode == 'task'`` is ALWAYS single-pass — never
+        # review-wrapped — even when ``default_acceptance_criteria`` is set.
+        # A review-wrapped ``LoopAgent`` dispatched through the task-delegation
+        # path (``_dispatch_task_fc`` → ``ctx.run_node``) produces node
+        # ``output=None``: a ``LoopAgent`` has no ``finish_task`` mechanism to
+        # surface a result, so the coordinator receives an EMPTY
+        # function-response and the worker's draft (written to
+        # ``{prefix}_draft`` in session state) is silently lost — the live
+        # "I'll report back" silent failure. A bare ``LlmAgent(mode='task')``
+        # surfaces its answer via ``finish_task`` (FinishTaskTool args → node
+        # output → synthesized FR), the proven AH-99/AH-135 call-and-return
+        # path. Confirmed by ``TestReviewWrappedLoopAgentTaskDispatch``.
+        # Re-introducing review for task dispatch is deferred (it would require
+        # explicitly surfacing the approved draft as the node output).
+        #
         # AH-115/AH-117: attach task-mode sub-agent leaves on the single-pass
         # path — the specialist IS the returned agent, so attaching here is
         # sufficient. ``attach_task_subagent`` also injects the ``_TaskAgentTool``
         # into ``specialist.tools`` (model_post_init already ran without these
         # sub-agents, so the tool would otherwise be missing and the LLM could
-        # never dispatch ``request_task_<name>``) and sets the parent pointer.
+        # never dispatch the delegation tool) and sets the parent pointer.
         if resolved_subagents:
             from app.adk.agents.agent_factory.sub_agent_attacher import (
                 attach_task_subagent,
@@ -890,13 +941,14 @@ def _build_specialist(
     else:
         reviewer_model = DEFAULT_REVIEWER_MODEL
 
-    # AH-135 (task-mode + review-pipeline): the inner specialist LlmAgent carries
-    # ``mode=mode`` from the call site (wired above via build_agent).  The outer
-    # LoopAgent produced by build_review_pipeline is NOT constructed with
-    # ``mode='task'`` — its call-and-return semantics when wrapping a task-mode
-    # specialist are undefined and owned by AH-142.  No task-mode specialists
-    # with ``default_acceptance_criteria`` exist in production today, so this
-    # interaction is latent; AH-142 will finalise it.
+    # AH-161: this review-pipeline path is reached for CHAT-mode specialists
+    # only.  ``mode == 'task'`` returns early above on the single-pass path,
+    # because a review-wrapped LoopAgent dispatched as a task node produces node
+    # ``output=None`` (a LoopAgent has no ``finish_task`` mechanism) and silently
+    # drops the worker's draft — confirmed by
+    # ``TestReviewWrappedLoopAgentTaskDispatch``.  The review loop here wraps a
+    # chat-mode specialist whose draft becomes the visible turn output via the
+    # normal ``transfer_to_agent`` path.
     pipeline = build_review_pipeline(
         specialist=specialist,
         acceptance_criteria=criteria,
@@ -925,10 +977,10 @@ def _build_specialist(
             attach_task_subagent(worker, _sub)
 
     # Rename the LoopAgent to the specialist's doc_id so ADK's
-    # transfer_to_agent (which calls root.find_agent(name)) locates the
-    # wrapped pipeline under the same identifier the LLM sees in the
-    # Available Specialists block. BaseAgent fields are mutable;
-    # parent_agent / sub_agents are managed by the sub_agent_attacher.
+    # find_agent(name) (used by _dispatch_task_fc) locates the wrapped
+    # pipeline under the same identifier the LLM sees in the Available
+    # Specialists block. BaseAgent fields are mutable; parent_agent /
+    # sub_agents are managed by the sub_agent_attacher.
     pipeline.name = name
     # Carry the specialist's description across so available_specialists_provider
     # surfaces the same user-facing string whether or not review is enabled.
@@ -946,18 +998,11 @@ def _build_specialist(
         _agent_kind="loop_pipeline",
     )
     _wire_specialist_span_callbacks(pipeline, _cb_loop, add_weave_span=True)
-    # AH-141: same sentinel wiring on the review-pipeline path.  The LoopAgent
-    # wrapper fires its after_agent_callback once per outer dispatch, so the
-    # sentinel check runs at the right granularity.
-    if mode == "task":
-        from app.adk.agents.orchestration.supervisor import (
-            make_branch_failure_sentinel_after_agent_callback,
-        )
-
-        _sentinel_cb_loop = make_branch_failure_sentinel_after_agent_callback(name)
-        _after_loop = _as_callback_list(pipeline.after_agent_callback)
-        _after_loop.append(_sentinel_cb_loop)
-        pipeline.after_agent_callback = _after_loop
+    # AH-161: the branch-failure sentinel (AH-141) is NOT wired here.  This
+    # path is chat-mode only now (task-mode returns early on the single-pass
+    # path, where the sentinel IS wired), and the sentinel is a no-op in chat
+    # mode anyway (it checks for the supervisor_ledger in state and does
+    # nothing when absent — single-specialist transfer_to_agent turns).
 
     return pipeline
 

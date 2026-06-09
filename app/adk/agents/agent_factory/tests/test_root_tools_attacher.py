@@ -123,10 +123,11 @@ class TestCallbackContract:
         ctx = _make_callback_context(agent=agent)
         cfg = _make_config(tool_ids=[])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             result = attach_root_tools_before_agent_callback(ctx)
 
@@ -159,10 +160,13 @@ class TestSuccessfulResolve:
         tool_a = _make_tool("tool_a")
         cfg = _make_config(tool_ids=["agent.tool_a"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_test123")
 
@@ -174,10 +178,11 @@ class TestSuccessfulResolve:
         agent = _make_root_agent(tools=[_make_tool("old_tool")])
         cfg = _make_config(tool_ids=None)
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             attach_root_tools(agent, account_id="acc_test123")
 
@@ -188,10 +193,11 @@ class TestSuccessfulResolve:
         agent = _make_root_agent(tools=[])
         cfg = _make_config(tool_ids=[])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             attach_root_tools(agent, account_id=None)  # Must not raise
 
@@ -203,10 +209,11 @@ class TestSuccessfulResolve:
         agent = _make_root_agent(tools=[])
         cfg = _make_config(tool_ids=[])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             # This bad id would raise ValueError inside validate_account_id.
             attach_root_tools(agent, account_id="../../admin")  # Must not raise
@@ -227,11 +234,14 @@ class TestFingerprintCache:
         tool_a = _make_tool("tool_a")
         cfg = _make_config(tool_ids=["agent.tool_a"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
-        ) as mock_resolve:
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ) as mock_resolve,
+        ):
             attach_root_tools(agent, account_id="acc_fingerprint")
             attach_root_tools(agent, account_id="acc_fingerprint")
 
@@ -251,20 +261,26 @@ class TestFingerprintCache:
         cfg_v1.model_dump_json.return_value = '{"tool_ids": ["agent.tool_a"]}'
         cfg_v2.model_dump_json.return_value = '{"tool_ids": ["agent.tool_b"]}'
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_v1
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_v1),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_change")
 
         assert agent.tools == [tool_a]
 
         # Simulate config change: next call returns cfg_v2.
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_v2
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_b])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_v2),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_b]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_change")
 
@@ -282,19 +298,23 @@ class TestFingerprintCache:
         cfg_without = _make_config(tool_ids=[])
         cfg_without.model_dump_json.return_value = '{"tool_ids": []}'
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_with
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_with),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_drop")
 
         assert tool_a in agent.tools
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_without
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_without),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             attach_root_tools(agent, account_id="acc_drop")
 
@@ -314,10 +334,13 @@ class TestFingerprintCache:
 
         # Turn 1 — first resolve; hash NOT applied yet.
         agent1 = _make_root_agent(tools=[])
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ),
         ):
             attach_root_tools(agent1, account_id="acc_guard")
 
@@ -328,11 +351,14 @@ class TestFingerprintCache:
         # a NEW agent object with tools=[].  The hash hits but tools are empty →
         # populated-guard must force a re-resolve.
         agent2 = _make_root_agent(tools=[])  # fresh clone for turn 2
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
-        ) as mock_resolve:
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ) as mock_resolve,
+        ):
             attach_root_tools(agent2, account_id="acc_guard")
             # Resolve ran again (populated-guard bypassed the hash-hit early return).
             mock_resolve.assert_called_once()
@@ -353,11 +379,12 @@ class TestFingerprintCache:
 
         # Turn 1 — first clone for a zero-tool account.
         agent1 = _make_root_agent(tools=[])
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_empty
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
-        ) as mock_resolve_1:
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_empty),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ) as mock_resolve_1,
+        ):
             attach_root_tools(agent1, account_id="acc_zero")
             mock_resolve_1.assert_called_once()
 
@@ -366,11 +393,12 @@ class TestFingerprintCache:
         # Turn 2 — fresh clone; same config; zero tools.  Hash matches but
         # tools=[] → populated-guard fires → re-resolve.
         agent2 = _make_root_agent(tools=[])
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_empty
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
-        ) as mock_resolve_2:
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_empty),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ) as mock_resolve_2,
+        ):
             attach_root_tools(agent2, account_id="acc_zero")
             # Re-resolve fires (populated-guard) but result is still [].
             mock_resolve_2.assert_called_once()
@@ -395,10 +423,13 @@ class TestFingerprintCache:
         cfg_v1 = _make_config(tool_ids=["agent.tool_a"])
         cfg_v1.model_dump_json.return_value = '{"tool_ids": ["agent.tool_a"]}'
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_v1
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_a])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_v1),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_a]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_identity")
 
@@ -412,10 +443,13 @@ class TestFingerprintCache:
         cfg_v2 = _make_config(tool_ids=["agent.tool_b"])
         cfg_v2.model_dump_json.return_value = '{"tool_ids": ["agent.tool_b"]}'
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_v2
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[tool_b])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_v2),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[tool_b]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_identity")
 
@@ -429,10 +463,11 @@ class TestFingerprintCache:
         agent = _make_root_agent(tools=[_make_tool("old")])
         cfg = _make_config(tool_ids=["agent.tool_a"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", side_effect=RuntimeError("boom")
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", side_effect=RuntimeError("boom")
+            ),
         ):
             attach_root_tools(agent, account_id="acc_err")
 
@@ -446,12 +481,13 @@ class TestFingerprintCache:
         agent = _make_root_agent(tools=[old_tool])
         cfg = _make_config(tool_ids=["agent.tool_a"] * 35)  # would exceed cap
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta,
-            "resolve_specialist_roster",
-            side_effect=RosterCapExceededError("cap exceeded"),
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                side_effect=RosterCapExceededError("cap exceeded"),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_cap")
 
@@ -477,10 +513,13 @@ class TestFingerprintCache:
         cfg_b.model_dump_json.return_value = '{"tool_ids": ["agent.tool_y"]}'
 
         def _attach(account_id: str, cfg: Any, resolved: list[Any]) -> None:
-            with patch.object(
-                rta, "get_cached_merged_config", return_value=cfg
-            ), patch.object(
-                rta, "resolve_specialist_roster", return_value=RosterResolution(tools=resolved)
+            with (
+                patch.object(rta, "get_cached_merged_config", return_value=cfg),
+                patch.object(
+                    rta,
+                    "resolve_specialist_roster",
+                    return_value=RosterResolution(tools=resolved),
+                ),
             ):
                 attach_root_tools(agent, account_id=account_id)
 
@@ -537,12 +576,13 @@ class TestErrorDegradation:
         agent = _make_root_agent(tools=[old_tool])
         cfg = _make_config(tool_ids=["agent.tool_a"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta,
-            "resolve_specialist_roster",
-            side_effect=RuntimeError("unexpected"),
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                side_effect=RuntimeError("unexpected"),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_res_err")
 
@@ -574,12 +614,12 @@ class TestErrorDegradation:
             lock_keys_used.append(key)
             return original_block_lock_for(key)
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
-        ), patch.object(
-            rta, "block_lock_for", side_effect=_recording_lock_for
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
+            patch.object(rta, "block_lock_for", side_effect=_recording_lock_for),
         ):
             attach_root_tools(agent, account_id=None)
 
@@ -624,24 +664,31 @@ class TestAgentAsToolPartition:
 
         # resolve_specialist_roster returns a RosterResolution with the LlmAgent
         # in sub_agents; _attach_locked must route it to root.sub_agents, not tools.
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(sub_agents=[gs_sub])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(sub_agents=[gs_sub]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_partition")
 
         # The sub_agent is in sub_agents, not tools.
         gs_in_sub = next(
-            (s for s in agent.sub_agents if isinstance(s, LlmAgent) and s.name == "google_search"),
+            (
+                s
+                for s in agent.sub_agents
+                if isinstance(s, LlmAgent) and s.name == "google_search"
+            ),
             None,
         )
         assert gs_in_sub is not None, (
             "Expected task-mode LlmAgent 'google_search' in root.sub_agents."
         )
-        assert not any(
-            isinstance(t, LlmAgent) for t in agent.tools
-        ), "No LlmAgent should be in root.tools — it is not a valid tools= entry."
+        assert not any(isinstance(t, LlmAgent) for t in agent.tools), (
+            "No LlmAgent should be in root.tools — it is not a valid tools= entry."
+        )
 
     def test_regular_tools_stay_in_tools(self) -> None:
         """Non-LlmAgent items from resolve_specialist_roster stay in root.tools."""
@@ -649,12 +696,14 @@ class TestAgentAsToolPartition:
         regular_tool = _make_tool("some_mcp_tool")
         cfg = _make_config(tool_ids=["ga4.some_mcp_tool"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(tools=[regular_tool])
-        ), patch.object(
-            rta, "resolve_agent_subagents", return_value=[]
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[regular_tool]),
+            ),
+            patch.object(rta, "resolve_agent_subagents", return_value=[]),
         ):
             attach_root_tools(agent, account_id="acc_regular")
 
@@ -683,10 +732,13 @@ class TestAgentAsToolPartition:
         gs_sub = _make_task_mode_agent("google_search")
         cfg = _make_config(tool_ids=["agent.google_search"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(sub_agents=[gs_sub])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(sub_agents=[gs_sub]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_coexist")
 
@@ -718,12 +770,12 @@ class TestAgentAsToolPartition:
 
         cfg_empty = _make_config(tool_ids=[])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_empty
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
-        ), patch.object(
-            rta, "resolve_agent_subagents", return_value=[]
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_empty),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
+            patch.object(rta, "resolve_agent_subagents", return_value=[]),
         ):
             attach_root_tools(agent, account_id="acc_hotreload_remove")
 
@@ -748,10 +800,13 @@ class TestAgentAsToolPartition:
         gs_sub = _make_task_mode_agent("google_search")
         cfg = _make_config(tool_ids=["agent.google_search"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution(sub_agents=[gs_sub])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(sub_agents=[gs_sub]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_no_agent_tool")
 
@@ -778,12 +833,13 @@ class TestAgentAsToolPartition:
         gs_sub = _make_task_mode_agent("google_search")
         cfg = _make_config(tool_ids=["agent.google_search"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta,
-            "resolve_specialist_roster",
-            return_value=RosterResolution(sub_agents=[gs_sub]),
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(sub_agents=[gs_sub]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_dispatch")
 
@@ -812,12 +868,12 @@ class TestAgentAsToolPartition:
         rta._applied_hash = None  # force re-resolve
 
         cfg_empty = _make_config(tool_ids=[])
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_empty
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
-        ), patch.object(
-            rta, "resolve_agent_subagents", return_value=[]
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_empty),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
+            patch.object(rta, "resolve_agent_subagents", return_value=[]),
         ):
             attach_root_tools(agent, account_id="acc_hotreload_tool_remove")
 
@@ -828,6 +884,7 @@ class TestAgentAsToolPartition:
         assert not any(
             getattr(s, "name", None) == "google_search" for s in agent.sub_agents
         )
+
 
 # ---------------------------------------------------------------------------
 # AH-116: _reconcile_agent_subagents direct unit tests
@@ -850,7 +907,9 @@ class TestReconcileAgentSubagents:
         gs.parent_agent = root
         root.sub_agents = [gs]
 
-        changed = _reconcile_agent_subagents(root, {"google_search": gs}, {"google_search"})
+        changed = _reconcile_agent_subagents(
+            root, {"google_search": gs}, {"google_search"}
+        )
 
         assert changed is False
         assert list(root.sub_agents) == [gs]
@@ -871,7 +930,9 @@ class TestReconcileAgentSubagents:
         fresh_gs = _make_task_mode_agent("google_search")
         assert fresh_gs is not stale_gs
 
-        changed = _reconcile_agent_subagents(root, {"google_search": fresh_gs}, {"google_search"})
+        changed = _reconcile_agent_subagents(
+            root, {"google_search": fresh_gs}, {"google_search"}
+        )
 
         assert changed is True
         gs_sub = next((s for s in root.sub_agents if s.name == "google_search"), None)
@@ -904,7 +965,9 @@ class TestReconcileAgentSubagents:
         )
 
         root = _make_root_agent()
-        specialist = LlmAgent(name="some_specialist", model="gemini-2.0-flash", instruction="s")
+        specialist = LlmAgent(
+            name="some_specialist", model="gemini-2.0-flash", instruction="s"
+        )
         specialist.parent_agent = root
         root.sub_agents = [specialist]
 
@@ -943,10 +1006,11 @@ class TestSupervisorToolsPreservation:
         agent = _make_root_agent(tools=[])
         cfg = _make_config(tool_ids=None)  # no admin-configured tools
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             attach_root_tools(agent, account_id="acc_supervisor")
 
@@ -960,11 +1024,13 @@ class TestSupervisorToolsPreservation:
         roster_tool = _make_tool("agent.google_search")
         cfg = _make_config(tool_ids=["agent.google_search"])
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_specialist_roster",
-            return_value=RosterResolution(tools=[roster_tool]),
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[roster_tool]),
+            ),
         ):
             attach_root_tools(agent, account_id="acc_alongside")
 
@@ -982,23 +1048,89 @@ class TestSupervisorToolsPreservation:
         cfg_v2 = _make_config(tool_ids=None)
         cfg_v2.model_dump_json.return_value = '{"tool_ids": null, "v": 2}'
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_v1
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_v1),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             attach_root_tools(agent, account_id="acc_v1")
 
         tool_names_v1 = {getattr(t, "name", None) for t in agent.tools}
         assert "set_todo_list" in tool_names_v1
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg_v2
-        ), patch.object(
-            rta, "resolve_specialist_roster", return_value=RosterResolution()
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg_v2),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
         ):
             attach_root_tools(agent, account_id="acc_v2")
 
         tool_names_v2 = {getattr(t, "name", None) for t in agent.tools}
         assert "set_todo_list" in tool_names_v2
         assert "update_todo_list" in tool_names_v2
+
+
+class TestPreservesSpecialistTaskTools:
+    """AH-161: attach_root_tools must NOT clobber the _TaskAgentTool that
+    attach_specialists_before_agent_callback injects for per-turn specialists.
+
+    Repro of the prod bug (dev trace 019eacc4): attach_root_tools rebuilds
+    root.tools[:] and — before this fix — only re-wrapped agent-as-tool
+    catalogue subs (agent_subs_desired), dropping the specialist delegation
+    tool. The coordinator then emitted google_analytics_specialist(...) and ADK
+    raised "Tool 'google_analytics_specialist' not found", silently breaking
+    request_task dispatch in production. The two before_agent_callbacks run in
+    sequence (attach_specialists then attach_root_tools); no unit test exercised
+    that ordering, so the regression shipped.
+    """
+
+    @pytest.mark.usefixtures("_mock_supervisor_tools_empty")
+    def test_specialist_task_tool_survives_root_tools_rebuild(self) -> None:
+        from google.adk.agents import LlmAgent
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        from app.adk.agents.agent_factory.roster import RosterResolution
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            attach_task_subagent,
+        )
+
+        root = _make_root_agent()
+        # Simulate attach_specialists_before_agent_callback having already run:
+        # a task-mode specialist pinned into sub_agents + its delegation tool
+        # injected into root.tools.
+        specialist = LlmAgent(
+            name="google_analytics_specialist",
+            model="gemini-2.5-pro",
+            mode="task",
+        )
+        attach_task_subagent(root, specialist)
+        assert any(
+            isinstance(t, _TaskAgentTool)
+            and getattr(t, "name", None) == "google_analytics_specialist"
+            for t in root.tools
+        ), "precondition: attach_task_subagent should inject the delegation tool"
+
+        # Now the second callback rebuilds root.tools.
+        cfg = _make_config(tool_ids=["agent.google_search"])
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
+        ):
+            attach_root_tools(root, account_id="acc_test123")
+
+        survivors = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool)
+            and getattr(t, "name", None) == "google_analytics_specialist"
+        ]
+        assert len(survivors) == 1, (
+            "attach_root_tools dropped the specialist _TaskAgentTool on rebuild; "
+            f"root.tools = {[getattr(t, 'name', repr(t)) for t in root.tools]}"
+        )
+        # And the specialist remains dispatchable via find_agent (still in sub_agents).
+        assert root.find_agent("google_analytics_specialist") is specialist

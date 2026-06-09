@@ -1,9 +1,12 @@
 """Tests for :mod:`app.adk.agents.agent_factory.sub_agent_attacher`.
 
-AH-75 / AH-PRD-09: idempotent runtime attachment of resolved specialists
-to ``root_agent.sub_agents``, called by the root's
-``before_agent_callback`` so ADK's ``transfer_to_agent`` can find each
-visible specialist via ``root.find_agent``.
+AH-75 / AH-PRD-09 / AH-161: idempotent runtime attachment of resolved
+specialists to ``root_agent.sub_agents``, called by the root's
+``before_agent_callback``.  AH-161 resolves all specialists as
+``mode='task'`` so the coordinator dispatches via
+``request_task_<doc_id>`` (call-and-return) and regains control after each
+task; ``_reconcile`` injects ``_TaskAgentTool`` for both bare task-mode
+LlmAgents and LoopAgents with ``_is_task_dispatchable=True``.
 
 Test surface:
 
@@ -152,6 +155,7 @@ def _patched_resolvers(visible: dict[str, LlmAgent], config_suffix: str = "") ->
         _account_id: str | None = None,
         _ttl: int = 60,
         session_state: Mapping[str, Any] | None = None,
+        **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
     ) -> LlmAgent:
         return visible[doc_id]
 
@@ -308,6 +312,7 @@ class TestReconcile:
             _account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             return {"ga_spec": a, "workflow_spec": b}[doc_id]
 
@@ -356,6 +361,7 @@ class TestReconcile:
             _account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             return a
 
@@ -470,6 +476,68 @@ class TestReconcile:
             f"(stale removed, fresh injected); found {len(all_task_tools)}"
         )
 
+    def test_reconcile_injects_task_agent_tool_for_loop_agent_with_sentinel(
+        self,
+    ) -> None:
+        """AH-161: _reconcile injects _TaskAgentTool for a LoopAgent that has
+        ``_is_task_dispatchable=True`` (review-pipeline path).
+
+        A LoopAgent cannot have ``mode='task'`` (ADK does not support it), so
+        ``specialist_runtime._build_specialist`` sets the sentinel attribute when
+        the caller requests ``mode='task'`` and ``default_acceptance_criteria`` is
+        non-empty.  ``_reconcile`` must recognise the sentinel via
+        ``_is_task_dispatchable()`` and inject _TaskAgentTool — without this the
+        coordinator never sees ``request_task_<name>`` for review-configured
+        specialists such as google_analytics_specialist.
+        """
+        from google.adk.agents import LoopAgent
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        root = _make_root()
+
+        # Build a LoopAgent that mimics the review-pipeline output and mark it.
+        inner = LlmAgent(
+            name="loop_worker",
+            model="gemini-2.5-pro",
+            mode="task",
+        )
+        loop_spec = LoopAgent(name="review_spec", sub_agents=[inner])
+        loop_spec._is_task_dispatchable = True  # type: ignore[attr-defined]
+
+        with _patched_resolvers({"review_spec": loop_spec}):  # type: ignore[arg-type]
+            attach_account_specialists(root, "acc_loop")
+
+        assert loop_spec in root.sub_agents
+
+        injected = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool)
+            and getattr(t, "name", None) == "review_spec"
+        ]
+        assert len(injected) == 1, (
+            "_reconcile must inject _TaskAgentTool('review_spec') when the LoopAgent "
+            "carries _is_task_dispatchable=True; "
+            f"root.tools = {[getattr(t, 'name', repr(t)) for t in root.tools]}"
+        )
+
+        # --- drop the loop specialist — _TaskAgentTool must be removed ---
+        with _patched_resolvers({}):
+            attach_account_specialists(root, "acc_loop")
+
+        assert loop_spec not in root.sub_agents
+
+        remaining = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool)
+            and getattr(t, "name", None) == "review_spec"
+        ]
+        assert remaining == [], (
+            "_reconcile must remove _TaskAgentTool when the LoopAgent is dropped; "
+            f"root.tools still has: {remaining}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Resilience: failed resolves, bad account_id, missing sub_agents attribute.
@@ -498,6 +566,7 @@ class TestResilience:
             _account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             if doc_id == "broken_spec":
                 raise RuntimeError("MCP unreachable")
@@ -596,6 +665,7 @@ class TestConcurrentAttach:
             _account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             time.sleep(0.005)
             return {"ga_spec": a, "strategy_spec": b}[doc_id]
@@ -948,6 +1018,7 @@ class TestFingerprintShortCircuit:
             account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             return per_account_instance[account_id]
 
@@ -993,6 +1064,7 @@ class TestFingerprintShortCircuit:
             _acc: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             call_count[0] += 1
             if call_count[0] == 1:
@@ -1241,6 +1313,7 @@ class TestBeforeAgentCallback:
             _account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             seen_session_states.append(session_state)
             return a
@@ -1399,7 +1472,7 @@ class TestStateCapture:
             )
 
         def _resolve_agent(
-            doc_id: str, _acc=None, _ttl=60, session_state=None
+            doc_id: str, _acc=None, _ttl=60, session_state=None, **_kwargs: object
         ) -> LlmAgent:
             return long_spec
 
@@ -1475,6 +1548,7 @@ class TestStateCaptureNameTitle:
             _account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
+            **_kwargs: object,  # AH-161: accept mode= kwarg added by _attach_locked
         ) -> LlmAgent:
             return visible[doc_id]
 
@@ -1558,7 +1632,7 @@ class TestStateCaptureNameTitle:
             raise FirestoreConnectionError("simulated transient error")
 
         def _resolve_agent(
-            doc_id: str, _acc=None, _ttl=60, session_state=None
+            doc_id: str, _acc=None, _ttl=60, session_state=None, **_kwargs: object
         ) -> LlmAgent:
             return a
 
@@ -1698,7 +1772,9 @@ class TestUserBuiltGaAgentAttach:
         def _resolve_config(doc_id, _account_id=None, _ttl=60):
             return config_record
 
-        def _resolve_agent(doc_id, _account_id=None, _ttl=60, session_state=None):
+        def _resolve_agent(
+            doc_id, _account_id=None, _ttl=60, session_state=None, **_kw
+        ):
             return specialist
 
         from contextlib import ExitStack
@@ -1755,7 +1831,9 @@ class TestUserBuiltGaAgentAttach:
         def _resolve_config(doc_id, _account_id=None, _ttl=60):
             return config_record
 
-        def _resolve_agent(doc_id, _account_id=None, _ttl=60, session_state=None):
+        def _resolve_agent(
+            doc_id, _account_id=None, _ttl=60, session_state=None, **_kw
+        ):
             return specialist
 
         from contextlib import ExitStack

@@ -54,6 +54,7 @@ from google.adk.tools.function_tool import FunctionTool
 from google.genai import types as genai_types
 from google.genai.errors import ClientError
 from google.genai.types import Content, FunctionCall, Outcome, Part
+from pydantic import PrivateAttr
 
 from app.adk.agents.agent_factory import specialist_runtime as sr
 from app.adk.agents.agent_factory import sub_agent_attacher as attacher
@@ -109,6 +110,57 @@ class _GaSpecialistStubLlm(BaseLlm):
     ) -> AsyncIterator[LlmResponse]:
         content = Content(
             role="model", parts=[Part.from_text(text="GA specialist response")]
+        )
+        yield LlmResponse(content=content, turn_complete=True)
+
+
+# ---------------------------------------------------------------------------
+# AH-161: task-dispatch stub LLM
+# ---------------------------------------------------------------------------
+
+
+class _RequestTaskGaSpecialistStubLlm(BaseLlm):
+    """Root LLM that dispatches the GA specialist via task-mode delegation.
+
+    AH-161 (corrected): the real ADK delegation tool is named after the
+    specialist's bare ``doc_id`` (``_TaskAgentTool.name == agent.name``), NOT
+    ``request_task_<doc_id>``.  So the coordinator emits
+    ``FunctionCall(name="google_analytics_specialist")`` — the same convention
+    the AH-135 per-turn-dispatch test uses.  ADK intercepts it as a task
+    delegation (``tools_dict['google_analytics_specialist']`` is a
+    ``_TaskAgentTool``) and runs the specialist via ``find_agent`` + ``run_node``.
+    """
+
+    model: str = "request_task_ga_specialist_stub"
+    # Dispatch the delegation FC exactly once, then return a final text answer.
+    # The task delegation is call-and-return: after the specialist completes the
+    # coordinator is invoked again, so an always-dispatching stub would re-fire
+    # the FC forever (LlmCallsLimitExceededError). One dispatch + a terminal text
+    # turn mirrors a real coordinator finishing the turn.
+    _dispatched: bool = PrivateAttr(default=False)
+
+    @classmethod
+    def supported_models(cls) -> list[str]:
+        return ["request_task_ga_specialist_stub"]
+
+    async def generate_content_async(  # type: ignore[override]
+        self,
+        llm_request: Any,
+        stream: bool = False,
+    ) -> AsyncIterator[LlmResponse]:
+        if not self._dispatched:
+            self._dispatched = True
+            func_call = FunctionCall(
+                name="google_analytics_specialist",
+                args={"query": "stub query"},
+            )
+            content = Content(role="model", parts=[Part(function_call=func_call)])
+            yield LlmResponse(content=content, turn_complete=False)
+            return
+        # Specialist has returned control — emit the coordinator's final answer.
+        content = Content(
+            role="model",
+            parts=[Part.from_text(text="Here are your results.")],
         )
         yield LlmResponse(content=content, turn_complete=True)
 
@@ -231,6 +283,22 @@ def _make_ga_specialist_agent() -> LlmAgent:
     )
 
 
+def _make_ga_task_mode_specialist_agent() -> LlmAgent:
+    """Return a task-mode LlmAgent for google_analytics_specialist (AH-161).
+
+    AH-161: the attacher resolves all specialists as mode='task' so the
+    coordinator dispatches via request_task_<doc_id>.  Tests that verify the
+    AH-161 dispatch path use this helper so _reconcile injects _TaskAgentTool.
+    """
+    return LlmAgent(
+        name="google_analytics_specialist",
+        model=_GaSpecialistStubLlm(),
+        instruction="Google Analytics specialist",
+        disallow_transfer_to_parent=True,
+        mode="task",
+    )
+
+
 def _make_ga_config() -> MergedAgentConfig:
     """Return a MergedAgentConfig for the GA specialist (pure-mock variant)."""
     return MergedAgentConfig(
@@ -267,7 +335,9 @@ async def _run_ga_specialist_for_session(
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
-    root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+    root.sub_agents = (
+        attacher.AlwaysTrueSubAgentList()
+    )  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
     session_service = InMemorySessionService()
     session = await session_service.create_session(
@@ -502,9 +572,7 @@ async def test_ga_numerical_query_uses_code_execution(
             )
         raise
 
-    has_exec_code = any(
-        p.executable_code and p.executable_code.code for p in all_parts
-    )
+    has_exec_code = any(p.executable_code and p.executable_code.code for p in all_parts)
     has_exec_result = any(
         p.code_execution_result
         and p.code_execution_result.outcome == Outcome.OUTCOME_OK
@@ -616,7 +684,9 @@ async def test_numerical_analyst_handles_outcome_failed(trial: int) -> None:
         if p.code_execution_result
         and p.code_execution_result.outcome == Outcome.OUTCOME_FAILED
     ]
-    exec_code_parts = [p for p in all_parts if p.executable_code and p.executable_code.code]
+    exec_code_parts = [
+        p for p in all_parts if p.executable_code and p.executable_code.code
+    ]
     # Define before assertion (1) so the gate condition is available.
     has_correction_retry = len(exec_code_parts) >= 2  # second attempt = retry
 
@@ -753,11 +823,17 @@ class TestGaOauth401ErrorHandling:
     async def test_token_expiry_variants_all_trigger_reauth(self) -> None:
         """Multiple real-world 401 response shapes from GA MCP all set _requires_reauth."""
         real_world_responses = [
-            {"error": True, "message": "Request had invalid authentication credentials. "
-             "Expected OAuth 2 access token, login cookie or other valid authentication "
-             "credential. See https://developers.google.com/identity/sign-in/web/devconsole-project. "
-             "401"},
-            {"isError": True, "message": "invalid_grant: Token has been expired or revoked."},
+            {
+                "error": True,
+                "message": "Request had invalid authentication credentials. "
+                "Expected OAuth 2 access token, login cookie or other valid authentication "
+                "credential. See https://developers.google.com/identity/sign-in/web/devconsole-project. "
+                "401",
+            },
+            {
+                "isError": True,
+                "message": "invalid_grant: Token has been expired or revoked.",
+            },
             {"_error": "HTTPStatusError: 401 Unauthorized"},
             "token has been revoked by the user",
         ]
@@ -768,7 +844,9 @@ class TestGaOauth401ErrorHandling:
             assert ctx.state.get("_requires_reauth") is True, (
                 f"Expected _requires_reauth=True for response: {response!r}"
             )
-            assert result is not None, f"Expected non-None result for response: {response!r}"
+            assert result is not None, (
+                f"Expected non-None result for response: {response!r}"
+            )
 
     @pytest.mark.asyncio
     async def test_successful_ga_response_does_not_set_reauth(self) -> None:
@@ -790,7 +868,10 @@ class TestGaOauth401ErrorHandling:
         """Non-401 errors (e.g. permission_denied) must not set _requires_reauth."""
         ctx = _MockToolContext()
         tool = _make_tool()
-        permission_denied = {"error": "permission_denied", "message": "User lacks access"}
+        permission_denied = {
+            "error": "permission_denied",
+            "message": "User lacks access",
+        }
 
         result = await ga_oauth_after_tool_callback(tool, {}, ctx, permission_denied)
 
@@ -917,11 +998,17 @@ async def test_google_analytics_specialist_multi_tenant_isolation() -> None:
         specialist_a, specialist_b = await asyncio.gather(
             _build_for(
                 ACCOUNT_A,
-                {"ga_credentials": GA_CREDS_A, "mcp_creds_google_analytics_mcp": MCP_CREDS_A},
+                {
+                    "ga_credentials": GA_CREDS_A,
+                    "mcp_creds_google_analytics_mcp": MCP_CREDS_A,
+                },
             ),
             _build_for(
                 ACCOUNT_B,
-                {"ga_credentials": GA_CREDS_B, "mcp_creds_google_analytics_mcp": MCP_CREDS_B},
+                {
+                    "ga_credentials": GA_CREDS_B,
+                    "mcp_creds_google_analytics_mcp": MCP_CREDS_B,
+                },
             ),
         )
 
@@ -1109,25 +1196,25 @@ class TestBackwardCompatRegression:
 
     AH-30 — AC #3 (AH-PRD-03 §7): existing query patterns (from
     google_analytics_agent_v4.py and production chat logs) continue to route
-    to the GA specialist via ADK-native ``transfer_to_agent`` under the
-    post-AH-PRD-09 per-turn dispatch.
+    to the GA specialist under the post-AH-PRD-09 per-turn dispatch.
 
-    **Architecture note (D-2):** the issue body still references
-    ``delegate_to_specialist`` but AH-PRD-03 §1 "Architecture-refresh note
-    (2026-06)" and AH-75 (Approach 1) supersede that. The deployed root
-    carries ``tools=[]`` and dispatches via ADK's native ``transfer_to_agent``.
-    Asserting on ``transfer_to_agent`` is correct; the old function tool was
-    deleted (AH-66).
+    **Architecture note (AH-161):** AH-161 moves all specialist dispatch from
+    ``transfer_to_agent`` to ``request_task_<doc_id>`` (call-and-return
+    task-mode).  The root coordinator now resolves every specialist as
+    ``mode='task'`` via ``resolve_agent(..., mode='task')``; the
+    ``_TaskAgentTool`` injected by ``_reconcile`` exposes
+    ``request_task_google_analytics_specialist`` to the LLM.
+    ``transfer_to_agent`` is no longer available for specialists.
 
     Suite structure
     ---------------
     1. Stub layer (no ``@pytest.mark.llm``, no credentials):
-       ``test_legacy_ga_query_routes_via_transfer_to_agent``
+       ``test_legacy_ga_query_routes_via_request_task``
        Locks the per-turn dispatch *plumbing* — verifies that for every pattern
        in ``_LEGACY_GA_QUERY_PATTERNS`` the root emits exactly one
-       ``transfer_to_agent(agent_name="google_analytics_specialist")`` event
-       and the specialist responds with the expected response shape. Runs in
-       every CI lane, no network.
+       ``request_task_google_analytics_specialist`` event and the specialist
+       responds with the expected response shape. Runs in every CI lane,
+       no network.
 
     2. Live layer (``@pytest.mark.llm``, skipped without credentials):
        ``test_legacy_ga_query_routes_against_live_gemini``
@@ -1144,22 +1231,26 @@ class TestBackwardCompatRegression:
         ids=[p[0] for p in _LEGACY_GA_QUERY_PATTERNS],
     )
     @pytest.mark.asyncio
-    async def test_legacy_ga_query_routes_via_transfer_to_agent(
+    async def test_legacy_ga_query_routes_via_request_task(
         self,
         query_name: str,
         query_text: str,
         category: str,  # corpus metadata; not used in the test body
     ) -> None:
         """AC #3 (stub layer): each legacy query routes to the GA specialist
-        via ``transfer_to_agent`` and the specialist returns the baseline shape.
+        via ``request_task_google_analytics_specialist`` and the specialist
+        returns the baseline shape.
+
+        AH-161: specialists are now task-mode; the coordinator uses
+        request_task_<doc_id> (call-and-return) instead of transfer_to_agent.
 
         Assertions:
-        (a) At least one event carries ``function_call.name == "transfer_to_agent"``
-            with ``args["agent_name"] == "google_analytics_specialist"``.
+        (a) At least one event carries
+            ``function_call.name == "request_task_google_analytics_specialist"``.
         (b) The specialist's terminal event satisfies BASELINE_RESPONSE_SHAPE.
         (c) No event has ``error_code`` set.
         """
-        specialist_agent = _make_ga_specialist_agent()
+        specialist_agent = _make_ga_task_mode_specialist_agent()
         ga_credentials: dict[str, Any] = {"access_token": "tok_stub", "tenant_id": "t1"}
         mcp_creds: dict[str, Any] = {"refresh_signature": "sig_stub"}
 
@@ -1168,12 +1259,14 @@ class TestBackwardCompatRegression:
 
         root = LlmAgent(
             name="root_agent",
-            model=_TransferToGaSpecialistStubLlm(),
+            model=_RequestTaskGaSpecialistStubLlm(),
             instruction="Route queries.",
             tools=[],
             before_agent_callback=[attacher.attach_specialists_before_agent_callback],
         )
-        root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+        root.sub_agents = (
+            attacher.AlwaysTrueSubAgentList()
+        )  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
         ga_config = _make_ga_config()
         session_service = InMemorySessionService()
@@ -1212,21 +1305,20 @@ class TestBackwardCompatRegression:
             ):
                 events.append(event)
 
-        # (a) Root must emit transfer_to_agent(agent_name="google_analytics_specialist").
-        transfer_events = [
+        # (a) Root must emit the bare doc_id delegation FC (AH-161 corrected).
+        task_dispatch_events = [
             e
             for e in events
             if e.content
             and e.content.parts
             and any(
                 p.function_call
-                and p.function_call.name == "transfer_to_agent"
-                and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+                and p.function_call.name == "google_analytics_specialist"
                 for p in e.content.parts
             )
         ]
-        assert transfer_events, (
-            f"[{query_name}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+        assert task_dispatch_events, (
+            f"[{query_name}] No google_analytics_specialist delegation FC "
             f"event found. Events: {[repr(e) for e in events]}"
         )
 
@@ -1353,18 +1445,19 @@ class TestBackwardCompatRegression:
         query_text: str,
         category: str,  # corpus metadata; not used in the test body
     ) -> None:
-        """AH-145 AC #2 (stub layer): a single-specialist GA query dispatched
-        via ``transfer_to_agent`` leaves supervisor machinery inert.
+        """AH-145 AC #2 / AH-161 (stub layer): a single-specialist GA query
+        dispatched via ``request_task_google_analytics_specialist`` leaves
+        supervisor machinery inert.
 
-        The root carries the production supervisor function tools
-        (``set_todo_list``, ``update_todo_list``) and the real
-        ``SUPERVISOR_INSTRUCTION_FRAGMENT``, but because the stub LLM emits
-        ``transfer_to_agent`` unconditionally no ledger call fires and
+        AH-161: the stub LLM emits ``request_task_google_analytics_specialist``
+        directly (no ledger); the specialist is task-mode so _reconcile has
+        injected _TaskAgentTool for it.  No supervisor ledger call fires and
         ``session.state["todo_lists"]`` is never written with a
         ``"supervisor_ledger"`` entry.
 
         Assertions:
-        (a) ≥1 event carries ``transfer_to_agent(agent_name="google_analytics_specialist")``.
+        (a) ≥1 event carries
+            ``function_call.name == "request_task_google_analytics_specialist"``.
         (b) No event has ``function_call.name`` in ``{"set_todo_list", "update_todo_list"}``.
         (c) ``session.state["todo_lists"]`` does not contain key ``"supervisor_ledger"``.
         (d) ``set_todo_list`` and ``update_todo_list`` are present in ``root.tools``
@@ -1390,7 +1483,8 @@ class TestBackwardCompatRegression:
         # the snapshot/restore preserves that registration across test teardown.
         _reg_snapshot = snapshot_function_tool_registry()
         try:
-            specialist_agent = _make_ga_specialist_agent()
+            # AH-161: specialist is task-mode so _reconcile injects _TaskAgentTool
+            specialist_agent = _make_ga_task_mode_specialist_agent()
             ga_config = _make_ga_config()
             supervisor_tools = get_supervisor_function_tools()
 
@@ -1408,12 +1502,16 @@ class TestBackwardCompatRegression:
 
             root = LlmAgent(
                 name="root_agent",
-                model=_TransferToGaSpecialistStubLlm(),
+                model=_RequestTaskGaSpecialistStubLlm(),  # AH-161: task-mode dispatch
                 instruction=_stub_root_instruction,
                 tools=supervisor_tools,
-                before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+                before_agent_callback=[
+                    attacher.attach_specialists_before_agent_callback
+                ],
             )
-            root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+            root.sub_agents = (
+                attacher.AlwaysTrueSubAgentList()
+            )  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
             app_name = f"supervisor_guard_stub_{query_name}"
             session_service = InMemorySessionService()
@@ -1458,26 +1556,27 @@ class TestBackwardCompatRegression:
                 user_id=session.user_id,
                 session_id=session.id,
             )
-            final_state: dict[str, Any] = dict(final_session.state) if final_session else {}
+            final_state: dict[str, Any] = (
+                dict(final_session.state) if final_session else {}
+            )
 
         finally:
             restore_function_tool_registry(_reg_snapshot)
 
-        # (a) Root must emit transfer_to_agent(agent_name="google_analytics_specialist").
-        transfer_events = [
+        # (a) Root must emit the bare doc_id delegation FC (AH-161 corrected).
+        task_dispatch_events = [
             e
             for e in events
             if e.content
             and e.content.parts
             and any(
                 p.function_call
-                and p.function_call.name == "transfer_to_agent"
-                and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+                and p.function_call.name == "google_analytics_specialist"
                 for p in e.content.parts
             )
         ]
-        assert transfer_events, (
-            f"[{query_name}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+        assert task_dispatch_events, (
+            f"[{query_name}] No google_analytics_specialist delegation FC "
             f"event found. Events: {[repr(e) for e in events]}"
         )
 
@@ -1538,15 +1637,21 @@ class TestBackwardCompatRegression:
         ),
     )
     @pytest.mark.asyncio
-    async def test_legacy_ga_query_root_picks_transfer_to_agent_against_live_gemini(
+    async def test_legacy_ga_query_root_picks_request_task_against_live_gemini(
         self,
         query_name: str,
         query_text: str,
         category: str,  # corpus metadata; not used in the test body
     ) -> None:
-        """AH-145 AC #2 (live layer): the live Gemini root carrying the real
-        ``SUPERVISOR_INSTRUCTION_FRAGMENT`` picks ``transfer_to_agent`` for
-        each legacy GA query without decomposing it into a supervisor ledger.
+        """AH-145 AC #2 / AH-161 (live layer): the live Gemini root carrying the
+        real ``SUPERVISOR_INSTRUCTION_FRAGMENT`` picks
+        ``request_task_google_analytics_specialist`` for each legacy GA query
+        without decomposing it into a supervisor ledger.
+
+        AH-161: specialists are task-mode; ``transfer_to_agent`` is no longer
+        available for them.  The fragment's Fast Path section instructs the LLM to
+        call ``request_task_<specialist_doc_id>`` directly for single self-contained
+        queries.
 
         Decision D-2: one trial per query (mirrors
         ``test_legacy_ga_query_routes_against_live_gemini`` — one trial is
@@ -1561,7 +1666,8 @@ class TestBackwardCompatRegression:
         imported at runtime so any text change exercises the live rule directly.
 
         Assertions:
-        (a) ≥1 event carries ``transfer_to_agent(agent_name="google_analytics_specialist")``.
+        (a) ≥1 event carries
+            ``function_call.name == "request_task_google_analytics_specialist"``.
         (b) No event has ``function_call.name`` in ``{"set_todo_list", "update_todo_list"}``.
         (c) ``session.state["todo_lists"]`` does not contain key ``"supervisor_ledger"``.
         """
@@ -1597,9 +1703,10 @@ class TestBackwardCompatRegression:
             " Performs accurate numerical analysis (percentages, trends, averages)"
             " using Gemini code execution."
         )
+        # AH-161: instruct the live model to use request_task_<name> for dispatch.
         root_instruction = (
             "You are a routing agent. Dispatch user queries to the appropriate "
-            "specialist using transfer_to_agent.\n\n"
+            "specialist using request_task_<specialist_doc_id>.\n\n"
             "## Available Specialists\n\n"
             f"- **google_analytics_specialist**: {_GA_DESCRIPTION}\n\n"
             + SUPERVISOR_INSTRUCTION_FRAGMENT
@@ -1609,7 +1716,8 @@ class TestBackwardCompatRegression:
         # the stub-layer test above.
         _reg_snapshot = snapshot_function_tool_registry()
         try:
-            specialist_agent = _make_ga_specialist_agent()
+            # AH-161: task-mode specialist so _TaskAgentTool is injected.
+            specialist_agent = _make_ga_task_mode_specialist_agent()
             ga_config = _make_ga_config()
             supervisor_tools = get_supervisor_function_tools()
 
@@ -1625,9 +1733,13 @@ class TestBackwardCompatRegression:
                 model="gemini-2.0-flash",
                 instruction=_live_root_instruction,
                 tools=supervisor_tools,
-                before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+                before_agent_callback=[
+                    attacher.attach_specialists_before_agent_callback
+                ],
             )
-            root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+            root.sub_agents = (
+                attacher.AlwaysTrueSubAgentList()
+            )  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
             app_name = f"supervisor_guard_live_{query_name}"
             session_service = InMemorySessionService()
@@ -1686,28 +1798,29 @@ class TestBackwardCompatRegression:
                 user_id=session.user_id,
                 session_id=session.id,
             )
-            final_state: dict[str, Any] = dict(final_session.state) if final_session else {}
+            final_state: dict[str, Any] = (
+                dict(final_session.state) if final_session else {}
+            )
 
         finally:
             restore_function_tool_registry(_reg_snapshot)
 
-        # (a) Root must emit transfer_to_agent(agent_name="google_analytics_specialist").
-        transfer_events = [
+        # (a) Root must emit the bare doc_id delegation FC (AH-161 corrected).
+        task_dispatch_events = [
             e
             for e in events
             if e.content
             and e.content.parts
             and any(
                 p.function_call
-                and p.function_call.name == "transfer_to_agent"
-                and p.function_call.args.get("agent_name") == "google_analytics_specialist"
+                and p.function_call.name == "google_analytics_specialist"
                 for p in e.content.parts
             )
         ]
-        assert transfer_events, (
-            f"[{query_name}] No transfer_to_agent(agent_name='google_analytics_specialist') "
+        assert task_dispatch_events, (
+            f"[{query_name}] No request_task_google_analytics_specialist "
             f"event found — live Gemini root may have used supervisor machinery "
-            f"instead of the direct dispatch path. "
+            f"or an unexpected dispatch path. "
             f"Events: {[repr(e) for e in events]}"
         )
 
@@ -1790,7 +1903,9 @@ def test_resolve_agent_wraps_ga_specialist_in_review_loopagent() -> None:
         ken_e_sub_agent=True,
     )
 
-    def _real_specialist_from_config(_config: Any, *, name: str, **_kw: Any) -> LlmAgent:
+    def _real_specialist_from_config(
+        _config: Any, *, name: str, **_kw: Any
+    ) -> LlmAgent:
         """Return a real LlmAgent so build_review_pipeline (unpatched) can wrap it."""
         return LlmAgent(
             name=name,
@@ -1801,9 +1916,7 @@ def test_resolve_agent_wraps_ga_specialist_in_review_loopagent() -> None:
 
     with ExitStack() as stack:
         # resolve_config is patched to return the GA config (drives resolve_agent).
-        stack.enter_context(
-            _patch.object(sr, "resolve_config", return_value=ga_config)
-        )
+        stack.enter_context(_patch.object(sr, "resolve_config", return_value=ga_config))
         stack.enter_context(
             _patch(
                 "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
@@ -1939,7 +2052,9 @@ def test_resolve_agent_returns_single_pass_llmagent_when_criteria_empty() -> Non
         ken_e_sub_agent=True,
     )
 
-    def _real_specialist_from_config(_config: Any, *, name: str, **_kw: Any) -> LlmAgent:
+    def _real_specialist_from_config(
+        _config: Any, *, name: str, **_kw: Any
+    ) -> LlmAgent:
         return LlmAgent(
             name=name,
             model=_config.model,
@@ -2054,9 +2169,7 @@ async def test_ga_review_loop_approves_well_formed_numerical_response() -> None:
         ken_e_sub_agent=True,
     )
 
-    def _specialist_with_stub_tools(
-        _config: Any, *, name: str, **_kw: Any
-    ) -> LlmAgent:
+    def _specialist_with_stub_tools(_config: Any, *, name: str, **_kw: Any) -> LlmAgent:
         """Real LlmAgent with stub GA tools and Gemini code execution."""
         return LlmAgent(
             name=name,
@@ -2071,9 +2184,7 @@ async def test_ga_review_loop_approves_well_formed_numerical_response() -> None:
         )
 
     with ExitStack() as stack:
-        stack.enter_context(
-            _patch.object(sr, "resolve_config", return_value=ga_config)
-        )
+        stack.enter_context(_patch.object(sr, "resolve_config", return_value=ga_config))
         stack.enter_context(
             _patch(
                 "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
@@ -2220,9 +2331,7 @@ async def test_ga_review_loop_approves_well_formed_numerical_response() -> None:
 # ---------------------------------------------------------------------------
 
 _FLAWED_DRAFT = "Sessions grew 11.78% week-over-week."
-_CORRECTED_DRAFT = (
-    "Sessions grew 11.78% week-over-week ((5391-4823)/4823*100 = 11.78)."
-)
+_CORRECTED_DRAFT = "Sessions grew 11.78% week-over-week ((5391-4823)/4823*100 = 11.78)."
 _REJECTION_FEEDBACK = (
     "Criterion not met: the formula used to compute the percentage change is "
     "missing. Show the arithmetic."
@@ -2315,9 +2424,7 @@ async def test_ga_review_loop_iterates_then_approves() -> None:
         ken_e_sub_agent=True,
     )
 
-    def _specialist_from_config(
-        _config: Any, *, name: str, **_kw: Any
-    ) -> LlmAgent:
+    def _specialist_from_config(_config: Any, *, name: str, **_kw: Any) -> LlmAgent:
         """Build the specialist LlmAgent with the fake-LLM model name."""
         return LlmAgent(
             name=name,
@@ -2328,9 +2435,7 @@ async def test_ga_review_loop_iterates_then_approves() -> None:
 
     # --- Build the LoopAgent through resolve_agent (mocked Firestore / MCP) -
     with ExitStack() as stack:
-        stack.enter_context(
-            _patch.object(sr, "resolve_config", return_value=ga_config)
-        )
+        stack.enter_context(_patch.object(sr, "resolve_config", return_value=ga_config))
         stack.enter_context(
             _patch(
                 "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
@@ -2378,7 +2483,7 @@ async def test_ga_review_loop_iterates_then_approves() -> None:
     # Derive names directly from the LoopAgent's sub_agents so the test tracks
     # any future rename of the child naming convention in build_review_pipeline.
     output_prefix = "google_analytics_specialist_review"
-    worker_name = loop_agent.sub_agents[0].name   # = get_worker_name(specialist)
+    worker_name = loop_agent.sub_agents[0].name  # = get_worker_name(specialist)
     reviewer_name = loop_agent.sub_agents[1].name  # = get_reviewer_name(output_prefix)
 
     # --- Run the LoopAgent and collect events ------------------------------
@@ -2722,9 +2827,7 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
     # -----------------------------------------------------------------------
 
     with ExitStack() as stack:
-        stack.enter_context(
-            _patch.object(sr, "resolve_config", return_value=ga_config)
-        )
+        stack.enter_context(_patch.object(sr, "resolve_config", return_value=ga_config))
         stack.enter_context(
             _patch(
                 "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
@@ -2795,10 +2898,15 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
-    root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+    root.sub_agents = (
+        attacher.AlwaysTrueSubAgentList()
+    )  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
     account_id = "acct_e2e_happy_path"
-    ga_credentials: dict[str, Any] = {"access_token": "tok_e2e", "tenant_id": "tenant_e2e"}
+    ga_credentials: dict[str, Any] = {
+        "access_token": "tok_e2e",
+        "tenant_id": "tenant_e2e",
+    }
     mcp_creds: dict[str, Any] = {"refresh_signature": "sig_e2e"}
 
     app_name = f"e2e_happy_path_trial_{trial}"
@@ -2836,7 +2944,9 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
                 session_id=session.id,
                 new_message=genai_types.Content(
                     role="user",
-                    parts=[Part.from_text(text="Show me traffic trends for the past week.")],
+                    parts=[
+                        Part.from_text(text="Show me traffic trends for the past week.")
+                    ],
                 ),
             ):
                 all_events.append(event)
@@ -2883,8 +2993,7 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
 
     error_events = [e for e in all_events if getattr(e, "error_code", None)]
     assert not error_events, (
-        f"[trial {trial}] Unexpected error events: "
-        f"{[repr(e) for e in error_events]}"
+        f"[trial {trial}] Unexpected error events: {[repr(e) for e in error_events]}"
     )
 
     # -----------------------------------------------------------------------
@@ -2894,7 +3003,9 @@ async def test_ga_specialist_e2e_traffic_trends_happy_path(trial: int) -> None:
     model_role_events = [
         e
         for e in all_events
-        if e.content and e.content.role == "model" and e.content.parts
+        if e.content
+        and e.content.role == "model"
+        and e.content.parts
         and not getattr(e, "partial", False)
     ]
     assert model_role_events, (
@@ -3089,7 +3200,9 @@ def test_ga_specialist_weave_span_attrs_from_callback() -> None:
     # span is still current when it runs), so locate it by closure name rather
     # than by position.
     callbacks = list(pipeline.after_agent_callback or [])
-    assert callbacks, "pipeline.after_agent_callback must be non-empty (AH-35 installs one)"
+    assert callbacks, (
+        "pipeline.after_agent_callback must be non-empty (AH-35 installs one)"
+    )
     specialist_callback = next(
         cb
         for cb in callbacks
@@ -3120,10 +3233,14 @@ def test_ga_specialist_weave_span_attrs_from_callback() -> None:
             client.finish_call(root_span)
 
     if client is None:
-        pytest.skip("weave package not installed — cannot verify span attribute emission")
+        pytest.skip(
+            "weave package not installed — cannot verify span attribute emission"
+        )
 
     tree = client.tree_root()
-    assert tree is not None, "recording_weave_client must have recorded at least one span"
+    assert tree is not None, (
+        "recording_weave_client must have recorded at least one span"
+    )
 
     # Navigate to the specialist child span.
     specialist_node = tree["children"][0]
@@ -3144,7 +3261,10 @@ def test_ga_specialist_weave_span_attrs_from_callback() -> None:
     assert summary.get("cache_hit") is False, (
         f"cache_hit must be False at build time; got {summary.get('cache_hit')!r}"
     )
-    assert isinstance(summary.get("total_iterations"), int) and summary.get("total_iterations") >= 0, (
+    assert (
+        isinstance(summary.get("total_iterations"), int)
+        and summary.get("total_iterations") >= 0
+    ), (
         f"total_iterations must be a non-negative int; got {summary.get('total_iterations')!r}"
     )
 
@@ -3210,6 +3330,7 @@ async def test_ga_specialist_e2e_weave_trace_structure(trial: int) -> None:
         GA_SPECIALIST_ACCEPTANCE_CRITERIA,
         GA_SPECIALIST_INSTRUCTION,
     )
+
     numerical_analyst_agent = Agent(
         name="numerical_analyst",
         model="gemini-2.5-flash",
@@ -3364,10 +3485,15 @@ async def test_ga_specialist_e2e_weave_trace_structure(trial: int) -> None:
         tools=[],
         before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
-    root.sub_agents = attacher.AlwaysTrueSubAgentList()  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
+    root.sub_agents = (
+        attacher.AlwaysTrueSubAgentList()
+    )  # ADK 2.0 DynamicNodeScheduler gate (AH-105)
 
     account_id = f"acct_weave_trace_{trial}"
-    ga_credentials: dict[str, Any] = {"access_token": f"tok_weave_{trial}", "tenant_id": "tenant_weave"}
+    ga_credentials: dict[str, Any] = {
+        "access_token": f"tok_weave_{trial}",
+        "tenant_id": "tenant_weave",
+    }
     mcp_creds: dict[str, Any] = {"refresh_signature": f"sig_weave_{trial}"}
 
     app_name = f"weave_trace_trial_{trial}"
@@ -3409,7 +3535,9 @@ async def test_ga_specialist_e2e_weave_trace_structure(trial: int) -> None:
                 session_id=session.id,
                 new_message=genai_types.Content(
                     role="user",
-                    parts=[Part.from_text(text="Show me traffic trends for the past week.")],
+                    parts=[
+                        Part.from_text(text="Show me traffic trends for the past week.")
+                    ],
                 ),
             ):
                 all_events.append(event)
@@ -3465,10 +3593,7 @@ async def test_ga_specialist_e2e_weave_trace_structure(trial: int) -> None:
     # -----------------------------------------------------------------------
 
     all_parts = [
-        p
-        for e in all_events
-        if e.content and e.content.parts
-        for p in e.content.parts
+        p for e in all_events if e.content and e.content.parts for p in e.content.parts
     ]
     numerical_analyst_calls = [
         p

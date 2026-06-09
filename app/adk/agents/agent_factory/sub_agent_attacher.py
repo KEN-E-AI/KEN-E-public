@@ -1,26 +1,34 @@
 """Idempotent runtime attachment of resolved specialists to a root agent.
 
-AH-75 / AH-PRD-09: the deploy-time factory is gone, but ADK's
-``transfer_to_agent`` mechanism — the only ADK-native channel that
-propagates a sub-agent's events to the outer Runner's stream — requires
-candidate specialists to be reachable from ``root_agent`` via ``sub_agents``
-at call time. This module bridges the runtime resolver
+AH-75 / AH-PRD-09: the deploy-time factory is gone. ADK's per-turn
+``request_task_<name>`` mechanism (AH-161) — via ``_TaskAgentTool`` — is the
+primary channel for specialist dispatch. Specialists are resolved as
+``mode='task'`` agents so the coordinator coordinator retains control after
+each task completes (call-and-return semantics), enabling fan-out, synthesis,
+and approval gating.
+
+This module bridges the runtime resolver
 (:mod:`app.adk.agents.agent_factory.specialist_runtime`) and ADK's
 sub-agent lookup so the resolvable-agent set stays in sync with the root's
 "Available Specialists" prompt block per turn, without re-introducing the
 deploy-time factory.
 
 Invoked from the root agent's ``before_agent_callback`` so the
-``sub_agents`` list is current by the time the LLM emits a
-``transfer_to_agent(agent_name=...)`` call.
+``sub_agents`` list and ``_TaskAgentTool`` entries in ``root.tools`` are
+current by the time the LLM emits a ``request_task_<name>(...)`` call.
 
 Behaviour:
 
 * Lists every delegatable specialist for *account_id* via
   :func:`config_loader.list_account_agent_configs`, resolves each through
-  :func:`specialist_runtime.resolve_agent` (LRU-cached;
+  :func:`specialist_runtime.resolve_agent` with ``mode='task'`` (LRU-cached;
   content-hash-keyed), and ensures each resolved ``BaseAgent`` appears in
   ``root_agent.sub_agents`` exactly once.
+
+  AH-161: all per-turn specialists are resolved as task-mode so the
+  coordinator dispatches via ``request_task_<name>`` and regains control
+  after each task.  ``transfer_to_agent`` is disabled for specialists
+  (ADK excludes ``mode='task'`` agents from transfer targets).
 
   Delegation gate: ``ken_e_sub_agent=True`` (AH-82).  The legacy
   ``visible_in_frontend`` flag is no longer used here; it governs
@@ -28,9 +36,9 @@ Behaviour:
 
 * Reconcile pass: any entry already in ``root.sub_agents`` whose name does
   not match a currently visible specialist (e.g. the specialist was
-  deleted in Firestore, or evicted from ``_specialists_cache`` after a
-  config edit produced a fresh ``LlmAgent`` instance with the same name)
-  is removed so ADK's transfer-target lookup matches the prompt block.
+  deleted in Firestore, or evicted from cache after a config edit produced a
+  fresh agent instance with the same name) is removed so ADK's task-tool
+  lookup matches the prompt block.
 
 * Parent-agent invariant: ``BaseAgent.__set_parent_agent_for_sub_agents``
   runs only at construction (base_agent.py:611) and refuses to re-parent
@@ -300,8 +308,13 @@ def _attach_locked(
     desired: dict[str, BaseAgent] = {}
     for doc_id, _config in visible_configs.items():
         try:
+            # AH-161: resolve all per-turn specialists as task-mode so the
+            # coordinator dispatches via request_task_<name> (call-and-return)
+            # and regains control after each task.  ADK's _get_transfer_targets
+            # excludes mode='task' agents, so transfer_to_agent is naturally
+            # disabled for these specialists.
             desired[doc_id] = resolve_agent(
-                doc_id, account_id, session_state=session_state
+                doc_id, account_id, session_state=session_state, mode="task"
             )
         except Exception as exc:
             # Mirror available_specialists_provider's policy: log and drop the
@@ -372,6 +385,13 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
       this, the coordinator's LLM never sees ``request_task_<name>`` and
       delegation silently no-ops (the AH-117 / AH-PRD-15 prod-incident
       pattern).
+
+      AH-161: review-wrapped ``LoopAgent`` pipelines returned by
+      ``_build_specialist(mode='task')`` are also task-dispatchable — they
+      carry the ``_is_task_dispatchable=True`` sentinel set by
+      ``_build_specialist``.  ``_reconcile`` checks BOTH ``mode=='task'``
+      (bare ``LlmAgent`` path) and the sentinel (``LoopAgent`` review
+      pipeline path) to decide whether to inject ``_TaskAgentTool``.
     * **Drop / Replace** — removes the stale ``_TaskAgentTool`` entry so
       ``root_agent.tools`` is always consistent with ``root_agent.sub_agents``.
 
@@ -401,9 +421,11 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
             # Name no longer visible: drop. Clear parent pointer so a future
             # attach to the same name can succeed if the specialist returns.
             _clear_parent(sub, root_agent)
-            # AH-135: remove the _TaskAgentTool so root_agent.tools stays
-            # consistent with root_agent.sub_agents for task-mode specialists.
-            if getattr(sub, "mode", None) == "task" and sub_name:
+            # AH-135 / AH-161: remove the _TaskAgentTool so root_agent.tools
+            # stays consistent with root_agent.sub_agents. Check both the
+            # mode='task' flag (bare LlmAgent path) and the sentinel
+            # (review-wrapped LoopAgent path).
+            if _is_task_dispatchable(sub) and sub_name:
                 _remove_task_tool(root_agent, sub_name)
             changed = True
         else:
@@ -411,20 +433,22 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
             # (content_hash drift on a config edit). Drop the stale, keep the
             # desired below.
             _clear_parent(sub, root_agent)
-            # AH-135: remove stale _TaskAgentTool before injecting a fresh one.
-            if getattr(sub, "mode", None) == "task" and sub_name:
+            # AH-135 / AH-161: remove stale _TaskAgentTool before injecting a fresh one.
+            if _is_task_dispatchable(sub) and sub_name:
                 _remove_task_tool(root_agent, sub_name)
             changed = True
 
     # Add anything still in desired_by_name (either net-new or replaced).
     for new_sub in desired_by_name.values():
         _set_parent(new_sub, root_agent)
-        # AH-135: inject _TaskAgentTool for task-mode specialists that were
-        # attached post-construction.  model_post_init already ran without
+        # AH-135 / AH-161: inject _TaskAgentTool for task-dispatchable specialists
+        # that were attached post-construction.  model_post_init already ran without
         # these sub-agents, so the tool would otherwise be missing and the
         # coordinator's LLM could never dispatch request_task_<name>
         # (the AH-117 / AH-PRD-15 prod-incident pattern).
-        if getattr(new_sub, "mode", None) == "task":
+        # Covers both mode='task' bare LlmAgents AND review-wrapped LoopAgents
+        # that carry the _is_task_dispatchable sentinel (AH-161).
+        if _is_task_dispatchable(new_sub):
             task_tool = _make_task_agent_tool(new_sub)
             tools = getattr(root_agent, "tools", None)
             if task_tool is not None and isinstance(tools, list):
@@ -448,6 +472,24 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
     # list — transfer_to_agent lookups would then fail silently.
     root_agent.sub_agents[:] = keep
     return changed
+
+
+def _is_task_dispatchable(agent: BaseAgent) -> bool:
+    """Return ``True`` if *agent* should receive a ``_TaskAgentTool`` injection.
+
+    Two cases qualify (AH-135 / AH-161):
+    1. ``LlmAgent(mode='task')`` — bare single-pass task specialist.
+    2. A ``LoopAgent`` review pipeline with ``_is_task_dispatchable=True``
+       sentinel set by ``_build_specialist`` when called with ``mode='task'``
+       and non-empty ``default_acceptance_criteria``.  The outer LoopAgent
+       is not itself ``mode='task'`` (ADK does not support that), but the
+       ``_TaskAgentTool`` wrapper dispatches it correctly via
+       ``_dispatch_task_fc`` → ``ctx.run_node``, and the coordinator regains
+       control after the loop exits.
+    """
+    return getattr(agent, "mode", None) == "task" or getattr(
+        agent, "_is_task_dispatchable", False
+    )
 
 
 def _set_parent(sub: BaseAgent, root_agent: BaseAgent) -> None:

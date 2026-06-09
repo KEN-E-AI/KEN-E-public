@@ -5751,3 +5751,836 @@ def _as_callback_list_for_test(value: Any) -> list[Any]:
     if callable(value):
         return [value]
     return list(value)
+
+
+# ---------------------------------------------------------------------------
+# TestReviewWrappedLoopAgentTaskDispatch (AH-161 repro)
+#
+# Live-dev silent failure (traces 019eacda-b733 / -b920): the coordinator
+# correctly emits ``google_analytics_specialist(...)``, the GA task runs, but
+# the coordinator regains control with NOTHING and says "I'll report back."
+#
+# Root cause hypothesis: ``google_analytics_specialist`` has
+# ``default_acceptance_criteria``, so ``_build_specialist(mode='task')`` returns
+# a REVIEW-WRAPPED ``LoopAgent`` (``_is_task_dispatchable=True``), not a bare
+# ``LlmAgent(mode='task')``.  A bare task agent surfaces its answer to the
+# coordinator via the ``finish_task`` mechanism (FinishTaskTool args → node
+# output → synthesized FR).  A review-wrapped LoopAgent has NO finish_task (the
+# worker is ``mode=None`` with finish_task stripped — review_pipeline.py), so the
+# LoopAgent node produces ``output=None`` and the coordinator receives an EMPTY
+# function-response — it never sees the draft the worker wrote to
+# ``state['{prefix}_draft']``.
+#
+# The passing AH-135 ``TestTaskModePerTurnDispatch`` uses a BARE ``mode='task'``
+# agent, so it never exercised this path.
+# ---------------------------------------------------------------------------
+
+
+class TestReviewWrappedLoopAgentTaskDispatch:
+    """AH-161: dispatching a review-wrapped LoopAgent via the task path."""
+
+    @pytest.mark.asyncio
+    async def test_review_wrapped_loopagent_dispatch_loses_result(self) -> None:
+        """Regression guard: dispatching a review-wrapped LoopAgent (the shape
+        ``_build_specialist`` would return for a task-mode specialist WITH
+        ``default_acceptance_criteria``) through the task-delegation path surfaces
+        NO result — the LoopAgent node produces ``output=None`` and the worker's
+        draft never reaches the coordinator.
+
+        This is the empirical justification for the AH-161 fix: ``_build_specialist``
+        routes ``mode='task'`` to the bare single-pass path (a bare
+        ``LlmAgent(mode='task')`` surfaces its answer via ``finish_task``), never
+        review-wrapping it.  If a future ADK makes a LoopAgent node surface its
+        output, this assertion breaks and we can revisit re-enabling review for
+        task dispatch.
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        import json
+        from collections.abc import AsyncIterator
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models.base_llm import BaseLlm
+        from google.adk.models.llm_response import LlmResponse
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types as genai_types
+        from google.genai.types import Content, FunctionCall, Part
+        from pydantic import PrivateAttr
+
+        from app.adk.agents.agent_factory.sub_agent_attacher import attach_task_subagent
+        from app.adk.agents.utils.review_pipeline import build_review_pipeline
+
+        SPECIALIST_NAME = "ga_specialist"
+        DRAFT_TEXT = (
+            "Top traffic sources last week: Organic Search 5,200; "
+            "Direct 3,100; Referral 1,400."
+        )
+
+        def _usage() -> Any:
+            return genai_types.GenerateContentResponseUsageMetadata(
+                prompt_token_count=200,
+                candidates_token_count=40,
+            )
+
+        # Worker stub: emits the draft text (→ state['ga_review_draft']).
+        class _WorkerLlm(BaseLlm):
+            model: str = "repro_worker_stub"
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_worker_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                yield LlmResponse(
+                    content=Content(role="model", parts=[Part(text=DRAFT_TEXT)]),
+                    usage_metadata=_usage(),
+                    turn_complete=True,
+                )
+
+        # Reviewer stub: approves on iteration 1 via exit_loop.
+        class _ReviewerLlm(BaseLlm):
+            model: str = "repro_reviewer_stub"
+            _approved: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_reviewer_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._approved:
+                    self._approved = True
+                    yield LlmResponse(
+                        content=Content(
+                            role="model",
+                            parts=[
+                                Part(
+                                    function_call=FunctionCall(
+                                        name="exit_loop", args={}
+                                    )
+                                )
+                            ],
+                        ),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(text="ok")]),
+                        turn_complete=True,
+                    )
+
+        # Coordinator stub: dispatch the specialist once, then synthesize text.
+        class _CoordinatorLlm(BaseLlm):
+            model: str = "repro_coordinator_stub"
+            _dispatched: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_coordinator_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._dispatched:
+                    self._dispatched = True
+                    fc = FunctionCall(
+                        name=SPECIALIST_NAME, args={"query": "top traffic sources"}
+                    )
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(
+                            role="model",
+                            parts=[Part(text="Here are your top traffic sources.")],
+                        ),
+                        turn_complete=True,
+                    )
+
+        # --- Build the review-wrapped specialist exactly like _build_specialist ---
+        specialist = LlmAgent(
+            name=SPECIALIST_NAME,
+            model=_WorkerLlm(),
+            mode="task",
+            instruction="Report the user's top traffic sources.",
+        )
+        pipeline = build_review_pipeline(
+            specialist=specialist,
+            acceptance_criteria="Provide the top traffic sources with counts.",
+            output_key_prefix="ga_review",
+            max_iterations=2,
+            reviewer_model="repro_reviewer_stub",
+        )
+        # build_review_pipeline takes reviewer_model as a STRING; swap the
+        # reviewer's model for our stub instance (sub_agents = [worker, reviewer]).
+        pipeline.sub_agents[1].model = _ReviewerLlm()
+        # _build_specialist renames the LoopAgent to the doc_id and marks it.
+        pipeline.name = SPECIALIST_NAME
+        pipeline._is_task_dispatchable = True  # type: ignore[attr-defined]
+
+        coordinator = LlmAgent(
+            name="coordinator",
+            model=_CoordinatorLlm(),
+            mode="chat",
+            instruction="Coordinate.",
+        )
+        attach_task_subagent(coordinator, pipeline)
+
+        # --- Drive through a real Runner ---
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="loopagent_dispatch_repro", user_id="test_user"
+        )
+        runner = Runner(
+            agent=coordinator,
+            app_name="loopagent_dispatch_repro",
+            session_service=session_service,
+        )
+
+        events: list[Any] = []
+        async for event in runner.run_async(
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text="What were my top traffic sources?")],
+            ),
+        ):
+            events.append(event)
+
+        authors = [getattr(e, "author", None) for e in events]
+
+        # Sanity: the LoopAgent worker actually ran.
+        assert f"{SPECIALIST_NAME}_worker" in authors, (
+            "The review-wrapped LoopAgent worker must run when dispatched. "
+            f"authors={authors}"
+        )
+
+        # Extract the synthesized function-response back to the coordinator.
+        fr_responses: list[Any] = []
+        for e in events:
+            content = getattr(e, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                fr = getattr(part, "function_response", None)
+                if fr is not None and getattr(fr, "name", None) == SPECIALIST_NAME:
+                    fr_responses.append(fr.response)
+
+        assert fr_responses, (
+            "Coordinator must receive a synthesized function-response for the "
+            f"task dispatch. FR responses found: {fr_responses}; authors={authors}"
+        )
+
+        # THE CRUX: the review-wrapped LoopAgent dispatch surfaces NO result —
+        # the node output is None and the worker's draft (in
+        # state['ga_review_draft']) never reaches the coordinator. This is the
+        # AH-161 silent failure that the _build_specialist bare-task routing fixes.
+        fr_text = json.dumps(fr_responses[-1])
+        assert DRAFT_TEXT not in fr_text, (
+            "Unexpected: the review-wrapped LoopAgent dispatch surfaced the worker "
+            f"draft (FR={fr_responses[-1]!r}). If ADK now surfaces a LoopAgent "
+            "node's output, revisit the AH-161 bare-task decision in _build_specialist."
+        )
+        assert fr_responses[-1] == {"output": None}, (
+            "Review-wrapped LoopAgent task dispatch is expected to return "
+            f"{{'output': None}} (no finish_task to surface a result); got "
+            f"{fr_responses[-1]!r}."
+        )
+
+    def test_task_mode_with_criteria_is_bare_not_review_wrapped(self) -> None:
+        """AH-161 fix: ``_build_specialist(mode='task')`` with
+        ``default_acceptance_criteria`` set must NOT wrap in a review LoopAgent.
+
+        It returns the bare ``LlmAgent(mode='task')`` (the build_agent output) so
+        the coordinator's task dispatch surfaces the result via ``finish_task``.
+        Chat-mode (mode=None) with the same criteria still wraps — see
+        ``test_criteria_set_wraps_in_review_pipeline_renamed_to_doc_id``.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="GA specialist.",
+            model="gemini-2.5-pro",
+            description="GA specialist description.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+
+            def _make_specialist_mock(_config: Any, *, name: str, **_kw: Any) -> Any:
+                m = MagicMock(name=f"llmagent_{name}")
+                m.name = name
+                m.description = _config.description
+                m.after_agent_callback = None
+                m.before_agent_callback = None
+                return m
+
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_make_specialist_mock,
+                )
+            )
+            mock_build_pipeline = stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=MagicMock(name="loopagent"),
+                )
+            )
+
+            result = sr._build_specialist(config, "ga", None, mode="task")
+
+        # AH-161: review wrap MUST NOT be applied for task mode.
+        mock_build_pipeline.assert_not_called()
+        # Returned agent is the bare build_agent output (the task specialist),
+        # not a review LoopAgent.
+        assert result.name == "ga"
+
+    @pytest.mark.asyncio
+    async def test_bare_task_specialist_finish_task_surfaces_result(self) -> None:
+        """AH-161 fix proof: a BARE ``LlmAgent(mode='task')`` that calls
+        ``finish_task`` surfaces its answer to the coordinator as the
+        function-response — the behavior the review-wrapped LoopAgent could not
+        provide (see ``test_review_wrapped_loopagent_dispatch_loses_result``).
+
+        This is the mechanism the ``_build_specialist`` bare-task routing relies
+        on: ``finish_task`` args → node output → synthesized FR. (A bare task
+        agent that emits plain text WITHOUT ``finish_task`` would instead trigger
+        ``NodeInterruptedError`` via ``raise_on_wait`` — its node carries
+        ``wait_for_output=True`` — so the specialist MUST call ``finish_task``.)
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        import json
+        from collections.abc import AsyncIterator
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models.base_llm import BaseLlm
+        from google.adk.models.llm_response import LlmResponse
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types as genai_types
+        from google.genai.types import Content, FunctionCall, Part
+        from pydantic import PrivateAttr
+
+        from app.adk.agents.agent_factory.sub_agent_attacher import attach_task_subagent
+
+        SPECIALIST_NAME = "ga_specialist"
+        ANSWER = "Top traffic sources last week: Organic Search 5,200; Direct 3,100."
+
+        # Bare task specialist: completes by calling finish_task with the answer.
+        class _SpecialistLlm(BaseLlm):
+            model: str = "repro_bare_task_stub"
+            _done: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_bare_task_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._done:
+                    self._done = True
+                    fc = FunctionCall(
+                        id="ft1", name="finish_task", args={"result": ANSWER}
+                    )
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(text="done")]),
+                        turn_complete=True,
+                    )
+
+        class _CoordinatorLlm(BaseLlm):
+            model: str = "repro_bare_coord_stub"
+            _dispatched: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_bare_coord_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._dispatched:
+                    self._dispatched = True
+                    fc = FunctionCall(name=SPECIALIST_NAME, args={"query": "sources"})
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(
+                            role="model", parts=[Part(text="Here are your sources.")]
+                        ),
+                        turn_complete=True,
+                    )
+
+        specialist = LlmAgent(
+            name=SPECIALIST_NAME,
+            model=_SpecialistLlm(),
+            mode="task",
+            instruction="Report the user's top traffic sources.",
+        )
+        coordinator = LlmAgent(
+            name="coordinator",
+            model=_CoordinatorLlm(),
+            mode="chat",
+            instruction="Coordinate.",
+        )
+        attach_task_subagent(coordinator, specialist)
+
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="bare_task_dispatch_repro", user_id="test_user"
+        )
+        runner = Runner(
+            agent=coordinator,
+            app_name="bare_task_dispatch_repro",
+            session_service=session_service,
+        )
+
+        events: list[Any] = []
+        async for event in runner.run_async(
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text="What were my top traffic sources?")],
+            ),
+        ):
+            events.append(event)
+
+        fr_responses: list[Any] = []
+        for e in events:
+            content = getattr(e, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                fr = getattr(part, "function_response", None)
+                if fr is not None and getattr(fr, "name", None) == SPECIALIST_NAME:
+                    fr_responses.append(fr.response)
+
+        assert fr_responses, (
+            "Coordinator must receive a synthesized function-response for the "
+            f"bare task dispatch. authors={[getattr(e, 'author', None) for e in events]}"
+        )
+        fr_text = json.dumps(fr_responses[-1])
+        assert ANSWER in fr_text, (
+            "AH-161 fix: a bare mode='task' specialist that calls finish_task must "
+            f"surface its answer to the coordinator. FR response={fr_responses[-1]!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_per_turn_attach_without_seed_is_not_dispatched(self) -> None:
+        """REGRESSION GUARD (the ADK constraint behind the AH-161 seed): a task
+        specialist whose ``_TaskAgentTool`` is attached ONLY per-turn (inside the
+        root's ``before_agent_callback``, as
+        ``attach_specialists_before_agent_callback`` does) is NEVER dispatched.
+
+        ADK's ``run_llm_agent_as_node`` (chat mode) snapshots ``tools_dict`` from
+        ``agent.tools`` (``_llm_agent_wrapper.py`` line 360) BEFORE the agent's
+        ``before_agent_callback`` runs (line 378).  A ``_TaskAgentTool`` injected
+        by that callback is therefore invisible to ``_extract_task_delegation_fcs``
+        (line 382), so the delegation FC is never recognized — the specialist's
+        LLM never runs and the coordinator gets a dangling FC ("I'll report
+        back").  This is the live dev failure (traces 019ead09-*).
+
+        The prior dispatch tests
+        (``test_bare_task_specialist_finish_task_surfaces_result``,
+        ``TestTaskModePerTurnDispatch``) attach the specialist BEFORE running, so
+        they never exercised this per-turn timing.  The fix seeds the tool at
+        deploy time so it is in the snapshot — see
+        ``test_deploytime_seeded_tool_enables_per_turn_dispatch`` and
+        ``hierarchy._seed_specialist_dispatch_tools``.  If a future ADK recomputes
+        ``tools_dict`` after the callback, this assertion flips and the seed can
+        be removed.
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        from collections.abc import AsyncIterator
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models.base_llm import BaseLlm
+        from google.adk.models.llm_response import LlmResponse
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types as genai_types
+        from google.genai.types import Content, FunctionCall, Part
+        from pydantic import PrivateAttr
+
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            AlwaysTrueSubAgentList,
+            attach_task_subagent,
+        )
+
+        SPECIALIST_NAME = "ga_specialist"
+        ANSWER = "Top traffic sources last week: Organic Search 5,200; Direct 3,100."
+
+        class _SpecialistLlm(BaseLlm):
+            model: str = "repro_pt_task_stub"
+            _done: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_pt_task_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._done:
+                    self._done = True
+                    fc = FunctionCall(
+                        id="ft_pt", name="finish_task", args={"result": ANSWER}
+                    )
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(text="done")]),
+                        turn_complete=True,
+                    )
+
+        class _CoordinatorLlm(BaseLlm):
+            model: str = "repro_pt_coord_stub"
+            _dispatched: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_pt_coord_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._dispatched:
+                    self._dispatched = True
+                    fc = FunctionCall(name=SPECIALIST_NAME, args={"request": "sources"})
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(
+                            role="model", parts=[Part(text="Here are your sources.")]
+                        ),
+                        turn_complete=True,
+                    )
+
+        # The specialist that the per-turn callback will attach to the RUNNING
+        # (cloned) root — mirrors a resolve_agent(mode='task') result.
+        ga = LlmAgent(
+            name=SPECIALIST_NAME,
+            model=_SpecialistLlm(),
+            mode="task",
+            instruction="Report the user's top traffic sources.",
+        )
+
+        # The before_agent_callback fires on the running clone; attach the
+        # specialist there (idempotent), exactly as
+        # attach_specialists_before_agent_callback does in deployment.
+        def _attach_per_turn(callback_context: Any) -> None:
+            running_agent = callback_context._invocation_context.agent
+            already = any(
+                getattr(s, "name", None) == SPECIALIST_NAME
+                for s in (running_agent.sub_agents or [])
+            )
+            if not already:
+                attach_task_subagent(running_agent, ga)
+            return None
+
+        coordinator = LlmAgent(
+            name="ken_e",
+            model=_CoordinatorLlm(),
+            mode="chat",
+            instruction="Coordinate.",
+            before_agent_callback=_attach_per_turn,
+        )
+        # Deploy-time shim: empty-but-truthy so the scheduler activates, and NO
+        # task sub-agent present at Runner.run_async entry (attached per-turn).
+        coordinator.sub_agents = AlwaysTrueSubAgentList()
+
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="per_turn_attach_repro", user_id="test_user"
+        )
+        runner = Runner(
+            agent=coordinator,
+            app_name="per_turn_attach_repro",
+            session_service=session_service,
+        )
+
+        events: list[Any] = []
+        async for event in runner.run_async(
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text="What were my top traffic sources?")],
+            ),
+        ):
+            events.append(event)
+
+        authors = [getattr(e, "author", None) for e in events]
+        fr_responses: list[Any] = []
+        for e in events:
+            content = getattr(e, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                fr = getattr(part, "function_response", None)
+                if fr is not None and getattr(fr, "name", None) == SPECIALIST_NAME:
+                    fr_responses.append(fr.response)
+
+        # The bug: per-turn-only attach → the specialist is NEVER dispatched.
+        # Only the coordinator ('ken_e') runs; no specialist events, no FR.
+        assert SPECIALIST_NAME not in authors, (
+            "Expected the per-turn-attached specialist NOT to be dispatched (the "
+            "ADK tools_dict-snapshot-before-callback constraint). If it WAS "
+            f"dispatched, ADK changed — revisit the AH-161 seed. authors={authors}"
+        )
+        assert not fr_responses, (
+            "Expected NO function-response (dispatch never recognized). "
+            f"fr_responses={fr_responses}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_deploytime_seeded_tool_enables_per_turn_dispatch(self) -> None:
+        """FIX VALIDATION: seeding the specialist's ``_TaskAgentTool`` on the
+        deploy-time root (so it is in ``root.tools`` → copied to the per-turn
+        clone → present in the dispatch loop's ``tools_dict`` snapshot at
+        ``run_llm_agent_as_node`` line 360) lets ``_extract_task_delegation_fcs``
+        recognize the delegation FC, while the per-turn callback still attaches
+        the resolved specialist as a sub-agent so ``find_agent`` resolves it at
+        dispatch time.
+
+        Contrast ``test_per_turn_attached_task_specialist_dispatches`` (the bug):
+        when the tool is added ONLY by the per-turn callback (after the snapshot),
+        the FC is never recognized and the specialist never runs.
+        """
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode specialists require ADK 2.0+")
+
+        import json
+        from collections.abc import AsyncIterator
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models.base_llm import BaseLlm
+        from google.adk.models.llm_response import LlmResponse
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+        from google.genai import types as genai_types
+        from google.genai.types import Content, FunctionCall, Part
+        from pydantic import PrivateAttr
+
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            AlwaysTrueSubAgentList,
+            _make_task_agent_tool,
+            _set_parent,
+        )
+
+        SPECIALIST_NAME = "ga_specialist"
+        ANSWER = "Top traffic sources last week: Organic Search 5,200; Direct 3,100."
+
+        class _SpecialistLlm(BaseLlm):
+            model: str = "repro_seed_task_stub"
+            _done: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_seed_task_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._done:
+                    self._done = True
+                    fc = FunctionCall(
+                        id="ft_seed", name="finish_task", args={"result": ANSWER}
+                    )
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(text="done")]),
+                        turn_complete=True,
+                    )
+
+        class _CoordinatorLlm(BaseLlm):
+            model: str = "repro_seed_coord_stub"
+            _dispatched: bool = PrivateAttr(default=False)
+
+            @classmethod
+            def supported_models(cls) -> list[str]:
+                return ["repro_seed_coord_stub"]
+
+            async def generate_content_async(  # type: ignore[override]
+                self, llm_request: Any, stream: bool = False
+            ) -> AsyncIterator[LlmResponse]:
+                if not self._dispatched:
+                    self._dispatched = True
+                    fc = FunctionCall(name=SPECIALIST_NAME, args={"request": "sources"})
+                    yield LlmResponse(
+                        content=Content(role="model", parts=[Part(function_call=fc)]),
+                        turn_complete=False,
+                    )
+                else:
+                    yield LlmResponse(
+                        content=Content(
+                            role="model", parts=[Part(text="Here are your sources.")]
+                        ),
+                        turn_complete=True,
+                    )
+
+        ga = LlmAgent(
+            name=SPECIALIST_NAME,
+            model=_SpecialistLlm(),
+            mode="task",
+            instruction="Report the user's top traffic sources.",
+        )
+
+        # Per-turn callback attaches the resolved specialist as a SUB-AGENT only
+        # (so find_agent resolves it at dispatch); the tool is already seeded.
+        def _attach_subagent_per_turn(callback_context: Any) -> None:
+            running_agent = callback_context._invocation_context.agent
+            already = any(
+                getattr(s, "name", None) == SPECIALIST_NAME
+                for s in (running_agent.sub_agents or [])
+            )
+            if not already:
+                running_agent.sub_agents.append(ga)
+                _set_parent(ga, running_agent)
+            return None
+
+        coordinator = LlmAgent(
+            name="ken_e",
+            model=_CoordinatorLlm(),
+            mode="chat",
+            instruction="Coordinate.",
+            before_agent_callback=_attach_subagent_per_turn,
+        )
+        coordinator.sub_agents = AlwaysTrueSubAgentList()
+        # DEPLOY-TIME SEED (production shape): a PLACEHOLDER task agent — distinct
+        # from the real GA the per-turn callback attaches — named the same doc_id.
+        # Its _TaskAgentTool on root.tools makes the dispatch loop's pre-callback
+        # tools_dict snapshot recognize the FC; _dispatch_task_fc -> find_agent
+        # then dispatches the REAL per-turn GA (the only instance in sub_agents).
+        placeholder = LlmAgent(
+            name=SPECIALIST_NAME,
+            model="gemini-2.0-flash",
+            mode="task",
+            instruction="Placeholder for request_task dispatch (never run).",
+        )
+        seeded_tool = _make_task_agent_tool(placeholder)
+        assert seeded_tool is not None
+        coordinator.tools.append(seeded_tool)
+
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="seed_tool_repro", user_id="test_user"
+        )
+        runner = Runner(
+            agent=coordinator,
+            app_name="seed_tool_repro",
+            session_service=session_service,
+        )
+
+        events: list[Any] = []
+        async for event in runner.run_async(
+            user_id=session.user_id,
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text="What were my top traffic sources?")],
+            ),
+        ):
+            events.append(event)
+
+        authors = [getattr(e, "author", None) for e in events]
+        fr_responses: list[Any] = []
+        for e in events:
+            content = getattr(e, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                fr = getattr(part, "function_response", None)
+                if fr is not None and getattr(fr, "name", None) == SPECIALIST_NAME:
+                    fr_responses.append(fr.response)
+
+        assert fr_responses and ANSWER in json.dumps(fr_responses[-1]), (
+            "FIX: with the _TaskAgentTool seeded at construction (deploy-time), a "
+            "per-turn-attached specialist must dispatch and surface its result. "
+            f"authors={authors}; fr_responses={fr_responses}"
+        )
+
+    def test_task_mode_appends_result_instruction_suffix(self) -> None:
+        """AH-161: a task-mode specialist's instruction gets the result directive
+        so its COMPLETE answer is returned via finish_task (the coordinator sees
+        only finish_task's result, not the specialist's free text)."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_merged_config("v1")  # no default_acceptance_criteria
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            sr._build_specialist(config, "ga", None, mode="task")
+
+        suffix = mock_ba.call_args.kwargs.get("instruction_suffix")
+        assert suffix == sr._TASK_RESULT_INSTRUCTION, (
+            f"task-mode build_agent must receive the result directive; got {suffix!r}"
+        )
+
+    def test_chat_mode_omits_result_instruction_suffix(self) -> None:
+        """Chat-mode (mode=None) specialists surface text directly via
+        transfer_to_agent, so the task-result directive must NOT be appended."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_merged_config("v1")
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            sr._build_specialist(config, "ga", None, mode=None)
+
+        suffix = mock_ba.call_args.kwargs.get("instruction_suffix")
+        assert not suffix, (
+            f"chat-mode build_agent must not receive the result directive; got {suffix!r}"
+        )

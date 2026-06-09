@@ -163,8 +163,11 @@ def build_hierarchy(
                 f"Failed to connect to Firestore for project {resolved_project_id!r}: {exc}"
             ) from exc
 
-    # Step 3 — load root config only. Specialists are resolved per-turn by
-    # specialist_runtime; no N+1 read at deploy time.
+    # Step 3 — load the root config. Specialist *agents* are still resolved
+    # per-turn by specialist_runtime; the only deploy-time specialist reads are
+    # the bounded one-per-global-config pass in _seed_specialist_dispatch_tools
+    # (AH-161), needed so the chat dispatch loop's pre-callback tools_dict
+    # snapshot recognizes each specialist's request_task delegation FC.
     root_config = _load_and_merge(db, ROOT_CONFIG_ID, account_id)
     logger.info("Loaded root agent config %r.", ROOT_CONFIG_ID)
 
@@ -211,6 +214,7 @@ def build_hierarchy(
         SUPERVISOR_INSTRUCTION_FRAGMENT,
         get_supervisor_function_tools,
         pending_supervisor_state_provider,
+        transfer_to_agent_ledger_guard_before_tool_callback,
     )
     from app.adk.tools.registry.agent_tool_registry import (
         resolve_agent_subagents,
@@ -287,6 +291,14 @@ def build_hierarchy(
             adk_after_model_callback,
             capture_last_model_output_after_model_callback,
         ],
+        # AH-160: deterministic guard that rejects a one-way transfer_to_agent
+        # while a multi-task supervisor_ledger is active, forcing the coordinator
+        # to dispatch via request_task_<name> so it keeps control for fan-out,
+        # synthesis, and the approval checkpoint. No-op on the single-specialist
+        # (no-ledger) fast path.
+        additional_before_tool_callbacks=[
+            transfer_to_agent_ledger_guard_before_tool_callback,
+        ],
     )
     logger.info("Built root agent %r.", "ken_e")
 
@@ -314,4 +326,117 @@ def build_hierarchy(
     for sub in root_agent_subagents:
         attach_task_subagent(root_agent, sub)
 
+    # AH-161: seed a request_task dispatch tool per GLOBAL ken_e_sub_agent
+    # specialist so ADK's chat dispatch loop recognizes their delegation FCs.
+    # The loop snapshots ``tools_dict`` from ``agent.tools`` BEFORE the per-turn
+    # ``attach_specialists_before_agent_callback`` injects each specialist's
+    # ``_TaskAgentTool`` — so a per-turn-only tool is invisible to
+    # ``_extract_task_delegation_fcs`` and the specialist is silently never
+    # dispatched.  See ``_seed_specialist_dispatch_tools``.
+    _seed_specialist_dispatch_tools(root_agent, db, account_id)
+
     return root_agent
+
+
+def _seed_specialist_dispatch_tools(
+    root_agent: LlmAgent,
+    db: Any,
+    account_id: str | None,
+) -> None:
+    """Seed a placeholder ``_TaskAgentTool`` per global ``ken_e_sub_agent``
+    specialist so the request_task dispatch loop can recognize its delegation FC.
+
+    ADK's ``run_llm_agent_as_node`` (chat mode) snapshots ``tools_dict`` from
+    ``agent.tools`` (``workflow/_llm_agent_wrapper.py`` line 360) BEFORE the
+    agent's ``before_agent_callback`` chain runs (line 378).  KEN-E attaches each
+    specialist's ``_TaskAgentTool`` per-turn inside
+    ``attach_specialists_before_agent_callback`` — i.e. AFTER that snapshot — so
+    ``_extract_task_delegation_fcs`` (line 382) never matches the delegation FC
+    and the specialist's LLM is silently never dispatched (the live
+    "I'll report back" failure; reproduced by
+    ``test_per_turn_attach_without_seed_is_not_dispatched``).
+
+    Seeding the tool name into the deploy-time ``root.tools`` makes the per-turn
+    clone copy it into that snapshot.  The placeholder is a snapshot-visibility
+    shim ONLY:
+
+    * it is NOT added to ``root.sub_agents`` — it can never be dispatched;
+    * the per-turn ``attach_specialists`` callback attaches the REAL resolved
+      specialist, which ``_dispatch_task_fc`` → ``find_agent(fc.name)`` dispatches;
+    * the per-turn ``attach_root_tools`` callback rebuilds ``root.tools`` (dropping
+      the placeholder, re-adding the real tool) BEFORE the model request, so the
+      LLM only ever sees the real specialist tool.
+
+    Covers GLOBAL specialists (the ``agent_configs`` collection).  Per-account
+    specialists are still attached only per-turn and remain subject to the
+    snapshot constraint; seeding those is out of scope here.
+
+    Never raises: a listing/resolution failure logs and degrades to the pre-seed
+    (broken-dispatch) state rather than blocking the deploy.
+    """
+    from google.adk.agents import LlmAgent as _LlmAgent
+
+    from app.adk.agents.agent_factory.sub_agent_attacher import _make_task_agent_tool
+
+    try:
+        global_doc_ids = [
+            ref.id for ref in db.collection("agent_configs").list_documents()
+        ]
+    except Exception as exc:
+        logger.warning(
+            "[SEED-DISPATCH-TOOLS] Could not list global agent_configs; "
+            "request_task dispatch tools NOT seeded — specialists may not "
+            "dispatch until the snapshot includes them: %s",
+            exc,
+        )
+        return
+
+    existing_tool_names = {
+        getattr(t, "name", None) for t in getattr(root_agent, "tools", []) or []
+    }
+    seeded: list[str] = []
+    for doc_id in global_doc_ids:
+        if doc_id == ROOT_CONFIG_ID:
+            # The root coordinator itself is never a dispatch target — skip it
+            # regardless of its ``ken_e_sub_agent`` value (which defaults True).
+            continue
+        if doc_id in existing_tool_names:
+            # Already carries a dispatch tool (e.g. a registry agent-as-tool sub).
+            continue
+        try:
+            # Resolve via the injected ``db`` (same client used for the root
+            # config) — no fresh Firestore client and no per-turn-cache reliance,
+            # so this is deterministic at deploy time and in tests.
+            config = _load_and_merge(db, doc_id, account_id)
+        except Exception:
+            # Disabled / unresolvable config — mirror attach-specialists' policy
+            # of silently dropping the offender so prompt and roster agree.
+            continue
+        if not getattr(config, "ken_e_sub_agent", False):
+            continue
+        try:
+            placeholder = _LlmAgent(
+                name=doc_id,
+                model=config.model,
+                mode="task",
+                description=config.description or "",
+                instruction="Placeholder for request_task dispatch (never run).",
+            )
+            tool = _make_task_agent_tool(placeholder)
+            if tool is not None:
+                root_agent.tools.append(tool)
+                seeded.append(doc_id)
+        except Exception as exc:
+            logger.warning(
+                "[SEED-DISPATCH-TOOLS] Could not seed dispatch tool for %r: %s",
+                doc_id,
+                exc,
+            )
+
+    if seeded:
+        logger.info(
+            "[SEED-DISPATCH-TOOLS] Seeded request_task dispatch tools for %d "
+            "global specialist(s): %s",
+            len(seeded),
+            seeded,
+        )

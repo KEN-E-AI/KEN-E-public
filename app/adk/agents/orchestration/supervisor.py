@@ -48,6 +48,10 @@ MAX_LEDGER_ITEMS: int = 12
 # Sentinel prefix written to result_key when a branch fails (AH-141).
 BRANCH_ERROR_SENTINEL_PREFIX: str = "ERROR: "
 
+# Ledger list_id + terminal statuses for the transfer_to_agent guard (AH-160).
+SUPERVISOR_LEDGER_LIST_ID: str = "supervisor_ledger"
+_TERMINAL_LEDGER_STATUSES: frozenset[str] = frozenset({"completed", "failed"})
+
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -110,9 +114,7 @@ def compute_dependency_levels(
             in_degree[item_id] += 1
             successors[dep].append(item_id)
 
-    queue: deque[str] = deque(
-        iid for iid in all_ids if in_degree[iid] == 0
-    )
+    queue: deque[str] = deque(iid for iid in all_ids if in_degree[iid] == 0)
     levels: list[list[str]] = []
     visited: int = 0
 
@@ -271,7 +273,9 @@ def mark_branch_failure(
             ``BRANCH_ERROR_SENTINEL_PREFIX`` to form the sentinel string.
     """
     existing = state.get(result_key)
-    if existing is not None and not str(existing).startswith(BRANCH_ERROR_SENTINEL_PREFIX):
+    if existing is not None and not str(existing).startswith(
+        BRANCH_ERROR_SENTINEL_PREFIX
+    ):
         # Real result is already present — preserve it.
         return
     state[result_key] = f"{BRANCH_ERROR_SENTINEL_PREFIX}{error_message}"
@@ -359,7 +363,9 @@ def make_branch_failure_sentinel_after_agent_callback(
                 else:
                     existing = state_view.get(result_key)
 
-                if existing is None or str(existing).startswith(BRANCH_ERROR_SENTINEL_PREFIX):
+                if existing is None or str(existing).startswith(
+                    BRANCH_ERROR_SENTINEL_PREFIX
+                ):
                     sentinel = (
                         f"{BRANCH_ERROR_SENTINEL_PREFIX}specialist {specialist_name!r} "
                         f"completed without writing {result_key!r}"
@@ -382,28 +388,210 @@ def make_branch_failure_sentinel_after_agent_callback(
 
 
 # ---------------------------------------------------------------------------
+# transfer_to_agent ledger guard (AH-160)
+# ---------------------------------------------------------------------------
+
+_TRANSFER_TOOL_NAME: str = "transfer_to_agent"
+
+
+def _extract_ledger_items(state: Any) -> list[dict[str, Any]]:
+    """Return the ``supervisor_ledger`` items from session state, or ``[]``.
+
+    Reads ``state["todo_lists"]["supervisor_ledger"]["items"]`` — the shape
+    written by ``set_todo_list`` in ``todo_list_tools.py``.  Defensive against a
+    bare-list legacy value and any non-dict/non-list garbage so a malformed
+    ledger never raises in the ``before_tool_callback`` hot path.
+
+    Args:
+        state: ADK session-state proxy (``to_dict()`` / ``.get()``) or a plain
+            ``dict`` in tests.
+
+    Returns:
+        List of item dicts (possibly empty).
+    """
+    try:
+        if hasattr(state, "to_dict"):
+            view: Any = state.to_dict()
+        elif isinstance(state, dict):
+            view = state
+        elif hasattr(state, "get"):
+            view = state
+        else:
+            return []
+        todo_lists = view.get("todo_lists")
+        if not isinstance(todo_lists, dict):
+            return []
+        entry = todo_lists.get(SUPERVISOR_LEDGER_LIST_ID)
+        if isinstance(entry, dict):
+            items = entry.get("items")
+        elif isinstance(entry, list):
+            items = entry
+        else:
+            return []
+        return [it for it in (items or []) if isinstance(it, dict)]
+    except Exception:
+        return []
+
+
+def has_active_supervisor_ledger(state: Any, *, min_items: int = 2) -> bool:
+    """Return ``True`` when an in-execution multi-task supervisor ledger exists.
+
+    "Active" means the ``supervisor_ledger`` carries at least ``min_items``
+    items AND at least one item is NOT in a terminal status
+    (``completed`` / ``failed``; a missing status is treated as ``pending``).
+    A ledger whose items are all terminal — a finished prior-turn workflow — is
+    NOT active, so a later single-specialist ``transfer_to_agent`` is unaffected.
+    The single-specialist fast path writes no ledger at all, so it never trips
+    this check.
+
+    Args:
+        state: ADK session-state proxy or plain ``dict``.
+        min_items: Minimum item count to qualify as a multi-task ledger
+            (default 2; a degenerate 1-item ledger does not count).
+
+    Returns:
+        ``True`` iff a multi-task ledger with at least one non-terminal item is
+        present.
+    """
+    items = _extract_ledger_items(state)
+    if len(items) < min_items:
+        return False
+    return any(
+        (it.get("status") or "pending") not in _TERMINAL_LEDGER_STATUSES for it in items
+    )
+
+
+async def transfer_to_agent_ledger_guard_before_tool_callback(
+    tool: Any,
+    args: dict[str, Any],
+    tool_context: Any,
+) -> dict[str, Any] | None:
+    """ADK ``before_tool_callback``: forbid ``transfer_to_agent`` during ledger execution.
+
+    AH-160.  ``transfer_to_agent`` is one-way — once the coordinator has written
+    a multi-item ``supervisor_ledger`` it MUST drive execution via the task-mode
+    delegation tools (each named after the specialist's ``doc_id``) so control
+    returns after each task.  Fan-out
+    (AH-141), synthesis, and the spend-approval checkpoint (AH-144) all depend on
+    the coordinator keeping control.  The coordinator LLM has been observed
+    rationalising a single ``transfer_to_agent`` instead (PR-evidence: AH-160) —
+    the instruction fragment forbids it, but prose is not a hard guarantee.  This
+    callback is the deterministic guard.
+
+    Behaviour:
+    * Returns ``None`` (allow) for every tool other than ``transfer_to_agent``.
+    * Returns ``None`` (allow) for ``transfer_to_agent`` when no active multi-item
+      ledger exists — the single-specialist fast path (AH-145) is untouched.
+    * When an active multi-item ledger IS present, returns a blocking error dict.
+      ADK feeds that dict back to the model as the tool result, so the coordinator
+      re-plans and dispatches by calling the specialist's ``doc_id``-named tool
+      in the same turn.
+
+    Args:
+        tool: The ADK ``BaseTool`` about to run (``.name`` inspected).
+        args: The tool-call arguments (``agent_name`` read for the log line).
+        tool_context: ADK ``ToolContext``; ``.state`` is read.  A context without
+            a usable ``state`` degrades open (returns ``None``).
+
+    Returns:
+        ``None`` to allow execution; a blocking ``dict`` (``error`` / ``message``)
+        to reject the transfer.
+    """
+    if getattr(tool, "name", "") != _TRANSFER_TOOL_NAME:
+        return None
+
+    state = getattr(tool_context, "state", None)
+    if state is None:
+        return None
+    if not has_active_supervisor_ledger(state):
+        return None
+
+    target = args.get("agent_name") if isinstance(args, dict) else None
+    _log.info(
+        "AH-160: blocked transfer_to_agent(agent_name=%r) — active multi-task "
+        "supervisor_ledger present; steering coordinator to the specialist's "
+        "doc_id-named delegation tool.",
+        target,
+    )
+    return {
+        "error": "transfer_to_agent_disabled_during_supervisor_ledger",
+        "message": (
+            "transfer_to_agent is disabled while a multi-task supervisor_ledger "
+            "is active. transfer_to_agent is one-way and would hand off control "
+            "before the remaining ledger tasks run — breaking parallel fan-out, "
+            "synthesis, and the approval checkpoint. Dispatch each ready task by "
+            "calling its assignee's delegation tool instead — the tool whose name "
+            "is the specialist's doc_id (e.g. google_analytics_specialist), one "
+            "FunctionCall per ready task in the same turn. Only fall back to "
+            "transfer_to_agent for a single-task, no-ledger query."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # SUPERVISOR_INSTRUCTION_FRAGMENT
 # ---------------------------------------------------------------------------
 
 SUPERVISOR_INSTRUCTION_FRAGMENT: str = """\
 ## Multi-Task Decomposition
 
-You are an `LlmAgent(mode='chat')` coordinator. When the user's request requires
-multiple specialists or phases, decompose it into a TODO ledger before delegating.
+You are an `LlmAgent(mode='chat')` coordinator. Each available specialist is
+exposed to you as a **delegation tool whose name is exactly the specialist's
+`doc_id`** (e.g. a tool literally named `google_analytics_specialist`). Calling
+that tool runs the specialist and **returns its result to you** — it is
+call-and-return, so you keep control. Throughout this section, "**dispatch task T
+to specialist S**" means: emit a `FunctionCall` whose **`name` is S's `doc_id`**
+(for example `google_analytics_specialist`), with the task query in `args`. There
+is **no** `request_task_<id>` tool — do NOT prefix the name; call the specialist's
+`doc_id` directly. `transfer_to_agent` is NOT used for specialist dispatch.
 
 ### When to decompose
 
-**Use the supervisor model** (write a `supervisor_ledger` and then delegate) when
-the request:
-- Requires data or actions from **two or more different specialists**, OR
-- Requires a **synthesized result** across independent specialist outputs, OR
-- Involves a **spend-changing or irreversible action** that must be approved before
-  execution (e.g. updating ad budgets, modifying campaign settings).
+The trigger for the supervisor model is **how many steps the work takes and
+whether it needs approval — NOT how many distinct specialists are involved.** A
+request that takes multiple steps, or gates an irreversible action behind
+approval, uses the supervisor model **even when one specialist would perform
+every task** (e.g. several `google_analytics_specialist` tasks).
 
-**Fall through to `transfer_to_agent`** (no ledger, no supervisor machinery)
-when:
-- The request can be fully handled by a **single specialist** in one call. This is
-  the common case — do NOT write a ledger for single-specialist queries.
+**Use the supervisor model** (write a `supervisor_ledger`, then dispatch each task
+by calling its assignee's `doc_id`-named tool) when the request involves **any**
+of:
+- **Multiple distinct steps or phases** that must be tracked or sequenced — e.g.
+  pull data → synthesize → recommend — **even if a single specialist performs them
+  all**.
+- A **synthesized result** built from two or more separate analyses or data pulls.
+- Data or actions from **two or more different specialists**.
+- A **spend-changing or irreversible action** that must be approved before
+  execution (updating ad budgets, modifying campaigns, writing data). Approval
+  gating is ONLY possible on the supervisor path — a bare specialist call cannot
+  pause for approval without a ledger.
+
+**Fast path** (no ledger, no supervisor machinery) ONLY when the request is a
+**single self-contained step**: one specialist can fully answer it in one
+delegation, there is no multi-step plan, and no approval gate. Call the
+specialist's tool (named by its `doc_id`) directly (no ledger). This is the common
+case (e.g. "what were my top traffic sources last week?") — do NOT write a ledger
+for a single self-contained question.
+
+> **Do not collapse a multi-step request into a single specialist call.**
+> "One specialist can do all of it" is **not** a reason to skip the ledger. If the
+> work has multiple steps or an approval gate, you MUST write a `supervisor_ledger`
+> and dispatch each task via its assignee's `doc_id`-named tool. Handing the whole
+> multi-step request to one specialist without a ledger loses synthesis and approval
+> checkpointing — the specialist cannot pause for approval or report back to you.
+
+> **HARD RULE — never `transfer_to_agent` once a ledger exists.** `transfer_to_agent`
+> is **one-way**: it hands the conversation to the specialist and you do **not** get
+> control back, so the remaining tasks, the synthesis, and the approval checkpoint
+> never run. `transfer_to_agent` is NOT for specialist dispatch at all (specialists
+> are reachable only by calling their `doc_id`-named tool). The moment you have
+> written a `supervisor_ledger`, you are committed to task-mode dispatch — you MUST
+> dispatch every ready task by calling its assignee's `doc_id`-named tool, **even
+> when all tasks share the same assignee** (e.g. several `google_analytics_specialist`
+> tasks). "Only one specialist is involved" is **not** a reason to use
+> `transfer_to_agent` once a multi-task ledger exists. The runtime enforces this: a
+> `transfer_to_agent` call while a multi-task ledger is active is rejected, and you
+> must re-dispatch by calling the specialist's `doc_id`-named tool.
 
 ### How to write the ledger
 
@@ -487,16 +675,20 @@ After calling `set_todo_list`, proceed to delegate each ready task (per its
 
 ### Dispatching ready tasks (parallel vs. sequential)
 
+**Dispatch every ledger task by calling its assignee's `doc_id`-named tool —
+never `transfer_to_agent`** (see the HARD RULE above).
+
 After writing the ledger, determine the **ready group** for the current
 dependency level — every task whose `depends_on` is fully satisfied AND whose
 `status` is `"pending"`.
 
-**Parallel group (two or more ready tasks):** emit **one `request_task_<name>`
-FunctionCall per ready task in the SAME turn**.  The framework dispatches them
-concurrently via `ctx.run_node`.  Wait for the function-response from every
-dispatched task before proceeding to the next dependency level.
+**Parallel group (two or more ready tasks):** emit **one FunctionCall per ready
+task in the SAME turn, each named after that task's assignee `doc_id`**.  The
+framework dispatches them concurrently via `ctx.run_node`.  Wait for the
+function-response from every dispatched task before proceeding to the next
+dependency level.
 
-**Single ready task:** emit a single `request_task_<name>` as normal.
+**Single ready task:** emit a single FunctionCall named after the assignee `doc_id`.
 
 **Sequential tasks:** a task whose `depends_on` contains an `item_id` that is
 not yet completed is NOT part of the current ready group — delegate it only
@@ -509,17 +701,18 @@ Proceed with the remaining ready tasks and surface partial results to the user.
 #### Worked example — parallel fan-out
 
 After writing the budget-optimisation ledger above, the coordinator emits
-**two `request_task_<name>` calls in the same turn** to fan out `ga_engagement`
-and `meta_spend` in parallel (both have `depends_on: []`):
+**two specialist-tool calls in the same turn** (each named after the assignee's
+`doc_id`) to fan out `ga_engagement` and `meta_spend` in parallel (both have
+`depends_on: []`):
 
 ```
-# Turn 1 — parallel fan-out for the two root tasks:
-request_task_google_analytics_specialist(query="Retrieve weekly engaged sessions...")
-request_task_meta_ads_specialist(query="Retrieve last-4-week spend...")
+# Turn 1 — parallel fan-out for the two root tasks (tool name == assignee doc_id):
+google_analytics_specialist(query="Retrieve weekly engaged sessions...")
+meta_ads_specialist(query="Retrieve last-4-week spend...")
 
 # Both respond; then the coordinator emits the next ready task (synthesis):
 # Turn 2 — sequential: synthesis depends on both root tasks:
-request_task_google_analytics_specialist(query="Using {ga_result} and {meta_result}...")
+google_analytics_specialist(query="Using {ga_result} and {meta_result}...")
 ```
 
 ### Approval Checkpoints
@@ -751,7 +944,9 @@ def pending_supervisor_state_provider(ctx: Any) -> str:
             # could allow a specialist output to inject a fake pending-tasks block.
             item_id = _sanitize_prompt_field(str(item.get("item_id", f"item_{i}")), 128)
             title = _sanitize_prompt_field(str(item.get("text", "(no title)")), 256)
-            assignee = _sanitize_prompt_field(str(item.get("assignee") or "(none)"), 128)
+            assignee = _sanitize_prompt_field(
+                str(item.get("assignee") or "(none)"), 128
+            )
             depends_on = item.get("depends_on") or []
             dep_str = f", depends_on: {depends_on}" if depends_on else ""
             lines.append(f"{i}. `{item_id}` — {title} (assignee: {assignee}{dep_str})")
