@@ -28,6 +28,8 @@ from shared.trace_metadata import SEMVER_PATTERN
 SUPPORTED_MODELS: frozenset[str] = frozenset(
     {
         # Gemini 3 models (latest, preview)
+        "gemini-3.1-flash-preview",
+        "gemini-3.1-pro-preview",
         "gemini-3-flash-preview",
         "gemini-3-pro-preview",
         # Gemini 2.5 models (current stable). 2.0-flash and 2.0-flash-exp

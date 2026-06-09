@@ -1713,9 +1713,10 @@ class TestModelLocationWiring:
 
         assert result is None  # callback must return None so the turn proceeds
 
-    def test_staging_callback_keeps_regional_location(self) -> None:
-        """In staging, the callback must NOT route to global — regional
-        endpoints are required for residency / prod parity."""
+    def test_staging_callback_routes_to_us_multi_region(self) -> None:
+        """In staging, the callback must NOT route to global — it pins the US
+        multi-region location (``us``) which keeps data in the US while still
+        serving preview / newly-released Gemini models."""
         import os
         from unittest.mock import patch
 
@@ -1733,7 +1734,7 @@ class TestModelLocationWiring:
             ),
         ):
             attach_specialists_before_agent_callback(ctx)
-            assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us-central1"
+            assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us"
 
 
 # ---------------------------------------------------------------------------

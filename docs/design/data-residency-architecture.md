@@ -33,7 +33,7 @@ A distinct integrity defect undermines the whole cell model: **`data_region` is 
 | D1 | **Residency boundary = the account.** An account's *entire* data + processing plane is pinned to its `data_region`. | Aligns residency and latency for the common case (an EU customer's data + agents + users are all in EU). The only unavoidable latency cost is a user far from their account's home region — legally required. |
 | D2 | **Two regions at launch: US and Europe.** No APAC cell at launch. | Per product decision (2026-05-29). Asia *users* attach to US/EU *accounts* (data stays in the account's region; they accept latency). Region set is a registry, extensible to APAC later. |
 | D3 | **Regional cells + a thin global control plane.** Each region is a full stack; only auth, CDN, and an `account_id → region` routing directory are global. | The global directory holds routing metadata, not regulated content (confirmed acceptable, 2026-05-29). |
-| D4 | **Regional Vertex model endpoints — never `global`.** A model is adoptable only when GA in *every* residency region. | The Vertex `global` endpoint gives no processing-location guarantee → a residency leak. Supersedes the earlier "prefer global" stance now that residency is a hard requirement. |
+| D4 | **In-geography Vertex model endpoints — never `global`.** Model serving uses each region's single-region (`us-central1` / `europe-west1`) **or in-geography multi-region** (`us` / `eu`) endpoint. A model is adoptable in a cell only when it is served on that cell's endpoint. | The Vertex `global` endpoint gives no processing-location guarantee → a residency leak. The `us` / `eu` **multi-region** endpoints *do* guarantee in-geography (US-wide / EU-wide) processing, so they satisfy the no-leak requirement while serving newer / preview models that single regions do not. "Never `global`" still holds; "single-region only" was relaxed to "in-geography" (Review 50, 2026-06-09). Supersedes the earlier "prefer global" stance now that residency is a hard requirement. |
 | D5 | **`data_region` is immutable after account creation.** Changing region is a Phase-2 supervised migration, not a field edit. | A mutable region field silently orphans/splits data across cells and defeats every other fix. |
 | D6 | **EU cell verified before EU sign-ups open.** If the launch-blocker set is not closed (esp. EU Agent Engine), gate EU sign-ups rather than process EU data in the US. | Under-promise beats a residency violation. |
 
@@ -56,7 +56,7 @@ Each cell is a complete, independent stack:
 | Firestore | `(default)` DB, `nam5` | `(default)` DB in a separate EU project, `eur3` |
 | Neo4j | `NEO4J_URI_US` | `NEO4J_URI_EU` (Aura-EU or self-host on EU GKE) |
 | Agent Engine (reasoning + sandbox + sessions) | `us-central1` | EU region **(gated on Agent Engine EU GA)** |
-| Vertex model endpoint | regional `us-central1` | regional EU |
+| Vertex model endpoint (model serving) | `us` multi-region | `eu` multi-region |
 | GCS | `ken-e-files-us` | `ken-e-files-eu` ✅ already done |
 | Redis (Memorystore) | US | EU |
 | KMS keyring | `us-central1` | `europe-west1` |
@@ -84,16 +84,16 @@ user → nearest edge (CDN/LB) → API resolves account.data_region (global dire
 | Environment / cell | Inference endpoint | Rationale |
 |--------------------|--------------------|-----------|
 | `development` | **`global`** | Dev holds no regulated data, and the `global` endpoint serves newly-released models (e.g. `gemini-3.5-flash`) months before regional endpoints — so dev is the model-experimentation sandbox. |
-| `staging` / `prod` US cell | `us-central1` | Residency + prod parity. |
-| `prod` EU cell | EU regional (e.g. `europe-west1`) | Residency (D4) — the `global` endpoint is disallowed for EU. |
+| `staging` / `prod` US cell | `us` (US multi-region) | Residency (in-US processing) + access to preview / newly-released models that single regions do not serve. |
+| `prod` EU cell | `eu` (EU multi-region) | Residency (D4) — `global` is disallowed for EU; the `eu` multi-region endpoint keeps inference in the EU. |
 
-A small pure resolver `resolve_model_location(environment, data_region) -> location` encodes this (`development → global`; else regional by `data_region`).
+A small pure resolver `resolve_model_location(environment, data_region) -> location` encodes this (`development → global`; else the in-geography multi-region endpoint by `data_region` — `US → us`, `EU → eu`). The single-region `us-central1` / `europe-west1` strings remain in use for `VERTEX_AI_LOCATION` (engine / sandbox / session), which is a **separate** variable — see the mechanism caveat below. (Reinterpreted from single-region to multi-region in Review 50; D4's "never `global`" still holds.)
 
 **Mechanism caveat (important):** ADK builds its genai client from `GOOGLE_CLOUD_LOCATION`, and the Agent Engine runtime **injects** that var (= the engine's deploy region), so the baked `.env` value is ignored under `load_dotenv(override=False)`. The resolver's output must therefore be applied **in-process at agent startup** — `os.environ["GOOGLE_CLOUD_LOCATION"] = resolve_model_location(...)` before the first model client is built — not via `.env`. (This is exactly why the existing `.env.staging` `GOOGLE_CLOUD_LOCATION=global` was inert.) `VERTEX_AI_LOCATION` is a separate var (engine/session/sandbox region) and is **not** changed by this.
 
 **Consequence — dev must use only globally-served models.** Because the override is process-wide per deployment, every model used in dev must be served on `global`: migrate dev's `gemini-2.0-flash` / `-001` agents to `gemini-2.5-flash` (served on both `global` and regional), and confirm the dev embedding model is available on `global`.
 
-**Model-promotion gate (preflight):** a model may be configured for staging/prod only after an automated check confirms it is GA at the regional endpoints of **all** residency regions (US + EU). Dev-on-`global` lets you build against a model in the meantime; the gate stops a global-only model from being promoted to a region that cannot serve it — which is precisely the `gemini-3.5-flash` failure mode. This pattern closes **AH-86** for dev and is the **first slice of DR-PRD-01**.
+**Model-promotion gate (preflight):** a model may be configured for staging/prod only after an automated check confirms it is served on the **in-geography endpoint** (single-region *or* multi-region) of **all** residency regions (US + EU) — never relying on `global`. Dev-on-`global` lets you build against a model in the meantime; the gate stops a `global`-only model from being promoted to a cell that cannot serve it in-geography — which is precisely the `gemini-3.5-flash` failure mode. Routing to the `us` / `eu` multi-region endpoints (Review 50) widens what passes the gate: a preview model served on the multi-region endpoint but not yet GA at a single region (e.g. `gemini-3.1-pro-preview`) is now promotable, because multi-region keeps processing in-geography. This pattern closes **AH-86** for dev and is the **first slice of DR-PRD-01**.
 
 ---
 
@@ -105,7 +105,7 @@ A small pure resolver `resolve_model_location(environment, data_region) -> locat
 | **Firestore** | Single `(default)` DB, `nam5`/us-central1 | ❌ single-region | EU Firestore (separate project), route by `data_region` at DI. **Keystone — R-01.** |
 | **Neo4j** | Single global Aura instance | ❌ single-region | A separate EU **instance/DBMS** (not a second named database inside the US instance — same-instance databases share one cloud region, so that does not satisfy residency; and Aura multi-DB is tier-limited). Keep one database per regional instance; resolve `NEO4J_URI` by region. **R-06.** |
 | **Agent Engine** (reasoning/sandbox/session) | us-central1 (ambient) | ❌ single-region | EU reasoning engine; thread `data_region` through build/sandbox/session. **R-04 (gated on EU GA).** |
-| **Vertex model endpoint** | bare strings → ambient/global | ❌ global | Regional endpoint per account; never `global` for EU. **R-03.** |
+| **Vertex model endpoint** | bare strings → ambient/global | ❌ global | In-geography endpoint per account — single-region or `us`/`eu` multi-region; never `global` for EU. **R-03.** |
 | **Redis** | Single global instance | ❌ single-region | Regional Memorystore; namespace keys by region. **R-11.** |
 | **BigQuery** | Single US dataset | ❌ single-region | Per-region datasets; route by `data_region`. **R-14.** |
 | **W&B / traces / logs** | Weave US SaaS + content capture; global Cloud Trace/Logging | ❌ global | EU: content capture OFF + EU-resident trace/log sink. **R-02 / R-12.** |
@@ -222,7 +222,7 @@ The `DR-PRD-NN` column is a stable *logical* label tying each slice back to the 
 3. **Topology:** one GCP project per region (recommended) vs. one project with regional resources? Affects Firestore, KMS, IAM, Terraform shape.
 4. **Neo4j EU:** Aura-EU under our plan, or self-host on EU GKE? Decide week 1 (R-06).
 5. **Org/region scope:** can one organization contain accounts in *both* cells? If yes, all cross-account sweeps (deletion, audit, usage) must fan out per region (R-09). If org is region-pinned, routing simplifies.
-6. **EU region choice:** confirm `europe-west1` (Belgium, the existing GCS pattern) for *all* EU stores, or does data-sovereignty require a specific member-state region?
+6. **EU region choice:** confirm `europe-west1` (Belgium, the existing GCS pattern) for *all* EU stores, or does data-sovereignty require a specific member-state region? *(Model serving is now resolved: the `eu` multi-region endpoint keeps inference in the EU — Review 50. This question now applies to the `VERTEX_AI_LOCATION` plane — engine / sandbox / session / Firestore / Neo4j / KMS — where a specific member-state region may still be required.)*
 7. **Existing data:** are there EU-designated accounts already holding data in the current US Firestore/Neo4j that must be migrated before launch, or is the EU cell green-field (new EU sign-ups only)?
 8. **"Regulated content" for traces/logs:** confirm with legal whether trace/log *metadata* (account_id, user_id, session_id, tool names, durations, token counts) without message content may live in a US sink for EU accounts — this sets the bar for R-12.
 

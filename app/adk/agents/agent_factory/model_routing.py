@@ -11,10 +11,15 @@ the deploy artifact is loaded with ``load_dotenv(..., override=False)``, so the
 platform value wins and any ``GOOGLE_CLOUD_LOCATION=global`` in the baked file
 is silently ignored.
 
-Some newly-released Gemini models (e.g. ``gemini-3.5-flash``) are only served
-on the ``global`` endpoint and 404 on regional endpoints.  For the development
-environment we therefore need ``GOOGLE_CLOUD_LOCATION=global`` to be visible
-to every ``genai.Client`` constructed after agent startup.
+Some newly-released / preview Gemini models (e.g. ``gemini-3.5-flash``,
+``gemini-3.1-pro-preview``) are only served on the ``global`` and *multi-region*
+(``us`` / ``eu``) endpoints and 404 on single-region endpoints like
+``us-central1``.  For the development environment we therefore need
+``GOOGLE_CLOUD_LOCATION=global``; for staging/prod we use the US/EU multi-region
+locations (``us`` / ``eu``) — google-genai maps these to
+``https://aiplatform.{us,eu}.rep.googleapis.com`` — so the preview models
+resolve there too.  Either way the value must be visible to every
+``genai.Client`` constructed after agent startup.
 
 Solution
 --------
@@ -51,9 +56,19 @@ logger = get_structured_logger(__name__)
 
 # Canonical location strings — match the strings accepted by the Vertex AI
 # model-serving endpoint.
+#
+# ``us`` / ``eu`` are the US / EU *multi-region* locations.  google-genai maps
+# them to the multi-region endpoints ``https://aiplatform.us.rep.googleapis.com``
+# / ``https://aiplatform.eu.rep.googleapis.com`` (``_MULTI_REGIONAL_LOCATIONS``
+# in ``google.genai._api_client``).  We route staging/prod model serving here
+# rather than to a single region (``us-central1`` / ``europe-west1``) so that
+# newly-released / preview Gemini models — which are served only on the global
+# and multi-region endpoints, not on single regions — resolve instead of 404ing.
+# This affects model serving only; ``VERTEX_AI_LOCATION`` (Agent Engine,
+# embeddings, sandboxes) stays a single region — see the module docstring.
 _LOCATION_GLOBAL = "global"
-_LOCATION_US_CENTRAL1 = "us-central1"
-_LOCATION_EUROPE_WEST1 = "europe-west1"
+_LOCATION_US = "us"
+_LOCATION_EU = "eu"
 
 # Environments that should route to the global endpoint.
 _GLOBAL_ENVS: frozenset[str] = frozenset({"development", "dev"})
@@ -68,8 +83,13 @@ def resolve_model_location(
     Decision table
     ~~~~~~~~~~~~~~
     * ``development`` / ``dev``  → ``"global"``   (global-only models, dev only)
-    * anything else, EU region   → ``"europe-west1"``
-    * anything else, US / None   → ``"us-central1"``  (default)
+    * anything else, EU region   → ``"eu"``   (EU multi-region endpoint)
+    * anything else, US / None   → ``"us"``   (US multi-region endpoint, default)
+
+    Staging/prod route to the US/EU *multi-region* locations (``us`` / ``eu``)
+    rather than single regions (``us-central1`` / ``europe-west1``) so that
+    preview / newly-released Gemini models resolve — those are served only on
+    the global and multi-region endpoints, not on single regions.
 
     Args:
         environment: Value of the ``ENVIRONMENT`` env var
@@ -81,7 +101,7 @@ def resolve_model_location(
             non-development environments.  ``None`` / unknown → US default.
 
     Returns:
-        One of ``"global"``, ``"europe-west1"``, or ``"us-central1"``.
+        One of ``"global"``, ``"eu"``, or ``"us"``.
     """
     env_normalized = (environment or "").strip().lower()
 
@@ -90,9 +110,9 @@ def resolve_model_location(
 
     region_normalized = (data_region or "").strip().lower()
     if region_normalized in {"eu", "europe"}:
-        return _LOCATION_EUROPE_WEST1
+        return _LOCATION_EU
 
-    return _LOCATION_US_CENTRAL1
+    return _LOCATION_US
 
 
 def apply_model_location_env(

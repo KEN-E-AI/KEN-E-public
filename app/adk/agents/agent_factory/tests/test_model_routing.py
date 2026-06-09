@@ -36,26 +36,26 @@ from app.adk.agents.agent_factory.model_routing import (
         ("Development", None, "global"),
         ("DEVELOPMENT", None, "global"),
         ("  development  ", None, "global"),
-        # --- staging → regional ---
-        ("staging", None, "us-central1"),
-        ("staging", "US", "us-central1"),
-        ("staging", "United States", "us-central1"),
-        ("staging", "EU", "europe-west1"),
-        ("staging", "Europe", "europe-west1"),
-        # --- production → regional ---
-        ("production", None, "us-central1"),
-        ("production", "US", "us-central1"),
-        ("production", "EU", "europe-west1"),
-        # --- unknown env falls back to regional (safe default, no exception) ---
-        ("test", None, "us-central1"),
-        ("", None, "us-central1"),
+        # --- staging → multi-region ---
+        ("staging", None, "us"),
+        ("staging", "US", "us"),
+        ("staging", "United States", "us"),
+        ("staging", "EU", "eu"),
+        ("staging", "Europe", "eu"),
+        # --- production → multi-region ---
+        ("production", None, "us"),
+        ("production", "US", "us"),
+        ("production", "EU", "eu"),
+        # --- unknown env falls back to US multi-region (safe default, no exception) ---
+        ("test", None, "us"),
+        ("", None, "us"),
         # --- data_region case/whitespace normalisation ---
-        ("staging", "eu", "europe-west1"),
-        ("production", "  EU  ", "europe-west1"),
-        ("production", "  europe  ", "europe-west1"),
+        ("staging", "eu", "eu"),
+        ("production", "  EU  ", "eu"),
+        ("production", "  europe  ", "eu"),
         # --- unknown data_region → US default ---
-        ("staging", "APAC", "us-central1"),
-        ("staging", "unknown-region", "us-central1"),
+        ("staging", "APAC", "us"),
+        ("staging", "unknown-region", "us"),
     ],
 )
 def test_resolve_model_location(
@@ -81,14 +81,14 @@ def test_apply_model_location_env_dev_sets_global(
     assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
 
 
-def test_apply_model_location_env_staging_sets_regional(
+def test_apply_model_location_env_staging_sets_multi_region(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Staging environment must set GOOGLE_CLOUD_LOCATION=us-central1."""
+    """Staging environment must set GOOGLE_CLOUD_LOCATION=us (US multi-region)."""
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")  # simulate stale value
     result = apply_model_location_env("staging")
-    assert result == "us-central1"
-    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us-central1"
+    assert result == "us"
+    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us"
 
 
 def test_apply_model_location_env_reads_env_var(
@@ -124,6 +124,16 @@ def test_apply_model_location_env_overrides_platform_injected_value(
     assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
 
 
+def test_apply_model_location_env_prod_sets_us_multi_region(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Production must override the platform-injected single region with us."""
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")  # platform-injected
+    result = apply_model_location_env("production")
+    assert result == "us"
+    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us"
+
+
 def test_apply_model_location_env_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     """Calling apply twice with the same env must leave the value unchanged."""
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")
@@ -134,8 +144,8 @@ def test_apply_model_location_env_idempotent(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_apply_model_location_env_eu_staging(monkeypatch: pytest.MonkeyPatch) -> None:
-    """EU data-region in staging should route to europe-west1."""
+    """EU data-region in staging should route to the EU multi-region (eu)."""
     monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
     result = apply_model_location_env("staging", data_region="EU")
-    assert result == "europe-west1"
-    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "europe-west1"
+    assert result == "eu"
+    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "eu"

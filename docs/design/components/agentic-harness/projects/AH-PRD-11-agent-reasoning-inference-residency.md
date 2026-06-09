@@ -40,7 +40,7 @@ See [`../../../data-residency-architecture.md`](../../../data-residency-architec
 
 ### In scope
 
-- **Production per-region model routing (R-03).** Extend the existing `apply_model_location_env()` call in the before-agent callback (`sub_agent_attacher.py:376`) to pass the per-turn account's `data_region`, so an EU account's genai client builds against `europe-west1` and a US account against `us-central1`. Reuse `resolve_model_location` unchanged (`development → global` already correct; this PRD activates the `data_region` branch for staging/prod). The region is read from session state (`account_id` is already on `callback_context.state`, `sub_agent_attacher.py:422`) — resolve it via the foundation resolver, never via a blocking I/O call inside the callback (see §4.4).
+- **Production per-region model routing (R-03).** Extend the existing `apply_model_location_env()` call in the before-agent callback (`sub_agent_attacher.py:376`) to pass the per-turn account's `data_region`, so an EU account's genai client builds against the `eu` multi-region endpoint and a US account against `us`. Reuse `resolve_model_location` as-is — its regional branches were updated to the `us` / `eu` **multi-region** endpoints in PR #964 (Review 50; `development → global` unchanged); this PRD only activates the `data_region` branch for staging/prod. (The single-region `us-central1` / `europe-west1` strings still apply to `VERTEX_AI_LOCATION` — the engine/sandbox/session plane below — not to model serving.) The region is read from session state (`account_id` is already on `callback_context.state`, `sub_agent_attacher.py:422`) — resolve it via the foundation resolver, never via a blocking I/O call inside the callback (see §4.4).
 - **EU Agent Engine (R-04).** Deploy a second Agent Engine in the EU region (gated on Q1 GA). Thread `data_region` / region through the deploy path (`deploy_ken_e.py:296-304`, `405-423`) so a single deploy invocation can target a region, and persist the EU engine's resource id under a region-suffixed Secret Manager key (`KEN_E_ENGINE_ID_EU`).
 - **Sandbox acquisition routing (R-04).** Make `SandboxPool` region-aware: `_sandbox_resource_name` (`sandbox_pool.py:78-81`) and `_get_vertexai_client` (`sandbox_pool.py:98-131`) must use the region resolved from the leasing `account_id` instead of the ambient `VERTEX_AI_LOCATION`, and the pool key (`(account_id, config_id)`, `sandbox_pool.py:137`) is already account-scoped so an EU and US sandbox never collide.
 - **Session creation routing (R-04 / R-16).** Make `AgentEngineClient` select the regional engine id + location from the selected account's region (`chat.py:374-376`, `chat.py:477-486`, `chat.py:530-532`), so `VertexAiSessionService` (and therefore the persisted `initial_state` carrying `organization_context` + `ga_credentials`) lands in the account's home cell.
@@ -48,7 +48,7 @@ See [`../../../data-residency-architecture.md`](../../../data-residency-architec
 
 ### Out of scope
 
-- **The dev→`global` model slice (AH-86).** Already shipped in PR #751 (`model_routing.py`); this PRD only activates the production `data_region` branch.
+- **The dev→`global` model slice (AH-86) + the staging/prod multi-region switch (Review 50).** The resolver (`model_routing.py`) shipped in PR #751 (dev→`global`) and its regional branches were switched to the `us` / `eu` multi-region endpoints in PR #964; this PRD only activates the production `data_region` branch (US-vs-EU selection per account), not the endpoint values themselves.
 - **Observability residency (R-02, R-12)** — content-capture off + EU trace/log sink. Separate sibling slice **[AH-PRD-12]** (`./AH-PRD-12-observability-residency.md`, DR-PRD-02). The `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` flag (`deploy_ken_e.py:367-370`) is its concern, not this PRD's.
 - **MCP server region routing (R-15)** — `mcp.py` URLs are a Phase-1 follow-up (post-launch), not a launch blocker; owned by a separate agentic-harness Phase-1 slice per [`../../../data-residency-architecture.md`](../../../data-residency-architecture.md) §7, **not** folded into this PRD.
 - **Firestore / Neo4j / KMS / Redis / BigQuery regionalization** — DM-PRD-09 (Firestore), KG-PRD-07 (Neo4j), IN-PRD-08 (KMS/tokens), CH-PRD-07 / BL-PRD-07 (Redis / usage). This PRD consumes the foundation resolver only.
@@ -82,17 +82,17 @@ class CellConfig:
     vertex_ai_location: str            # engine/session/sandbox region for vertexai.init / VertexAiSessionService
 ```
 
-`vertex_ai_location` and `location` are equal per cell today (US→`us-central1`, EU→`europe-west1`) but are kept as distinct fields because one is the *model-serving* string (the `GOOGLE_CLOUD_LOCATION` value resolved by `model_routing`) and the other is the *engine/session/sandbox* region — the two vars the mechanism caveat forbids conflating.
+`vertex_ai_location` and `location` are the *engine/session/sandbox* region (US→`us-central1`, EU→`europe-west1`). The *model-serving* location (`GOOGLE_CLOUD_LOCATION`) is **computed separately** by `model_routing.resolve_model_location` and — since PR #964 (Review 50) — is the **multi-region** endpoint (US→`us`, EU→`eu`). So model serving and the engine region now **intentionally differ per cell** (they were equal before Review 50); model serving is therefore not a `CellConfig` field, and the two must never be conflated — the split the mechanism caveat is about.
 
 ### 4.2 Model-serving location resolution (R-03)
 
-Unchanged resolver; new call argument.
+Resolver regional branches return the `us` / `eu` multi-region endpoints since PR #964 (Review 50); this PRD only adds the `data_region` call argument.
 
 | Environment / cell | `resolve_model_location(env, data_region)` → | Applied via |
 |---|---|---|
 | `development` / `dev` | `"global"` | `apply_model_location_env()` (already shipped) |
-| staging / prod, US account | `"us-central1"` | `apply_model_location_env(data_region="US")` |
-| prod, EU account | `"europe-west1"` | `apply_model_location_env(data_region="EU")` |
+| staging / prod, US account | `"us"` (US multi-region) | `apply_model_location_env(data_region="US")` |
+| prod, EU account | `"eu"` (EU multi-region) | `apply_model_location_env(data_region="EU")` |
 
 The `data_region` is sourced per turn from `resolve_account_region(account_id)` where `account_id = callback_context.state["account_id"]` (`sub_agent_attacher.py:422`).
 
@@ -142,7 +142,7 @@ No new public HTTP surface; this PRD adds internal DI/runtime contracts and cons
 
 ## 7. Acceptance criteria
 
-1. In a non-dev environment, the before-agent callback resolves the per-turn account's region from `state["account_id"]` and calls `apply_model_location_env` such that an **EU** account sets `GOOGLE_CLOUD_LOCATION="europe-west1"` and a **US** account sets `"us-central1"`; `development` is unaffected (still `"global"`).
+1. In a non-dev environment, the before-agent callback resolves the per-turn account's region from `state["account_id"]` and calls `apply_model_location_env` such that an **EU** account sets `GOOGLE_CLOUD_LOCATION="eu"` (EU multi-region) and a **US** account sets `"us"` (US multi-region); `development` is unaffected (still `"global"`). (Endpoint values per Review 50 / PR #964 — the `eu`/`us` multi-region endpoints keep inference in-geography; `europe-west1`/`us-central1` remain the *engine* region, AC-5/AC-6.)
 2. The model-serving location is set **in-process** (via `os.environ`), not from `.env` — a `GOOGLE_CLOUD_LOCATION` baked into `.env` does not change the resolved value (regression test for the `load_dotenv(override=False)` inertness).
 3. `resolve_model_location` and the `GOOGLE_CLOUD_LOCATION` (model) path never set or read `VERTEX_AI_LOCATION`, and vice-versa — the two variables are independently asserted (the mechanism caveat).
 4. `get_agent_cell_for_account` returns the EU cell's engine secret key + `europe-west1` for an EU account and the US cell's for a US account; called twice for the same region it returns the same cached config (one entry per `Region`).
@@ -158,7 +158,7 @@ No new public HTTP surface; this PRD adds internal DI/runtime contracts and cons
 
 ### Unit
 
-- `test_model_routing_data_region.py`: table over (`environment`, `data_region`) → expected location, incl. prod EU→`europe-west1`, prod US→`us-central1`, dev→`global` (any region) (AC-1); `.env`-inertness regression — set `GOOGLE_CLOUD_LOCATION` in env, assert `apply_model_location_env` overrides it (AC-2); assert no `VERTEX_AI_LOCATION` access in the model path (AC-3).
+- `test_model_routing_data_region.py`: table over (`environment`, `data_region`) → expected location, incl. prod EU→`eu`, prod US→`us` (multi-region per Review 50), dev→`global` (any region) (AC-1); `.env`-inertness regression — set `GOOGLE_CLOUD_LOCATION` in env, assert `apply_model_location_env` overrides it (AC-2); assert no `VERTEX_AI_LOCATION` access in the model path (AC-3).
 - `test_agent_cell_routing.py`: `get_agent_cell_for_account` per-region selection + one-config-per-`Region` cache, reusing a mocked `resolve_account_region` (AC-4); fail-safe to `DEFAULT_REGION` when resolution raises or the EU cell is absent (AC-8).
 - `test_sandbox_pool_region.py`: `_sandbox_resource_name` / `_get_vertexai_client` use the resolved region (mock the resolver); EU vs US accounts produce distinct resource paths and pool entries; `_get_vertexai_client` is cached per `(project, location)` (AC-5).
 - `sub_agent_attacher` callback: mocks `resolve_account_region` from `state["account_id"]`, asserts `apply_model_location_env` is called with the resolved `data_region`, and that a resolver exception is swallowed + falls back to US without blocking the turn (AC-1, AC-8, non-blocking constraint §4.4).
@@ -181,7 +181,7 @@ No new public HTTP surface; this PRD adds internal DI/runtime contracts and cons
 ### Open questions (carry from design doc §8)
 
 - **Q1 — hard gate:** is Vertex AI Agent Engine GA in a European region by launch? Determines whether R-04/R-16 ship or EU sign-ups gate. **Decides this PRD's launch viability.**
-- **Q6 — EU region:** confirm `europe-west1` for the EU Agent Engine / sandbox / session plane (matches the GCS reference + DM-PRD-09), or a specific member-state region for sovereignty.
+- **Q6 — EU region:** confirm `europe-west1` for the EU Agent Engine / sandbox / session plane (matches the GCS reference + DM-PRD-09), or a specific member-state region for sovereignty. *(Scope note: this is the `VERTEX_AI_LOCATION` plane only. EU **model serving** is already resolved — the `eu` multi-region endpoint keeps inference in the EU, Review 50.)*
 - **Q5 — org/region scope:** can one org hold accounts in both cells? If yes, a single chat turn's `selected_account_id` is the authoritative routing key (already the case here); if org is region-pinned, routing is identical but simpler. Does not block this PRD.
 
 ## 10. Reference

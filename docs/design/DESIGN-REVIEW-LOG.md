@@ -2188,4 +2188,44 @@ Cross-reference: [Review 48](#review-48--dm-prd-11-onboarding-gate-bypasses-on-s
 
 ---
 
+## Review 50 — Model-serving adopts US/EU multi-region Vertex endpoints (D4 reinterpreted: "never global" ≠ "single-region only")
+
+**Date:** 2026-06-09
+**PR:** #964
+**Scope:** Reinterprets [D4](data-residency-architecture.md) and the §3.5 model-endpoint strategy, and updates [AH-PRD-11](components/agentic-harness/projects/AH-PRD-11-agent-reasoning-inference-residency.md)'s model-serving ACs, so that staging/prod model inference is served from the **US/EU multi-region** Vertex endpoints (`us` / `eu`) rather than single regions (`us-central1` / `europe-west1`). Does **not** change `VERTEX_AI_LOCATION` (the Agent Engine / session / sandbox plane), which stays single-region.
+
+### Summary
+
+`gemini-3.1-pro-preview` returned `404 NOT_FOUND` in `ken-e-production` (`.../locations/us-central1/...`). Root cause: preview / newly-released Gemini models are served only on the **global** and **multi-region** Vertex endpoints, not on single regions — the same model-string-resolves-to-wrong-endpoint class as the `gemini-3.5-flash` outage (residency doc §1, R-03). `resolve_model_location()` returned `us-central1` for prod, so ADK built its genai client against `https://us-central1-aiplatform.googleapis.com`, which cannot serve the model.
+
+D4 as written ("**Regional** Vertex model endpoints — never `global` … us-central1") forbade the only non-global way to serve the model. But D4's *rationale* is narrower than its text: "the Vertex `global` endpoint gives **no processing-location guarantee** → a residency leak." The **multi-region** endpoints (`us` → `https://aiplatform.us.rep.googleapis.com`, `eu` → `https://aiplatform.eu.rep.googleapis.com`; google-genai `_MULTI_REGIONAL_LOCATIONS`) **do** guarantee in-geography processing (US-wide / EU-wide). They are therefore *not* the leak D4 prohibits — they satisfy D4's intent while serving the newer model catalogue. This is the reinterpretation: **"never global" remains in force; "single-region only" is relaxed to "single-region or in-geography multi-region."**
+
+### Decision
+
+- **Model-serving location** (`GOOGLE_CLOUD_LOCATION`, applied in-process by `apply_model_location_env`): `development` → `global` (unchanged); staging/prod **US** cell → `us`; prod **EU** cell → `eu`. `resolve_model_location` now returns `us`/`eu` for the regional branches.
+- **`never global` still holds** for staging/prod — multi-region is a distinct, in-geography posture, not `global`.
+- **`VERTEX_AI_LOCATION` is untouched.** The Agent Engine, code-execution sandbox, and session plane stay single-region (`us-central1` / `europe-west1`). The model-serving location may now **differ** from the engine region (US: model `us`, engine `us-central1`). This is consistent with AH-PRD-11's deliberate split of the two as **distinct fields**; the AC-3 invariant ("the model path and the `VERTEX_AI_LOCATION` path never read each other") is unaffected — only their *values* differ.
+- **Model-promotion gate relaxed.** Prior text: a model may be promoted to staging/prod only after it is GA at every residency region's **regional** endpoint. New: once it is served on each cell's endpoint, **regional or multi-region**. Multi-region access is precisely what lets a preview model run in prod ahead of regional GA — a conscious, recorded exception to the original gate, not a silent bypass.
+- **EU residency — partial resolution of the open question.** Multi-region `eu` resolves the *model-serving* half of "EU region choice" (residency doc §10 Q6 / AH-PRD-11 Q6): EU inference stays in the EU. The *engine / sandbox / session* EU region choice (`europe-west1` vs a specific member-state region for sovereignty) **remains open** under AH-PRD-11 / DM-PRD-09 — it is governed by `VERTEX_AI_LOCATION`, which this change does not touch.
+
+### Consequences
+
+- `resolve_model_location` is **no longer "reused unchanged"** by AH-PRD-11 (its §2/§5 said it would be). AH-PRD-11's AC-1, §6 resolver table, and §8 `test_model_routing_data_region.py` description are updated to the `us`/`eu` values so the future implementation does not inherit a single-region/multi-region conflict.
+- Residency posture for model inference is **preserved** (in-US / in-EU) — this is not a regression to `global`.
+- Takes effect only after the **chat engine** (`deploy_ken_e.py`) and **strategy supervisor** (`deploy_with_sys_version.py`) are redeployed; the GCP project must also have preview access to the specific model.
+- `gemini-3.1-pro-preview` / `gemini-3.1-flash-preview` added to `SUPPORTED_MODELS` and the chat context-window registry.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/data-residency-architecture.md` | D4 reworded (multi-region permitted; never-global retained); §3.2 + §3.5 tables → `us`/`eu` for model serving; resolver description, model-promotion gate, R-03 fix, and §10 Q6 updated |
+| `docs/design/components/agentic-harness/projects/AH-PRD-11-agent-reasoning-inference-residency.md` | §2/§5 "reuse unchanged" notes corrected; §6 resolver table, §7 AC-1, §8 test description → `us`/`eu`; §9 equal-per-cell note + Q6 clarified |
+| `app/adk/agents/agent_factory/model_routing.py` + tests | US `us-central1` → `us`, EU `europe-west1` → `eu` |
+| `app/adk/.env.{staging,production}` | `GOOGLE_CLOUD_LOCATION=us` |
+| `api/src/kene_api/models/agent_config_models.py`, `api/src/kene_api/chat/context_windows.py` | `gemini-3.1-{pro,flash}-preview` added to the allowlist + context-window registry |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 50) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

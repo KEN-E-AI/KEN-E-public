@@ -18,6 +18,17 @@ from ..models.chat import ModelContextWindowEntry
 # ---------------------------------------------------------------------------
 
 MODEL_CONTEXT_WINDOW_REGISTRY: dict[str, ModelContextWindowEntry] = {
+    # Gemini 3.1 Pro / Flash (preview) — 1,048,576 token input context
+    # (Gemini-family default). Preview models served on the global + multi-region
+    # endpoints only; see app/adk/agents/agent_factory/model_routing.py.
+    "gemini-3.1-pro-preview": ModelContextWindowEntry(
+        model_id="gemini-3.1-pro-preview",
+        context_window_max=1_048_576,
+    ),
+    "gemini-3.1-flash-preview": ModelContextWindowEntry(
+        model_id="gemini-3.1-flash-preview",
+        context_window_max=1_048_576,
+    ),
     # Gemini 3.5 Flash — 1,048,576 token input context (Gemini-family default;
     # global-endpoint-only model the dev root chatbot runs). Update if the
     # official model card publishes a different limit.

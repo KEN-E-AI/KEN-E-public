@@ -19,7 +19,7 @@ A model id reaches an ADK agent as a raw string passed to `LlmAgent(model=...)` 
 2. **`system_settings/harness.default_reviewer_model`** (Firestore) — the review-pipeline reviewer, resolved by `_resolve_reviewer_model` (`specialist_runtime.py:134`) with a 3-tier fallback: per-config override → harness knob → `DEFAULT_REVIEWER_MODEL` code constant (`review_pipeline.py:30`).
 3. **Hardcoded constants in code** — the two leaf agent-tools (`numerical_analyst.py:50`, `google_search.py:33`, both `gemini-2.5-flash`), the compaction summarizer (`deploy_ken_e.py:339`), strategy agents, evals, and standalone agents (~50 sites total).
 
-None of these validate that the model is currently served, and only the reviewer model has a runtime-editable, central knob. `model_routing.py` selects the Vertex *endpoint location* (`global` vs regional) and is **orthogonal** to model selection — this PRD does not touch it, but the tier registry must account for its interaction (e.g. `gemini-3.5-flash` is only served on the `global` endpoint and 404s on regional, which the tier fallback list resolves naturally).
+None of these validate that the model is currently served, and only the reviewer model has a runtime-editable, central knob. `model_routing.py` selects the Vertex *endpoint location* (`global` in dev; the `us` / `eu` **multi-region** endpoints in staging/prod — Review 50) and is **orthogonal** to model selection — this PRD does not touch it, but the tier registry must account for its interaction. Because the multi-region endpoints serve the preview / newly-released models that single regions 404 on (e.g. `gemini-3.5-flash`, `gemini-3.1-pro-preview`), a model available on `global` is generally also served at `us` / `eu`; the tier fallback list remains the backstop for the residual skew (a `global`-only model, or a dev-vs-prod difference).
 
 The reviewer-model mechanism (#2) is the proven, in-repo pattern this PRD generalizes: a **code default with a Firestore override and TTL caching**. We extend it from "one reviewer model" to "named tiers, each an ordered list of concrete models," and route specialists, the reviewer, and the leaf tools through one resolver.
 
@@ -120,7 +120,7 @@ No new endpoints. Existing `POST`/`PUT` `…/agent-configs/…` accept a tier va
 |---|---|
 | Leaf AgentTools are import-time singletons; runtime editability needs per-resolution rebuild. | Registry-builder change (§5); fall back to startup-resolution for v1 if the rebuild proves costly (documented trade-off). |
 | MER-E writes raw models to global docs (cross-repo). | Resolver accepts raw models → non-breaking; coordinate MER-E tier adoption in the fast-follow. |
-| `gemini-3.5-flash` only on the `global` endpoint (interacts with `model_routing.py`). | Tier fallback list (`fastest` → `gemini-2.5-flash`) covers regional envs; document the endpoint/tier interaction. |
+| A model served only on some endpoints interacts with `model_routing.py` (e.g. `gemini-3.5-flash` 404s on single regions; staging/prod use the `us` / `eu` multi-region endpoints, which **do** serve it — Review 50). | Tier fallback list (`fastest` → `gemini-2.5-flash`) is the backstop for any residual endpoint/tier skew; document the interaction. |
 | Availability snapshot staleness → a just-deprecated model still selected. | Short TTL + the scheduled guard + prod model-not-found alert as backstop. |
 | Token metering keys on the concrete model. | Resolution happens before the agent runs; the resolved model is what's metered — add a regression check. |
 
