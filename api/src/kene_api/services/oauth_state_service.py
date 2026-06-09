@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..models.oauth_models import OAuthState
 
@@ -145,7 +146,9 @@ class OAuthStateService:
         try:
             now = datetime.now(timezone.utc)
             # Query for expired states
-            expired_query = self.collection.where("expires_at", "<", now)
+            expired_query = self.collection.where(
+                filter=FieldFilter("expires_at", "<", now)
+            )
 
             # Run sync operations in thread pool
             loop = asyncio.get_event_loop()

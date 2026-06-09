@@ -14,6 +14,7 @@ from typing import Any
 
 from google.adk.sessions.base_session_service import GetSessionConfig
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..dependencies import get_firestore_client
 from ..models.chat import ChatSessionMetadata
@@ -236,8 +237,8 @@ class ChatSessionSideTableService:
         """
         query = (
             self._db.collection_group("chat_sessions")
-            .where("user_id", "==", user_id)
-            .where("session_id", "==", session_id)
+            .where(filter=FieldFilter("user_id", "==", user_id))
+            .where(filter=FieldFilter("session_id", "==", session_id))
             .limit(1)
         )
         docs = list(query.get())

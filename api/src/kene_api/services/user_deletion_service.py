@@ -29,6 +29,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from google.cloud import firestore as firestore_module
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..auth.dependencies import SuperAdminRequiredError
 from ..auth.models import UserContext
@@ -126,15 +127,15 @@ async def _resolve_member_rows(
         members_group = db.collection_group("members")
 
         for doc in (
-            members_group.where("user_id", "==", user_id)
-            .where("parent_kind", "==", "organization")
+            members_group.where(filter=FieldFilter("user_id", "==", user_id))
+            .where(filter=FieldFilter("parent_kind", "==", "organization"))
             .stream()
         ):
             org_refs.append(doc.reference)
 
         for doc in (
-            members_group.where("user_id", "==", user_id)
-            .where("parent_kind", "==", "account")
+            members_group.where(filter=FieldFilter("user_id", "==", user_id))
+            .where(filter=FieldFilter("parent_kind", "==", "account"))
             .stream()
         ):
             account_refs.append(doc.reference)

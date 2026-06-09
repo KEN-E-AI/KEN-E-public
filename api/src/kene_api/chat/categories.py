@@ -16,6 +16,7 @@ from typing import Any
 
 from google.api_core.exceptions import AlreadyExists
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..dependencies import get_firestore_client
 from ..models.chat import (
@@ -354,8 +355,8 @@ class ChatCategoryService:
         affected: list[Any] = [
             snap
             for snap in self._db.collection_group("chat_sessions")
-            .where("user_id", "==", user_id)
-            .where("category_id", "==", category_id)
+            .where(filter=FieldFilter("user_id", "==", user_id))
+            .where(filter=FieldFilter("category_id", "==", category_id))
             .get()
             if snap.to_dict().get("deleted_at") is None
         ]

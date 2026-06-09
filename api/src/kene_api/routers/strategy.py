@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
@@ -70,10 +71,10 @@ async def list_strategy_documents(
     try:
         # Query Firestore using account-specific collection
         docs_ref = db.collection(f"accounts/{account_id}/strategy_docs")
-        query = docs_ref.where("is_active", "==", is_active)
+        query = docs_ref.where(filter=FieldFilter("is_active", "==", is_active))
 
         if doc_type:
-            query = query.where("doc_type", "==", doc_type)
+            query = query.where(filter=FieldFilter("doc_type", "==", doc_type))
 
         docs = query.stream()
 
@@ -435,12 +436,12 @@ async def get_strategy_audit_log(
         # Query audit log from the account's Shape B subcollection (audit_service.log_strategy_action
         # writes to accounts/{account_id}/strategy_audit/{audit_id}).
         audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
-        query = audit_ref.where("doc_type", "==", doc_type)
-        query = query.where("timestamp", ">=", date_from)
-        query = query.where("timestamp", "<=", date_to)
+        query = audit_ref.where(filter=FieldFilter("doc_type", "==", doc_type))
+        query = query.where(filter=FieldFilter("timestamp", ">=", date_from))
+        query = query.where(filter=FieldFilter("timestamp", "<=", date_to))
 
         if action:
-            query = query.where("action", "==", action)
+            query = query.where(filter=FieldFilter("action", "==", action))
 
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
         query = query.limit(limit)

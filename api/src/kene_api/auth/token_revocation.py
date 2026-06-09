@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..firestore import get_firestore_service
 from .audit_logger import SecurityEventType, get_audit_logger
@@ -221,7 +222,9 @@ class TokenRevocationService:
         # Query for expired revocations
         now = datetime.utcnow()
         expired_docs = (
-            db.collection(self.collection_name).where("expires_at", "<", now).stream()
+            db.collection(self.collection_name)
+            .where(filter=FieldFilter("expires_at", "<", now))
+            .stream()
         )
 
         count = 0

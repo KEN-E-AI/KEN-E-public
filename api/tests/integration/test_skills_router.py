@@ -155,7 +155,16 @@ class _FakeCollectionRef:
     def document(self, doc_id: str) -> _FakeDocRef:
         return _FakeDocRef(self._store, f"{self._path}/{doc_id}")
 
-    def where(self, field: str, op: str, value: Any) -> _FakeQuery:
+    def where(
+        self,
+        field: str | None = None,
+        op: str | None = None,
+        value: Any = None,
+        *,
+        filter: Any = None,
+    ) -> _FakeQuery:
+        if filter is not None:  # keyword FieldFilter form (.where(filter=FieldFilter(...)))
+            field, op, value = filter.field_path, filter.op_string, filter.value
         return _FakeQuery(self._store, self._path, filters=[(field, op, value)])
 
     def order_by(self, field: str, direction: Any = None) -> _FakeQuery:
@@ -192,7 +201,16 @@ class _FakeQuery:
         self._limit_val = _limit_val
         self._start_after_doc = _start_after_doc
 
-    def where(self, field: str, op: str, value: Any) -> _FakeQuery:
+    def where(
+        self,
+        field: str | None = None,
+        op: str | None = None,
+        value: Any = None,
+        *,
+        filter: Any = None,
+    ) -> _FakeQuery:
+        if filter is not None:  # keyword FieldFilter form (.where(filter=FieldFilter(...)))
+            field, op, value = filter.field_path, filter.op_string, filter.value
         return _FakeQuery(
             self._store,
             self._collection_path,

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from fastapi import Request
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 from ..auth.models import UserContext
 from ..models.agent_config_models import ConfigAuditEntry
@@ -188,9 +189,9 @@ async def get_recent_actions(
         query = audit_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
 
         if user_id:
-            query = query.where("user_id", "==", user_id)
+            query = query.where(filter=FieldFilter("user_id", "==", user_id))
         if doc_type:
-            query = query.where("doc_type", "==", doc_type)
+            query = query.where(filter=FieldFilter("doc_type", "==", doc_type))
 
         query = query.limit(limit)
 
@@ -225,8 +226,8 @@ async def get_document_history(
     try:
         # Query for specific document in account-specific audit collection
         audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
-        query = audit_ref.where("doc_type", "==", doc_type)
-        query = query.where("doc_id", "==", doc_id)
+        query = audit_ref.where(filter=FieldFilter("doc_type", "==", doc_type))
+        query = query.where(filter=FieldFilter("doc_id", "==", doc_id))
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
         query = query.limit(limit)
 
@@ -260,7 +261,7 @@ async def get_user_activity(user_id: str, limit: int = 100) -> list[StrategyAudi
         # writers; see audit_service.log_strategy_action above). Do NOT add a path prefix
         # here. See DM-PRD-01 §1 (Side-effect fix).
         audit_ref = db.collection_group("strategy_audit")
-        query = audit_ref.where("user_id", "==", user_id)
+        query = audit_ref.where(filter=FieldFilter("user_id", "==", user_id))
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
         query = query.limit(limit)
 
@@ -294,7 +295,7 @@ async def cleanup_old_audit_logs(account_id: str, days_to_keep: int = 90) -> int
 
         # Query for old entries in account-specific audit collection
         audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
-        query = audit_ref.where("timestamp", "<", cutoff_date)
+        query = audit_ref.where(filter=FieldFilter("timestamp", "<", cutoff_date))
 
         # Delete in batches
         deleted_count = 0

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 from pydantic import BaseModel, Field
 
 from ..auth.dependencies import get_current_user
@@ -127,9 +128,9 @@ async def get_user_costs(
 
         # Query usage records
         usage_ref = db.collection("usage_records")
-        query = usage_ref.where("user_id", "==", user_id)
-        query = query.where("timestamp", ">=", date_from)
-        query = query.where("timestamp", "<=", date_to)
+        query = usage_ref.where(filter=FieldFilter("user_id", "==", user_id))
+        query = query.where(filter=FieldFilter("timestamp", ">=", date_from))
+        query = query.where(filter=FieldFilter("timestamp", "<=", date_to))
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
 
         # Get all records for summary
@@ -190,9 +191,9 @@ async def get_account_costs(
 
         # Query usage records
         usage_ref = db.collection("usage_records")
-        query = usage_ref.where("account_id", "==", account_id)
-        query = query.where("timestamp", ">=", date_from)
-        query = query.where("timestamp", "<=", date_to)
+        query = usage_ref.where(filter=FieldFilter("account_id", "==", account_id))
+        query = query.where(filter=FieldFilter("timestamp", ">=", date_from))
+        query = query.where(filter=FieldFilter("timestamp", "<=", date_to))
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
 
         # Get all records
@@ -298,8 +299,8 @@ async def get_usage_summary(
 
         # Query all usage records
         usage_ref = db.collection("usage_records")
-        query = usage_ref.where("timestamp", ">=", date_from)
-        query = query.where("timestamp", "<=", date_to)
+        query = usage_ref.where(filter=FieldFilter("timestamp", ">=", date_from))
+        query = query.where(filter=FieldFilter("timestamp", "<=", date_to))
 
         # Calculate totals
         total_tokens = 0

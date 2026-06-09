@@ -43,6 +43,8 @@ import time
 from datetime import datetime
 from typing import Any
 
+from google.cloud.firestore_v1 import FieldFilter
+
 # ---------------------------------------------------------------------------
 # Optional Weave instrumentation
 # ---------------------------------------------------------------------------
@@ -250,7 +252,7 @@ def _resolve_session_account_id(
 
     results = (
         db.collection_group("chat_sessions")
-        .where("session_id", "==", session_id)
+        .where(filter=FieldFilter("session_id", "==", session_id))
         .limit(1)
         .stream()
     )

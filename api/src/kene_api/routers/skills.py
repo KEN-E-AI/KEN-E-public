@@ -53,6 +53,7 @@ from fastapi import (
     UploadFile,
 )
 from google.cloud import firestore
+from google.cloud.firestore_v1 import FieldFilter
 from pydantic import BaseModel
 
 from ..auth.models import UserContext
@@ -225,8 +226,12 @@ def _check_name_exists(db: firestore.Client, account_id: str, name: str) -> bool
         db.collection("accounts")
         .document(account_id)
         .collection("skills")
-        .where("name", "==", name)
-        .where("status", "in", [SkillStatus.DRAFT.value, SkillStatus.PUBLISHED.value])
+        .where(filter=FieldFilter("name", "==", name))
+        .where(
+            filter=FieldFilter(
+                "status", "in", [SkillStatus.DRAFT.value, SkillStatus.PUBLISHED.value]
+            )
+        )
         .limit(1)
     )
     return len(list(query.stream())) > 0
@@ -894,15 +899,19 @@ async def _list_skills_traced(
                         }
                     ],
                 )
-            query = query.where("status", "in", status)
+            query = query.where(filter=FieldFilter("status", "in", status))
         elif not include_archived:
             query = query.where(
-                "status", "in", [SkillStatus.DRAFT.value, SkillStatus.PUBLISHED.value]
+                filter=FieldFilter(
+                    "status",
+                    "in",
+                    [SkillStatus.DRAFT.value, SkillStatus.PUBLISHED.value],
+                )
             )
 
         # has_scripts filter.
         if has_scripts is not None:
-            query = query.where("has_scripts", "==", has_scripts)
+            query = query.where(filter=FieldFilter("has_scripts", "==", has_scripts))
 
         # Stable ordering by (updated_at DESC, skill_id ASC) for cursor pagination.
         query = query.order_by(
