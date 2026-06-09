@@ -51,6 +51,13 @@ if (!HTMLElement.prototype.scrollIntoView) {
   HTMLElement.prototype.scrollIntoView = vi.fn();
 }
 
+// Stub clipboard API not implemented in jsdom
+Object.defineProperty(window.navigator, "clipboard", {
+  value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  writable: true,
+  configurable: true,
+});
+
 // Reset mocks before each test
 beforeEach(() => {
   vi.clearAllMocks();

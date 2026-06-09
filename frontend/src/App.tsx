@@ -63,9 +63,11 @@ import { AgentCreatePage } from "./pages/workflows/AgentCreatePage";
 import { AutomationDetailsPage } from "./pages/workflows/AutomationDetailsPage";
 import "@/components/admin/superAdmins/registration";
 import "@/components/admin/featureFlags/registration";
+import "@/components/admin/earlyRelease/registration";
 import { SuperAdminGuard } from "@/components/auth/SuperAdminGuard";
 import SuperAdminsPage from "@/pages/admin/SuperAdminsPage";
 import FeatureFlagsPage from "@/pages/admin/FeatureFlagsPage";
+import EarlyReleasePage from "@/pages/admin/EarlyReleasePage";
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -301,6 +303,14 @@ const AppRoutes = () => {
             element={
               <SuperAdminGuard>
                 <FeatureFlagsPage />
+              </SuperAdminGuard>
+            }
+          />
+          <Route
+            path="/admin/early-release"
+            element={
+              <SuperAdminGuard>
+                <EarlyReleasePage />
               </SuperAdminGuard>
             }
           />

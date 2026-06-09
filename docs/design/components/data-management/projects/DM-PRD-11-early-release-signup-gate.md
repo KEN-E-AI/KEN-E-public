@@ -108,8 +108,11 @@ Enforced inside `create_organization`, **only** when `invite_only_signup` is ON 
 
 ```python
 async def caller_may_onboard(user: UserContext, access_code: str | None) -> bool:
-    # 1. Staff / super-admin always pass.
-    if user.email.endswith("@ken-e.ai") or user.is_super_admin:
+    # 1. Super-admin always passes (role-based bypass). Email domain is NOT
+    #    trusted: Firebase signup is open, so an "@ken-e.ai" email string is not
+    #    an authorization signal. This mirrors auth/models.py::is_super_admin,
+    #    from which the email-domain check was removed in DM-80/DM-81.
+    if user.is_super_admin:
         return True
     # 2. Existing users (already in an org) and invited users (joined an org,
     #    or have a pending invitation for their email) are never blocked.
@@ -129,7 +132,7 @@ This predicate **structurally guarantees** the invariants in §7: existing users
 
 ### 4.4 The feature flag (clean global boolean — no targeting)
 
-`invite_only_signup` is registered with **no targeting rules**. In the flag evaluator a matching targeting rule *grants* the flag (i.e. would turn invite-only **ON** for the matched users) — so an `email_domains=["ken-e.ai"]` rule would enforce invite-only on staff, the opposite of a bypass. Staff bypass therefore lives **only** in the §4.3 predicate, never in flag targeting.
+`invite_only_signup` is registered with **no targeting rules**. In the flag evaluator a matching targeting rule *grants* the flag (i.e. would turn invite-only **ON** for the matched users) — so an `email_domains=["ken-e.ai"]` rule would enforce invite-only on staff, the opposite of a bypass. The super-admin bypass therefore lives **only** in the §4.3 predicate, never in flag targeting.
 
 ```
 key:             "invite_only_signup"
@@ -182,7 +185,7 @@ The existing `settings.organization_creation_permission` (`none | super_admin | 
 | Create | `api/tests/integration/test_org_creation_gate.py` — the gate matrix | 5 |
 | Create | `frontend/src/data/earlyReleaseApi.ts` — validate + signup-policy clients | 6 |
 | Modify | `frontend/src/pages/auth/CreateAccountView.tsx` — code field + "early access required" panel (reuse invitation banner) | 6 |
-| Modify | `frontend/src/pages/Authentication.tsx` — signup-policy gate, validate-on-blur, `@ken-e.ai` client exemption, stash code | 6 |
+| Modify | `frontend/src/pages/Authentication.tsx` — signup-policy gate, validate-on-blur, stash code (no `@ken-e.ai` client exemption — see §4.3) | 6 |
 | Modify | `frontend/src/pages/CreateOrganization.tsx` — forward `access_code` in the org-create payload | 7 |
 | Modify | `frontend/src/pages/SelectOrganizationPage.tsx` — verify the code survives the no-org → `/create-organization` hop | 7 |
 | Create | `frontend/src/pages/admin/EarlyReleasePage.tsx` + `components/admin/earlyRelease/` (clone `SuperAdminsPage.tsx`) | 8 |
@@ -208,7 +211,7 @@ The existing `settings.organization_creation_permission` (`none | super_admin | 
 2. An **invited** user (valid pending `invitation`, or already a member of an org) signs up and joins/creates their org without entering a code.
 3. A **valid shared code** lets a net-new user sign up and create their own workspace; a redemption record is written to `early_release_redemptions/{user_id}`.
 4. A **rotated, disabled (`is_active=false`), or expired** code is rejected at both `validate` and the org-create gate.
-5. **`@ken-e.ai` / super-admins always bypass** — both the client form (typed `@ken-e.ai` email skips the code field) and the server predicate — regardless of flag state or code.
+5. **Super-admins always bypass (role-based)** — the server predicate passes any caller holding the `super_admin` role, regardless of flag state or code. Email domain confers no bypass on the client or the server: an `@ken-e.ai` email sees the same code field as anyone, and non-super-admin staff onboard via the shared code or an invitation. (Rationale: open Firebase signup makes an email string untrustworthy; see DESIGN-REVIEW-LOG 2026-06-08.)
 6. With the flag **OFF**, signup and org creation are byte-for-byte today's behavior (the gate early-returns; no code field shown).
 7. **Existing users are never locked out** — the gate fires only on `create_organization`, which a user with an org never re-enters; sign-in is untouched. An integration test signs in a pre-existing user with the flag ON and confirms full normal operation.
 8. `POST /early-release/validate` is IP rate-limited and returns a uniform `{valid:false}` for wrong/expired/inactive codes (no distinction that aids enumeration); exceeding the limit returns `429`.
@@ -221,13 +224,13 @@ The existing `settings.organization_creation_permission` (`none | super_admin | 
 
 **Unit** (`test_early_release_service.py`): `validate` true only when active + unexpired + exact match; constant-time compare used; expired/inactive → false; `record_redemption` idempotent on the same `user_id`; `count_redemptions` correct.
 
-**Integration** (`test_org_creation_gate.py`): the matrix {flag OFF, flag ON} × {`@ken-e.ai` staff, user-with-existing-org, user-with-pending-invitation, valid code, invalid/no code} — asserting `201` vs `403` per §4.3, and that a redemption is written exactly on the valid-code path. Precedence cases: `organization_creation_permission ∈ {none, super_admin}` short-circuit before the gate.
+**Integration** (`test_org_creation_gate.py`): the matrix {flag OFF, flag ON} × {super-admin (role bypass), `@ken-e.ai` email without the role (blocked), user-with-existing-org, user-with-pending-invitation, valid code, invalid/no code} — asserting `201` vs `403` per §4.3, and that a redemption is written exactly on the valid-code path. Precedence cases: `organization_creation_permission ∈ {none, super_admin}` short-circuit before the gate.
 
 **Integration** (admin + public): super-admin CRUD auth boundary (super-admin `200`, normal user `403`); `validate` rate-limit returns `429` past the cap and uniform `{valid:false}` below it; `signup-policy` reflects flag state and fails open on a forced service error.
 
-**Frontend component:** signup states (flag OFF = open; flag ON + no code = blocked with code field; flag ON + `?invitation=` = unchanged pre-fill; flag ON + valid code = proceed; `@ken-e.ai` email = no code required); `/admin/early-release` page render + rotate/disable actions (mocked API).
+**Frontend component:** signup states (flag OFF = open; flag ON + no code = blocked with code field; flag ON + `?invitation=` = unchanged pre-fill; flag ON + valid code = proceed; `@ken-e.ai` email = code field still shown, no client exemption); `/admin/early-release` page render + rotate/disable actions (mocked API).
 
-**E2E invariants** (`test_early_release_invariants.py`): the §7 invariants end to end — existing-user-not-locked-out, staff-bypass, invited-still-works, code-allows-own-workspace, flag-off-is-open. Auth paths use the existing test bypass (`VITE_AUTH_BYPASS` / `API_TEST_BYPASS_TOKEN`).
+**E2E invariants** (`test_early_release_invariants.py`): the §7 invariants end to end — existing-user-not-locked-out, super-admin-bypass, invited-still-works, code-allows-own-workspace, flag-off-is-open. Auth paths use the existing test bypass (`VITE_AUTH_BYPASS` / `API_TEST_BYPASS_TOKEN`).
 
 ## 9. Risks & open questions
 
@@ -236,7 +239,7 @@ The existing `settings.organization_creation_permission` (`none | super_admin | 
 | Orphan Firebase users (auth record created at the form, but blocked at org-create) | Accepted trade-off of the pragmatic gate. The client entry-gate stops most before Firebase is called; an org-less user is inert. Optional later: a Cloud Scheduler sweep of doc-less aged auth users (out of scope here). |
 | Brute-forcing the shared code | Pre-auth IP rate-limiter on `validate` (clone of `recaptcha`, `fail_open=False`) + constant-time compare + uniform response. The code gates only org creation, not data access. |
 | Flag-service outage direction | Chosen **fail-open for signups** (`default=False`): an outage reopens signup rather than locking out legitimate code-holders. Documented; revisit if abuse observed. |
-| Flag targeting inversion | Resolved (§4.4): the flag is a clean global boolean with no targeting; staff bypass is in the predicate, not the flag. |
+| Flag targeting inversion | Resolved (§4.4): the flag is a clean global boolean with no targeting; the super-admin bypass is in the predicate, not the flag. |
 | Precedence with `organization_creation_permission` | Documented (§4.6): the setting is evaluated first; the gate layers on only under `all`. Covered by tests. |
 | Plaintext shared code in Firestore | Acceptable — not an authz boundary; admin must read it to distribute. Access to the config doc is super-admin-only via the API; Firestore is default-deny to clients. |
 | Google-OAuth signups can't pre-validate a password | Handled uniformly: both email/password and Google users hit the same server org-create gate; the client form's code requirement applies to both before the popup as well. |

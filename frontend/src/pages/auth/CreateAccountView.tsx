@@ -1,5 +1,13 @@
 import type { FormEvent } from "react";
-import { User, Mail, Lock, AlertCircle, Check, UserPlus } from "lucide-react";
+import {
+  User,
+  Mail,
+  Lock,
+  AlertCircle,
+  Check,
+  UserPlus,
+  KeyRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +15,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/branding/Logo";
+
+type AccessCodeStatus = "idle" | "validating" | "valid" | "invalid";
 
 type CreateAccountViewProps = {
   name: string;
@@ -27,6 +37,12 @@ type CreateAccountViewProps = {
   onAgreedToTermsChange: (value: boolean) => void;
   onSubmit: (e: FormEvent) => void;
   onGoogleSignUp: () => void;
+  requiresAccessCode?: boolean;
+  accessCode?: string;
+  accessCodeStatus?: AccessCodeStatus;
+  accessCodeError?: string | null;
+  onAccessCodeChange?: (value: string) => void;
+  onAccessCodeBlur?: () => void;
 };
 
 export function CreateAccountView({
@@ -48,6 +64,12 @@ export function CreateAccountView({
   onAgreedToTermsChange,
   onSubmit,
   onGoogleSignUp,
+  requiresAccessCode = false,
+  accessCode = "",
+  accessCodeStatus = "idle",
+  accessCodeError = null,
+  onAccessCodeChange,
+  onAccessCodeBlur,
 }: CreateAccountViewProps) {
   const passwordStrength =
     password.length >= 8
@@ -101,6 +123,28 @@ export function CreateAccountView({
           </div>
         )}
 
+        {requiresAccessCode && (
+          <div
+            className="mb-6 p-4 rounded-[var(--radius-md)] bg-gradient-to-r from-[var(--color-violet-500)]/10 to-[var(--color-blue-500)]/10 border-2 border-[var(--color-violet-500)]/30 animate-slide-in"
+            data-testid="early-access-banner"
+          >
+            <div className="flex items-start gap-3">
+              <div className="size-10 rounded-[var(--radius-md)] bg-[var(--color-violet-500)] flex items-center justify-center shrink-0">
+                <KeyRound className="size-5 text-white" aria-hidden="true" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium mb-1">
+                  Early access required
+                </p>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  KEN-E is currently invite-only. Enter your Early Release code
+                  below to create an account.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {invitationError && (
           <div className="mb-6">
             <Alert variant="destructive">
@@ -123,7 +167,9 @@ export function CreateAccountView({
             variant="outline"
             className="w-full mb-4 gap-2 transition-all duration-200 hover:-translate-y-0.5"
             onClick={onGoogleSignUp}
-            disabled={isLoading}
+            disabled={
+              isLoading || (requiresAccessCode && accessCodeStatus !== "valid")
+            }
           >
             <svg className="size-5" viewBox="0 0 24 24" aria-hidden="true">
               <path
@@ -286,6 +332,60 @@ export function CreateAccountView({
               )}
             </div>
 
+            {requiresAccessCode && (
+              <div data-testid="access-code-field">
+                <Label htmlFor="accessCode">Early Release Code</Label>
+                <div className="relative mt-1.5">
+                  <KeyRound
+                    className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <Input
+                    id="accessCode"
+                    name="accessCode"
+                    type="text"
+                    placeholder="Enter your Early Release code"
+                    value={accessCode}
+                    onChange={(e) => onAccessCodeChange?.(e.target.value)}
+                    onBlur={onAccessCodeBlur}
+                    className="pl-10"
+                    aria-invalid={accessCodeStatus === "invalid"}
+                    aria-describedby={
+                      accessCodeStatus === "invalid"
+                        ? "accessCode-error"
+                        : accessCodeStatus === "validating"
+                          ? "accessCode-hint"
+                          : undefined
+                    }
+                  />
+                  {accessCodeStatus === "valid" && (
+                    <Check
+                      className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-green-500"
+                      aria-hidden="true"
+                    />
+                  )}
+                </div>
+                {accessCodeStatus === "validating" && (
+                  <p
+                    id="accessCode-hint"
+                    className="text-xs text-[var(--color-text-secondary)] mt-1"
+                  >
+                    Validating…
+                  </p>
+                )}
+                {accessCodeStatus === "invalid" && accessCodeError && (
+                  <p
+                    id="accessCode-error"
+                    className="text-xs text-red-600 mt-1 flex items-center gap-1"
+                    role="alert"
+                  >
+                    <AlertCircle className="size-3" aria-hidden="true" />
+                    {accessCodeError}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <div className="flex items-start gap-2">
                 <Checkbox
@@ -329,7 +429,10 @@ export function CreateAccountView({
               type="submit"
               className="w-full gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] text-[var(--color-text-inverse)] transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
               style={{ boxShadow: "var(--shadow-color-coral)" }}
-              disabled={isLoading}
+              disabled={
+                isLoading ||
+                (requiresAccessCode && accessCodeStatus !== "valid")
+              }
             >
               {isLoading ? (
                 <>

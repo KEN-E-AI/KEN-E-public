@@ -13,6 +13,7 @@ from ..auth.user_context import get_current_user_context
 from ..config import settings
 from ..database import Neo4jService, get_neo4j_service
 from ..firestore import get_firestore_service
+from ..models.feature_flag_models import EvaluationContext
 from ..models.kene_models import (
     Billing,
     ChangeSubscriptionRequest,
@@ -24,6 +25,9 @@ from ..models.kene_models import (
     SuccessResponse,
     Team,
 )
+from ..services.early_release_service import get_early_release_service
+from ..services.feature_flag_service import is_feature_enabled
+from ..services.onboarding_gate import caller_may_onboard
 
 router = APIRouter(tags=["organizations"])
 
@@ -508,6 +512,36 @@ async def create_organization(
             )
         # If permission_level == "all", any authenticated user can create
 
+        # Early Release gate (DM-PRD-11 §4.3 + §4.6).
+        # Evaluated only under permission_level == "all" for non-super-admins.
+        # is_feature_enabled swallows service errors and returns default=False,
+        # so a flag-system outage reopens signup (fail-open, PRD §9 Risks).
+        gate_decision = None
+        if permission_level == "all" and not user.is_super_admin:
+            flag_ctx = EvaluationContext(
+                user_id=user.user_id, user_email=user.email
+            )
+            if await is_feature_enabled(
+                "invite_only_signup", flag_ctx, default=False
+            ):
+                gate_decision = await caller_may_onboard(
+                    user,
+                    request.access_code,
+                    firestore_service=get_firestore_service(),
+                    early_release_service=get_early_release_service(),
+                )
+                if not gate_decision.allowed:
+                    raise HTTPException(
+                        status_code=403, detail="early_access_required"
+                    )
+                logger.info(
+                    "early_release_gate_passed",
+                    extra={
+                        "user_id": user.user_id,
+                        "used_code": gate_decision.used_code,
+                    },
+                )
+
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
         if not is_healthy:
@@ -674,6 +708,22 @@ async def create_organization(
                 status_code=500,
                 detail="Failed to complete organization setup due to permission system error.",
             ) from e
+
+        # Early Release redemption — written only on the code path (DM-PRD-11 §4.3 clause 4).
+        # Executed after org creation + permission grant + cache flush succeed.
+        # A write failure does NOT roll back the org: the user has a working workspace.
+        if gate_decision is not None and gate_decision.used_code:
+            try:
+                await get_early_release_service().record_redemption(
+                    user_id=user.user_id,
+                    email=user.email,
+                    org_id=organization_id,
+                )
+            except Exception:
+                logger.warning(
+                    "early_release_redemption_failed",
+                    extra={"user_id": user.user_id, "org_id": organization_id},
+                )
 
         # Fetch the created organization
         return await _get_organization_by_id(organization_id, db)

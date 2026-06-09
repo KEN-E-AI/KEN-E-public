@@ -48,6 +48,12 @@ vi.mock("@/data/teamApi", () => ({
   acceptInvitation: vi.fn(),
 }));
 
+vi.mock("@/data/earlyReleaseApi", () => ({
+  getSignupPolicy: vi.fn().mockResolvedValue({ invite_only: false }),
+  validateAccessCode: vi.fn(),
+  EARLY_RELEASE_CODE_STORAGE_KEY: "kene_early_release_code",
+}));
+
 // Mock ReCaptcha components
 vi.mock("@/components/auth/ReCaptchaErrorBoundary", () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,

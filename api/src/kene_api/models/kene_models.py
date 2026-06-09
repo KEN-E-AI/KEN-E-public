@@ -1009,6 +1009,7 @@ class OrganizationRequest(BaseModel):
     subscription: Subscription | None = Field(None, description="Subscription details")
     billing: Billing | None = Field(None, description="Billing information")
     team: Team | None = Field(None, description="Team information")
+    access_code: str | None = Field(None, max_length=256, description="Early Release access code")
 
 
 class AccountRequest(BaseModel):

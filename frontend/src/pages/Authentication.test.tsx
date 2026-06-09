@@ -59,6 +59,12 @@ vi.mock("@/data/teamApi", () => ({
     .mockRejectedValue({ response: { status: 404 } }),
 }));
 
+vi.mock("@/data/earlyReleaseApi", () => ({
+  getSignupPolicy: vi.fn().mockResolvedValue({ invite_only: false }),
+  validateAccessCode: vi.fn(),
+  EARLY_RELEASE_CODE_STORAGE_KEY: "kene_early_release_code",
+}));
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 const mockedApi = vi.mocked(api);
@@ -528,7 +534,9 @@ describe("Authentication — Create Account view", () => {
         emailVerified: false,
       },
     } as any);
-    (mockedApi.post as unknown as Mock).mockResolvedValue({ data: { success: true } });
+    (mockedApi.post as unknown as Mock).mockResolvedValue({
+      data: { success: true },
+    });
 
     renderAt("/create-account");
 

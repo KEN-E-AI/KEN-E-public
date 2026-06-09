@@ -11,6 +11,11 @@ import {
 import { auth, googleProvider } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { verifyInvitationToken, type Invitation } from "@/data/teamApi";
+import {
+  getSignupPolicy,
+  validateAccessCode,
+  EARLY_RELEASE_CODE_STORAGE_KEY,
+} from "@/data/earlyReleaseApi";
 import type {
   FirebaseUser,
   FirestoreUserData,
@@ -76,6 +81,15 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   >("idle");
   const [countdown, setCountdown] = useState(0);
 
+  // Early Release gate state
+  const [inviteOnly, setInviteOnly] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
+  const [accessCodeStatus, setAccessCodeStatus] = useState<
+    "idle" | "validating" | "valid" | "invalid"
+  >("idle");
+  const [accessCodeError, setAccessCodeError] = useState<string | null>(null);
+  const [lastValidatedCode, setLastValidatedCode] = useState("");
+
   // Derive which view to show from the URL pathname (exact-match to avoid false positives)
   const pathname = location.pathname;
   const isSignUp = SIGN_UP_PATHS.has(pathname);
@@ -96,6 +110,45 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
   })();
 
   const invitationToken = searchParams.get("invitation");
+
+  // No client-side email-domain exemption: signup is pre-auth, so the client
+  // cannot know whether the caller holds the super_admin role. The server gate
+  // (onboarding_gate.py) bypasses on the super_admin role only — an "@ken-e.ai"
+  // email is not a trustworthy signal because Firebase signup is open. Staff
+  // therefore onboard via the shared code, an invitation, or (if super-admin)
+  // by entering the code at signup and passing the server gate regardless.
+  // See DM-PRD-11 §4.3 and DESIGN-REVIEW-LOG (2026-06-08).
+  const requiresAccessCode = inviteOnly && !invitationToken;
+
+  // Fetch signup policy on signup-view mount
+  useEffect(() => {
+    if (!isSignUp) return;
+    let mounted = true;
+    getSignupPolicy()
+      .then((policy) => {
+        if (mounted) setInviteOnly(policy.invite_only);
+      })
+      .catch((err) => {
+        console.warn(
+          "[earlyRelease] Failed to fetch signup policy; defaulting to open",
+          err,
+        );
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [isSignUp]);
+
+  // Reset code status when the gate transitions off (flag turns off, or an
+  // invitation token appears).
+  useEffect(() => {
+    if (!requiresAccessCode) {
+      setAccessCodeStatus("idle");
+      setAccessCodeError(null);
+      setLastValidatedCode("");
+      sessionStorage.removeItem(EARLY_RELEASE_CODE_STORAGE_KEY);
+    }
+  }, [requiresAccessCode]);
 
   // Countdown timer for resend cooldown
   useEffect(() => {
@@ -307,6 +360,37 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     }
   };
 
+  const handleAccessCodeChange = (value: string) => {
+    setAccessCode(value);
+    if (value.trim() !== lastValidatedCode) {
+      setAccessCodeStatus("idle");
+      setAccessCodeError(null);
+    }
+  };
+
+  const handleAccessCodeBlur = async () => {
+    const trimmed = accessCode.trim();
+    if (!trimmed || trimmed === lastValidatedCode) return;
+
+    setAccessCodeStatus("validating");
+    setAccessCodeError(null);
+
+    try {
+      const { valid } = await validateAccessCode(trimmed);
+      if (valid) {
+        setAccessCodeStatus("valid");
+        setLastValidatedCode(trimmed);
+        sessionStorage.setItem(EARLY_RELEASE_CODE_STORAGE_KEY, trimmed);
+      } else {
+        setAccessCodeStatus("invalid");
+        setAccessCodeError("Invalid Early Release code");
+      }
+    } catch {
+      setAccessCodeStatus("invalid");
+      setAccessCodeError("Couldn't validate — please try again");
+    }
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -397,6 +481,14 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     setIsLoading(true);
     setErrorMessage("");
     setSignUpFieldErrors({});
+
+    if (requiresAccessCode && accessCodeStatus !== "valid") {
+      setErrorMessage(
+        "Please enter a valid Early Release code to create an account.",
+      );
+      setIsLoading(false);
+      return;
+    }
 
     if (signUpData.password !== signUpData.confirmPassword) {
       setSignUpFieldErrors({ confirmPassword: "Passwords do not match" });
@@ -585,6 +677,18 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
     setIsLoading(true);
     setErrorMessage("");
 
+    if (
+      activeView === "signup" &&
+      requiresAccessCode &&
+      accessCodeStatus !== "valid"
+    ) {
+      setErrorMessage(
+        "Please enter a valid Early Release code to create an account.",
+      );
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const firebaseUser = result.user as FirebaseUser;
@@ -674,6 +778,12 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
               }
               onSubmit={handleSignUp}
               onGoogleSignUp={handleGoogleSignIn}
+              requiresAccessCode={requiresAccessCode}
+              accessCode={accessCode}
+              accessCodeStatus={accessCodeStatus}
+              accessCodeError={accessCodeError}
+              onAccessCodeChange={handleAccessCodeChange}
+              onAccessCodeBlur={handleAccessCodeBlur}
             />
           </>
         ) : (

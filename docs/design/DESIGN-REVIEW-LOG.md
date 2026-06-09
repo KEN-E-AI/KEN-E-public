@@ -2116,4 +2116,37 @@ AH-PRD-15 planned to migrate `agent.google_search` (and `agent.numerical_analyst
 
 ---
 
+## Review 48 — DM-PRD-11: onboarding gate bypasses on super_admin role only (email-domain bypass removed)
+
+**Date:** 2026-06-08
+**Scope:** Reconcile the Early Release onboarding gate (DM-PRD-11) implementation with its PRD after the PR #944 review. The shipped `onboarding_gate.py` bypasses on the `super_admin` role only; PRD §4.3 clause 1 and AC #5 had specified an additional `@ken-e.ai` email-domain bypass on both client and server.
+
+### Why
+
+PR #944 (Cycle 7 Wave 3) review surfaced a code↔spec divergence. The DM-112 implementation dropped the `user.email.endswith("@ken-e.ai")` arm of clause 1, citing `auth/models.py::is_super_admin` — from which the same email-domain check was stripped in the DM-80/DM-81 super-admin hardening. Rationale: Firebase signup is open, so an `@ken-e.ai` email string is not a trustworthy authorization signal, and §4.3 is explicitly "the security boundary." The UI-60 client, however, still implemented the email exemption per the original AC, producing a client/server asymmetry: a non-super-admin `@ken-e.ai` user was exempted client-side (code field hidden) but blocked server-side (403 at org creation) — a silent trap.
+
+Decision (PO, 2026-06-08): **keep the hardened role-only server gate** (the more secure choice) and bring the client + spec into line with it, rather than restoring the unverified-email bypass.
+
+### Decision
+
+- **Server (`onboarding_gate.py`):** unchanged — clause 1 bypasses on `is_super_admin` only. The integration test `test_flag_on_ken_e_email_without_role_is_blocked` is the canonical assertion of intended behavior.
+- **Client (`Authentication.tsx`):** removed the `@ken-e.ai` email exemption. Signup is pre-auth, so the client cannot read super_admin status; the code field is now shown for all net-new signups under the flag. Staff onboard via the shared code, an invitation, or (if super-admin) by entering the code and passing the server gate regardless.
+- **Spec:** PRD §4.3 clause 1, §4.4, AC #5, §6 modify-table, §8 test plan, and §9 risks updated to role-based bypass.
+
+### Consequences
+
+- A `@ken-e.ai` employee who is **not** a super-admin and **not** invited must use the shared Early Release code to create their first org — same as any external user. PO to confirm staff onboard via the super_admin role or invitation.
+- Forwarding the validated code from signup → `/create-organization` remains **UI-62 (Wave 4)**; until it ships the valid-code happy path is not wired end-to-end. Out of scope here.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/components/data-management/projects/DM-PRD-11-early-release-signup-gate.md` | §4.3 clause 1 (role-only), §4.4, AC #5, §6 modify-table, §8 test plan, §9 risks reworded to role-based bypass |
+| `frontend/src/pages/Authentication.tsx` | Removed the `@ken-e.ai` client exemption; `requiresAccessCode = inviteOnly && !invitationToken` |
+| `frontend/src/pages/Authentication.earlyRelease.test.tsx` | `@ken-e.ai` block rewritten to assert the code field stays visible |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 48) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*
