@@ -1,4 +1,11 @@
-import { Component, useEffect, useMemo, useState } from "react";
+import {
+  Component,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { VegaEmbed } from "react-vega";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
@@ -136,6 +143,11 @@ function applyDataLabels(
   };
 }
 
+// Width used before the container has been measured (first pre-paint render,
+// and the jsdom test environment where layout is not computed). Vega-Lite
+// needs a concrete numeric width — see the measurement note below.
+const FALLBACK_CHART_WIDTH = 600;
+
 function VisualizationRenderer({
   spec,
   color,
@@ -146,6 +158,31 @@ function VisualizationRenderer({
   showDataLabels?: boolean;
 }) {
   const themeConfig = useVegaTheme(color ?? "");
+
+  // Measure the container and feed an explicit numeric width to the spec.
+  // ``width: "container"`` does NOT work here: react-vega v8's <VegaEmbed>
+  // embeds into a bare <div> whose responsive-width measurement resolves to 0,
+  // so the chart paints into a 0px-wide <svg> — visible as a blank chart with
+  // no error (AH-PRD-04 follow-up; the bars render, the SVG just has width 0).
+  // useLayoutEffect measures synchronously before paint so the correct width is
+  // applied on the first painted frame; a ResizeObserver keeps it in sync.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = Math.floor(el.getBoundingClientRect().width);
+      if (w > 0) setMeasuredWidth(w);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const sized = useMemo(() => {
     const resolvedColor = color ? cssVar(color, "#6366F1") : undefined;
     const colorConfig = resolvedColor
@@ -171,20 +208,20 @@ function VisualizationRenderer({
     return {
       ...withLabels,
       $schema: "https://vega.github.io/schema/vega-lite/v6.json",
-      width: "container",
+      width: measuredWidth ?? FALLBACK_CHART_WIDTH,
       height: 280,
       autosize: { type: "fit", contains: "padding" },
       // colorConfig last so user color overrides win over theme defaults
       config: { ...themeConfig, ...colorConfig },
     };
-  }, [spec, themeConfig, color, showDataLabels]);
+  }, [spec, themeConfig, color, showDataLabels, measuredWidth]);
 
   const [error, setError] = useState<string | null>(null);
 
   if (error) return <SpecFallback spec={spec} error={error} />;
 
   return (
-    <div className="w-full" style={{ height: 280 }}>
+    <div ref={containerRef} className="w-full" style={{ height: 280 }}>
       <VegaEmbed
         spec={sized as any}
         // ast: true uses vega-interpreter (pure-interpreter path) instead of

@@ -24,7 +24,7 @@ KEN-E's agent system produces **text-only responses**. When a specialist agent q
 
 ### Solution
 
-Introduce **Vega-Lite artifacts** as a first-class output type alongside text. Specialist agents produce chart specifications via a `create_visualization()` function tool, and the API delivers these artifacts to the frontend for rendering. The `ChatResponse` model is extended with an optional `artifacts` field — old clients that don't understand artifacts continue to work unchanged.
+Introduce **Vega-Lite artifacts** as a first-class output type alongside text. Specialist agents **and the root coordinator (`ken_e`)** produce chart specifications via a `create_visualization()` function tool, and the API delivers these artifacts to the frontend for rendering. The `ChatResponse` model is extended with an optional `artifacts` field — old clients that don't understand artifacts continue to work unchanged.
 
 The same `ArtifactRenderer` powers both the chat surface and the Performance → Dashboards canvas (workflow-output artifacts), so visualizations are consistent across the product.
 
@@ -221,6 +221,19 @@ The agent suggests a chart type based on the data shape and user's intent:
 
 The frontend can override the chart type at render time by swapping the `mark` property (see §8.3). The agent's suggestion is stored in `metadata.chart_type_suggestion` for reference.
 
+### 4.4 Tool Availability & Wiring
+
+`create_visualization` is a **`default_global: true` function tool** in the tool catalogue (`app/adk/tools/registry/config/tools.yaml`). It is attached to:
+
+- **Every specialist** — `specialist_runtime` resolves the default-global function tools (`resolve_default_global_tools`) and passes them into `resolve_specialist_roster`.
+- **The root coordinator (`ken_e`)** — so it can render a chart inline when *it* owns the final response (the common case: the coordinator presents a delegated result and decides a chart makes the answer clearer).
+
+**Wiring gotcha (root coordinator).** The root build paths — `hierarchy.py` (deploy-time) and `root_tools_attacher.py` (per-turn hot-reload) — must feed the default-global function tools into the roster resolver as **candidates**. A `tool_ids` allowlist only *filters* candidates; it cannot *introduce* a tool. So:
+
+- If the root build passes `function_tools=[]`, `function.create_visualization` is silently dropped even when it is listed in `ken_e_chatbot.tool_ids`, and the model improvises by emitting the call as plain text instead of invoking the tool.
+- With `ken_e_chatbot.tool_ids` **unset**, all default-global function tools attach automatically (default-global semantics). With an **explicit** allowlist, it must list `function.create_visualization`.
+- The `set_todo_list` / `update_todo_list` ledger tools are *also* `default_global` **and** always appended via `get_supervisor_function_tools()`, so the root tool list is **deduped by name** to avoid advertising a duplicate declaration to Gemini.
+
 ---
 
 ## 5. Data Flow: Agent to Frontend
@@ -416,14 +429,17 @@ Phase 3 — Execution (after user approval):
 
 ## 8. Frontend Rendering
 
-### 8.1 Renderer (planned)
+### 8.1 Renderer
 
-The renderer is **not yet on `main`** — the production frontend currently ships `recharts`. The Figma export at `docs/figma-export/src/app/components/dashboard/ArtifactRenderer.tsx` (`react-vega` 8 / Vega-Lite 6.4.2) is the design contract for production delivery, which is owned by sibling components:
+The chat-side renderer has shipped: `frontend/src/components/chat/ChatArtifactRenderer.tsx` (`react-vega` 8 / Vega-Lite v6), built from the Figma design contract at `docs/figma-export/src/app/components/dashboard/ArtifactRenderer.tsx`. `ChatInterface.tsx` wires `response.artifacts` into message state and renders each via `ChartArtifactItem` (chart + hover settings toolbar). The dashboards surface uses a sibling renderer over the **same Vega-Lite spec contract**:
 
-- **Dashboards** ([DB-PRD-03](../dashboards/projects/DB-PRD-03-dashboard-details-and-canvas.md)) creates `frontend/src/components/dashboards/widgets/VisualizationWidget.tsx` (react-vega-backed).
-- **Chat** ([CH-PRD-02](../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md)) ports the chat-side renderer (`frontend/src/components/chat/ChatInterface.tsx` + chart block) from the same Figma source.
+- **Dashboards** ([DB-PRD-03](../dashboards/projects/DB-PRD-03-dashboard-details-and-canvas.md)) — `frontend/src/components/dashboards/widgets/VisualizationWidget.tsx` (react-vega-backed).
+- **Chat** ([CH-PRD-02](../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md)) — `ChatArtifactRenderer.tsx`, ported from the same Figma source.
 
-Both consume the same Vega-Lite spec contract. The Vega-Lite spec is the contract between backend and frontend; the renderer is an implementation detail. AH-PRD-04 wires `response.artifacts` into chat message state and uses whichever production renderer is available; if neither sibling has shipped when AH-PRD-04 starts, AH-PRD-04 ports the minimal renderer needed to render a Vega-Lite v6 spec inline.
+The Vega-Lite spec is the contract between backend and frontend; the renderer is an implementation detail.
+
+> **⚠️ Width contract — pass an explicit numeric `width`, never `width: "container"`.**
+> Vega-Lite's responsive `width: "container"` does **not** work with `react-vega` 8: `<VegaEmbed>` embeds into a bare `<div>` whose container-width measurement resolves to **0**, so the chart paints into a **0-pixel-wide `<svg>`** — the marks exist in the DOM but are invisible, and Vega throws **no** error (so the `SpecFallback` path never triggers — it looks like a blank chart). `ChatArtifactRenderer` measures its wrapper with `useLayoutEffect` + a `ResizeObserver` and injects an explicit numeric `width` into the spec (with a fallback width for the first pre-paint frame and the jsdom test environment). **Any new react-vega 8 renderer (e.g. the dashboards `VisualizationWidget`) must do the same.** Regression-tested in `ChatArtifactRenderer.spec.tsx` ("passes an explicit numeric width"). Caught during the AH-PRD-04 root-coordinator rollout; see §10.
 
 ### 8.2 Message Layout
 
@@ -496,6 +512,7 @@ See [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Se
 | 5 | **Multiple artifacts per response — layout** — vertical stack in list order is the current behavior; revisit once multi-artifact responses are common. | Low — UX design | Sprint 7 |
 | 6 | **Schema version drift** — pinned to v6 to match `react-vega` 8 bundle. Upgrade in lockstep with the frontend dependency. | Low — maintainability | On `react-vega` upgrade |
 | 7 | **Color override persistence (chat)** — on the dashboards surface, user overrides persist per placement; in chat they're session-local. Should chat persist per-message overrides? | Low — UX | Follow-up |
+| 8 | **No real-browser render coverage** — `ChatArtifactRenderer.spec.tsx` mocks `react-vega` entirely, and the `chat-artifacts` e2e seeds an artifact with empty `data` and asserts only the `chart-artifact-item` wrapper, not that marks paint. The §8.1 zero-width bug therefore passed CI. Add a real-render assertion (mount the real renderer in a browser and assert a non-zero `<svg>` width / visible marks). | Medium — render regressions ship undetected | Follow-up |
 
 ---
 

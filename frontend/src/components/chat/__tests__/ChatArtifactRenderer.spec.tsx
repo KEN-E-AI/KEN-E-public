@@ -67,6 +67,20 @@ describe("ChatArtifactRenderer", () => {
     );
   });
 
+  // Regression (AH-PRD-04 follow-up): the spec must carry an explicit NUMERIC
+  // width, never "container". react-vega v8's <VegaEmbed> embeds into a bare
+  // <div> whose ``width: "container"`` measurement resolves to 0, painting the
+  // chart into a 0px-wide <svg> (blank chart, no error). The renderer measures
+  // the container and passes a number instead.
+  test("passes an explicit numeric width to VegaEmbed (never 'container')", () => {
+    render(<ChatArtifactRenderer artifact={sampleArtifact} />);
+
+    const embed = screen.getByTestId("vega-embed");
+    const passedSpec = JSON.parse(embed.getAttribute("data-spec") ?? "{}");
+    expect(typeof passedSpec.width).toBe("number");
+    expect(passedSpec.width).toBeGreaterThan(0);
+  });
+
   // AC-2: non-visualization artifact → returns null
   test("returns null and does not render wrapper for non-visualization artifact type", () => {
     const consoleSpy = vi
