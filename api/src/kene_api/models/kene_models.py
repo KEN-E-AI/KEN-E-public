@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Constants for repeated string literals
 ACCOUNT_ID_DESCRIPTION = "The unique identifier for the account"
@@ -1186,9 +1186,10 @@ class IndustryTemplate(BaseModel):
     created_at: str = Field(..., description="Template creation timestamp")
     updated_at: str = Field(..., description="Template last update timestamp")
 
-    class Config:
-        populate_by_name = True  # Allow both field name and alias to work
-        by_alias = False  # Use field names (snake_case) in output, not aliases
+    # by_alias is a model_dump() parameter, not a Pydantic config option, so the
+    # former class-Config `by_alias = False` was a no-op (False is already the
+    # default) and is intentionally dropped in the ConfigDict migration.
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class IndustryTemplateListResponse(BaseModel):

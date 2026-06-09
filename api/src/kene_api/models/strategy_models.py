@@ -5,7 +5,7 @@ Pydantic models for strategy documents with audit trail support.
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class StrategySection(BaseModel):
@@ -49,8 +49,9 @@ class StrategyDocument(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Document tags")
     is_active: bool = Field(default=True, description="Whether document is active")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def _serialize_datetime(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class StrategyAuditEntry(BaseModel):
@@ -88,8 +89,9 @@ class StrategyAuditEntry(BaseModel):
         default=None, description="API request ID for tracing"
     )
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("timestamp", when_used="json")
+    def _serialize_datetime(self, value: datetime) -> str:
+        return value.isoformat()
 
 
 class StrategyDocumentRequest(BaseModel):
