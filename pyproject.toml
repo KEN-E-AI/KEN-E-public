@@ -120,10 +120,17 @@ pythonpath = "."
 # run it with `cd api && pytest` (or `uv run --directory api pytest`).
 testpaths = ["tests/unit", "tests/integration"]
 norecursedirs = [".*", "build", "dist", "node_modules", ".venv", ".terraform", "scripts"]
-addopts = "--ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_v3_models.py"
+addopts = "--strict-markers --ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_v3_models.py"
+# All custom marks must be registered here because --strict-markers fails on any
+# unregistered mark. This config also governs the app/adk tests CI runs by
+# explicit path (app-adk-tests step), so their marks are registered too.
+# (`asyncio` is registered by the pytest-asyncio plugin; builtin marks
+# parametrize/skip/skipif/xfail need no registration.)
 markers = [
     "llm: tests that exercise LLM tooling paths; uses deterministic fakes in CI, opt-in for live-Gemini tests via -m llm",
+    "integration: integration tests that touch external services or databases",
     "slow: long-running stress / latency tests excluded from PR CI; run explicitly with -m slow",
+    "requires_firestore_emulator: tests that need a running Firestore emulator",
 ]
 
 [tool.hatch.build.targets.wheel]
