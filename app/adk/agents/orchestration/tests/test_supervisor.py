@@ -1413,3 +1413,218 @@ class TestSupervisorInstructionDecompositionTrigger:
         frag = self._fragment()
         assert "approval gate" in frag
         assert "transfer_to_agent cannot" in frag or "cannot pause for approval" in frag
+
+
+# ---------------------------------------------------------------------------
+# TestLedgerCompletionCallback (AH-165)
+# ---------------------------------------------------------------------------
+
+
+class TestLedgerCompletionCallback:
+    """AH-165: ``make_ledger_completion_after_agent_callback`` marks the matching
+    in-flight ledger item complete after a successful specialist run.
+    """
+
+    def _make_ledger_state(
+        self,
+        *,
+        assignee: str = "stub_specialist",
+        status: str = "pending",
+        result_key: str = "stub_result",
+        result_value: Any = "great result",
+        use_dict_shape: bool = True,
+    ) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "item_id": "task1",
+            "text": "Do something",
+            "assignee": assignee,
+            "status": status,
+            "result_key": result_key,
+            "completed": False,
+            "completed_at": None,
+        }
+        if use_dict_shape:
+            ledger: Any = {
+                "list_id": "supervisor_ledger",
+                "title": "Test ledger",
+                "items": [item],
+            }
+        else:
+            ledger = [item]
+        state: dict[str, Any] = {"todo_lists": {"supervisor_ledger": ledger}}
+        if result_value is not None:
+            state[result_key] = result_value
+        return state
+
+    def _run(
+        self, specialist_name: str, state: dict[str, Any]
+    ) -> None:
+        from types import SimpleNamespace
+
+        from app.adk.agents.orchestration.supervisor import (
+            make_ledger_completion_after_agent_callback,
+        )
+
+        cb = make_ledger_completion_after_agent_callback(specialist_name)
+        cb(SimpleNamespace(state=state))
+
+    def test_noop_when_no_supervisor_ledger(self) -> None:
+        state: dict[str, Any] = {}
+        self._run("stub_specialist", state)
+        assert state == {}
+
+    def test_noop_when_no_todo_lists_key(self) -> None:
+        state: dict[str, Any] = {"other_key": "value"}
+        self._run("stub_specialist", state)
+        assert "todo_lists" not in state
+
+    def test_noop_when_no_matching_assignee(self) -> None:
+        state = self._make_ledger_state(assignee="other_specialist")
+        original = state["todo_lists"]["supervisor_ledger"]["items"][0].copy()
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] == original["status"]
+        assert item["completed"] == original["completed"]
+
+    def test_noop_when_item_already_completed(self) -> None:
+        state = self._make_ledger_state(status="completed")
+        state["todo_lists"]["supervisor_ledger"]["items"][0]["completed"] = True
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["completed_at"] is None, "completed_at must not be overwritten"
+
+    def test_noop_when_item_already_failed(self) -> None:
+        state = self._make_ledger_state(status="failed")
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] == "failed"
+
+    def test_noop_when_result_key_sentinel_prefixed(self) -> None:
+        from app.adk.agents.orchestration.supervisor import (
+            BRANCH_ERROR_SENTINEL_PREFIX,
+        )
+
+        state = self._make_ledger_state(
+            result_value=f"{BRANCH_ERROR_SENTINEL_PREFIX}specialist failed"
+        )
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] == "pending"
+        assert item["completed"] is False
+
+    def test_noop_when_result_key_absent_from_state(self) -> None:
+        """result_key field exists in item but the key is not yet in state."""
+        state = self._make_ledger_state(result_value=None)
+        # Ensure result_key is truly absent from state.
+        state.pop("stub_result", None)
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] == "pending"
+        assert item["completed"] is False
+
+    def test_noop_when_item_has_no_result_key_field(self) -> None:
+        """Item with no result_key field must be skipped (not auto-completed)."""
+        item: dict[str, Any] = {
+            "item_id": "task1",
+            "text": "Do something",
+            "assignee": "stub_specialist",
+            "status": "pending",
+            "completed": False,
+            "completed_at": None,
+            # No "result_key" field at all.
+        }
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": {
+                    "list_id": "supervisor_ledger",
+                    "title": "test",
+                    "items": [item],
+                }
+            }
+        }
+        self._run("stub_specialist", state)
+        assert item["status"] == "pending", (
+            "Item without result_key field must not be auto-completed"
+        )
+
+    def test_noop_when_result_value_is_non_string_truthy(self) -> None:
+        """Non-string truthy values ([], {}, 0) must not count as success."""
+        for falsy_ish in [[], {}, 0, False]:
+            state = self._make_ledger_state(result_value=falsy_ish)
+            self._run("stub_specialist", state)
+            item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+            assert item["status"] == "pending", (
+                f"Non-string result value {falsy_ish!r} must not count as success; "
+                f"item={item!r}"
+            )
+
+    def test_marks_item_completed_on_success(self) -> None:
+        state = self._make_ledger_state()
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] == "completed"
+        assert item["completed"] is True
+        assert item["completed_at"] is not None
+        # completed_at should be a valid ISO 8601 string.
+        from datetime import datetime
+
+        datetime.fromisoformat(item["completed_at"])
+
+    def test_marks_item_completed_on_bare_list_shape(self) -> None:
+        """Regression: legacy bare-list ledger shape is also handled."""
+        state = self._make_ledger_state(use_dict_shape=False)
+        self._run("stub_specialist", state)
+        item = state["todo_lists"]["supervisor_ledger"][0]
+        assert item["status"] == "completed"
+        assert item["completed"] is True
+
+    def test_only_marks_first_in_flight_match(self) -> None:
+        """When two items share the same assignee, only the first in-flight one is marked."""
+        items = [
+            {
+                "item_id": "task1",
+                "assignee": "stub_specialist",
+                "status": "completed",
+                "result_key": "r1",
+                "completed": True,
+                "completed_at": "2026-06-10T00:00:00+00:00",
+            },
+            {
+                "item_id": "task2",
+                "assignee": "stub_specialist",
+                "status": "pending",
+                "result_key": "r2",
+                "completed": False,
+                "completed_at": None,
+            },
+        ]
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": {
+                    "list_id": "supervisor_ledger",
+                    "title": "test",
+                    "items": items,
+                }
+            },
+            "r1": "done",
+            "r2": "also done",
+        }
+        self._run("stub_specialist", state)
+        assert items[0]["status"] == "completed"
+        assert items[0]["completed_at"] == "2026-06-10T00:00:00+00:00", (
+            "First item (already completed) must not be modified"
+        )
+        assert items[1]["status"] == "completed"
+        assert items[1]["completed"] is True
+        assert items[1]["completed_at"] is not None
+
+    def test_does_not_crash_on_malformed_ledger(self) -> None:
+        """Malformed ledger shapes must not raise; callback silently no-ops."""
+        malformed_states: list[dict[str, Any]] = [
+            {"todo_lists": "not_a_dict"},
+            {"todo_lists": {"supervisor_ledger": "not_a_list_or_dict"}},
+            {"todo_lists": {"supervisor_ledger": {"items": "not_a_list"}}},
+            {"todo_lists": {"supervisor_ledger": [None, 42, "string"]}},
+        ]
+        for state in malformed_states:
+            self._run("stub_specialist", state)  # must not raise

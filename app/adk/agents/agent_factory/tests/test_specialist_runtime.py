@@ -5771,6 +5771,163 @@ class TestBranchFailureSentinelCallbackWiring:
 
 
 # ---------------------------------------------------------------------------
+# TestLedgerCompletionCallbackWiring (AH-165)
+# ---------------------------------------------------------------------------
+
+
+class TestLedgerCompletionCallbackWiring:
+    """AH-165: ``_build_specialist`` wires the ledger-completion callback onto
+    task-mode specialists AFTER the branch-failure sentinel callback.
+
+    (a) Task-mode single-pass: both sentinel and completion callbacks present;
+        completion callback comes after sentinel.
+    (b) Chat-mode single-pass: completion callback not attached.
+    """
+
+    def _build_with_mode(self, mode: str | None) -> Any:
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        stack, _, _ = _patch_specialist_runtime_externals()
+        config = _make_merged_config("v1")
+        with stack:
+            return sr._build_specialist(config, "stub_specialist", None, mode=mode)
+
+    def test_task_mode_has_completion_callback(self) -> None:
+        """(a) Task-mode specialist must carry the ledger-completion callback."""
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode requires ADK 2.0+")
+
+        agent = self._build_with_mode("task")
+        callbacks = _as_callback_list_for_test(agent.after_agent_callback)
+
+        # The completion callback marks a non-sentinel result_key's item complete.
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": {
+                    "list_id": "supervisor_ledger",
+                    "title": "test",
+                    "items": [
+                        {
+                            "item_id": "t1",
+                            "assignee": "stub_specialist",
+                            "status": "pending",
+                            "result_key": "r1",
+                            "completed": False,
+                            "completed_at": None,
+                        }
+                    ],
+                }
+            },
+            "r1": "real result",
+        }
+        ctx = _FakeCallbackCtx(state)
+        for cb in callbacks:
+            try:
+                cb(ctx)
+            except Exception:
+                continue
+
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] == "completed", (
+            "Task-mode specialist must carry the ledger-completion callback that "
+            f"marks items complete; callbacks: {callbacks!r}"
+        )
+        assert item["completed"] is True
+        assert item["completed_at"] is not None
+
+    def test_task_mode_completion_callback_after_sentinel(self) -> None:
+        """(a) Completion callback must come after the sentinel in the chain."""
+        from app.adk.agents.orchestration.supervisor import (
+            BRANCH_ERROR_SENTINEL_PREFIX,
+        )
+        from app.adk.tools.registry.agent_tool_registry import task_mode_supported
+
+        if not task_mode_supported():
+            pytest.skip("task-mode requires ADK 2.0+")
+
+        agent = self._build_with_mode("task")
+        callbacks = _as_callback_list_for_test(agent.after_agent_callback)
+
+        # Verify sentinel fires first (writes error prefix) and completion then
+        # no-ops (sees the prefix), keeping the item in failed state.
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": {
+                    "list_id": "supervisor_ledger",
+                    "title": "test",
+                    "items": [
+                        {
+                            "item_id": "t1",
+                            "assignee": "stub_specialist",
+                            "status": "pending",
+                            "result_key": "r1",
+                            "completed": False,
+                            "completed_at": None,
+                        }
+                    ],
+                }
+            }
+            # No "r1" in state — sentinel should fire and write the prefix.
+        }
+        ctx = _FakeCallbackCtx(state)
+        for cb in callbacks:
+            try:
+                cb(ctx)
+            except Exception:
+                continue
+
+        # After the full chain: sentinel wrote sentinel prefix; completion
+        # saw the prefix and no-oped → item stays pending/failed, not completed.
+        result = state.get("r1", "")
+        assert str(result).startswith(BRANCH_ERROR_SENTINEL_PREFIX), (
+            f"Sentinel callback must fire first and write the sentinel prefix; got {result!r}"
+        )
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] != "completed", (
+            "Completion callback must no-op when result_key is sentinel-prefixed "
+            f"(sentinel fired first); item={item!r}"
+        )
+
+    def test_chat_mode_no_completion_callback(self) -> None:
+        """(b) Chat-mode specialist must NOT carry the completion callback."""
+        agent = self._build_with_mode(None)
+        callbacks = _as_callback_list_for_test(agent.after_agent_callback)
+        state: dict[str, Any] = {
+            "todo_lists": {
+                "supervisor_ledger": {
+                    "list_id": "supervisor_ledger",
+                    "title": "test",
+                    "items": [
+                        {
+                            "item_id": "t1",
+                            "assignee": "stub_specialist",
+                            "status": "pending",
+                            "result_key": "r1",
+                            "completed": False,
+                            "completed_at": None,
+                        }
+                    ],
+                }
+            },
+            "r1": "real result",
+        }
+        ctx = _FakeCallbackCtx(state)
+        for cb in callbacks:
+            try:
+                cb(ctx)
+            except Exception:
+                pass
+
+        item = state["todo_lists"]["supervisor_ledger"]["items"][0]
+        assert item["status"] != "completed", (
+            "Chat-mode specialist must NOT mark ledger items complete "
+            f"(no completion callback should be attached); item={item!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Helpers for TestBranchFailureSentinelCallbackWiring
 # ---------------------------------------------------------------------------
 

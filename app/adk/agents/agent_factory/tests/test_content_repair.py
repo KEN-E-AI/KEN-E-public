@@ -197,3 +197,12 @@ class TestSupervisorInstructionForbidsMixedTurns:
             "Never combine `set_todo_list`, `update_todo_list`,"
             in SUPERVISOR_INSTRUCTION_FRAGMENT
         )
+
+    def test_fragment_contains_update_todo_list_rule(self) -> None:
+        from app.adk.agents.orchestration.supervisor import (
+            SUPERVISOR_INSTRUCTION_FRAGMENT,
+        )
+
+        assert (
+            "After a specialist task completes" in SUPERVISOR_INSTRUCTION_FRAGMENT
+        )

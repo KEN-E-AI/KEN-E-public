@@ -895,14 +895,20 @@ def _build_specialist(
         # supervisor_ledger in state and does nothing when absent
         # (single-specialist transfer_to_agent turns are unaffected —
         # AH-145 regression guard).
+        # AH-165: wire the ledger-completion callback AFTER the sentinel so a
+        # failed branch (sentinel-prefixed result_key) is never incorrectly
+        # marked complete.
         if mode == "task":
             from app.adk.agents.orchestration.supervisor import (
                 make_branch_failure_sentinel_after_agent_callback,
+                make_ledger_completion_after_agent_callback,
             )
 
             _sentinel_cb = make_branch_failure_sentinel_after_agent_callback(name)
+            _completion_cb = make_ledger_completion_after_agent_callback(name)
             _after = _as_callback_list(specialist.after_agent_callback)
             _after.append(_sentinel_cb)
+            _after.append(_completion_cb)
             specialist.after_agent_callback = _after
         return specialist
 

@@ -20,6 +20,11 @@ Public surface:
     returns an ``after_agent_callback`` that fires on a task-mode specialist
     and writes the sentinel when ``result_key`` is absent from state.
     Imported by ``specialist_runtime._build_specialist``.  AH-141.
+  - ``make_ledger_completion_after_agent_callback(specialist_name)`` —
+    returns an ``after_agent_callback`` that fires on a task-mode specialist
+    after successful completion and marks the matching ledger item complete.
+    Deterministic backstop for the ``update_todo_list`` instruction.  Must be
+    wired **after** the sentinel callback.  AH-165.
   - ``MAX_LEDGER_ITEMS`` — soft cap constant (12).
   - ``SUPERVISOR_INSTRUCTION_FRAGMENT`` — Markdown string fragment spliced
     into the root agent's instruction suffix by ``hierarchy.py``.
@@ -38,6 +43,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -391,6 +397,156 @@ def make_branch_failure_sentinel_after_agent_callback(
 
 
 # ---------------------------------------------------------------------------
+# make_ledger_completion_after_agent_callback (AH-165)
+# ---------------------------------------------------------------------------
+
+
+def make_ledger_completion_after_agent_callback(
+    specialist_name: str,
+) -> Any:
+    """Return an ``after_agent_callback`` that marks the matching ledger item complete.
+
+    The callback is wired onto task-mode specialist ``LlmAgent`` instances by
+    ``specialist_runtime._build_specialist`` (AH-165), **after** the
+    branch-failure sentinel callback.  It fires after the specialist completes
+    successfully and marks the matching in-flight ``supervisor_ledger`` item as
+    ``completed`` — the deterministic backstop so the Session Status panel and
+    compaction-survival checkpoint reflect real progress even when the
+    coordinator's ``update_todo_list`` instruction is not followed.
+
+    Matching logic: the callback walks
+    ``state["todo_lists"]["supervisor_ledger"]["items"]`` (via
+    ``_extract_ledger_items``) looking for the first item whose
+    ``assignee == specialist_name`` AND whose ``status`` is not in
+    ``{"completed", "failed"}``.  Uses the same predicate as the sentinel
+    callback (one shape, one fix point).
+
+    No-op semantics:
+    - When no ``supervisor_ledger`` is in ``state["todo_lists"]`` (single-
+      specialist ``transfer_to_agent`` turns are unaffected — AH-145 regression
+      guard).
+    - When no matching in-flight item is found.
+    - When the matching item is already ``"completed"`` or ``"failed"``
+      (coordinator-written completion preserved — the two layers are additive,
+      not racing).
+    - When ``result_key`` for the matching item is absent from state OR starts
+      with ``BRANCH_ERROR_SENTINEL_PREFIX`` (sentinel callback owns that case;
+      branch failures stay failed).
+    - Defensive ``try/except`` around all state reads so a malformed ledger
+      never crashes the turn.
+
+    **Must be appended AFTER the sentinel callback** in the
+    ``after_agent_callback`` chain: the sentinel writes the error prefix to
+    ``result_key`` on failure, and this callback then sees the prefix and
+    no-ops — so branch failures are never incorrectly marked complete.
+
+    Args:
+        specialist_name: ``doc_id`` of the task-mode specialist being built.
+            Used to match the ``assignee`` field in the ledger.
+
+    Returns:
+        A synchronous callable with the signature
+        ``(callback_context: Any) -> None`` suitable for ADK's
+        ``after_agent_callback``.
+    """
+    _TERMINAL_STATUSES = {"completed", "failed"}
+
+    def _completion_callback(callback_context: Any) -> None:
+        try:
+            state_obj = getattr(callback_context, "state", None)
+            if state_obj is None:
+                return
+            # Read via to_dict() for safe iteration; write via __setitem__ on
+            # the live proxy so the session state is actually mutated.
+            if hasattr(state_obj, "to_dict"):
+                state_view: dict[str, Any] = state_obj.to_dict()
+            elif isinstance(state_obj, dict):
+                state_view = state_obj
+            else:
+                state_view = dict(state_obj)
+
+            ledger_items = _extract_ledger_items(state_view)
+            if not ledger_items:
+                return
+
+            # Find the first in-flight item assigned to this specialist.
+            item_id_to_complete: str | None = None
+            for item in ledger_items:
+                if item.get("assignee") != specialist_name:
+                    continue
+                if item.get("status") in _TERMINAL_STATUSES:
+                    continue
+                result_key: str | None = item.get("result_key")
+                if not result_key:
+                    # No output slot — match sentinel callback's skip behaviour
+                    # so an item without a result_key is never auto-completed.
+                    continue
+                # Read `existing` from the live proxy to close the TOCTOU window.
+                if isinstance(state_obj, dict):
+                    existing = state_obj.get(result_key)
+                elif hasattr(state_obj, "get"):
+                    existing = state_obj.get(result_key)
+                else:
+                    existing = state_view.get(result_key)
+                # No-op when result_key is absent, holds a non-string value
+                # (falsy types like [] or {} must not count as success), or is
+                # sentinel-prefixed (sentinel callback owns the failure case).
+                if (
+                    not isinstance(existing, str)
+                    or not existing
+                    or existing.startswith(BRANCH_ERROR_SENTINEL_PREFIX)
+                ):
+                    break
+                item_id_to_complete = item.get("item_id")
+                break
+
+            if item_id_to_complete is None:
+                return
+
+            # Re-read todo_lists from the live proxy (not the stale snapshot)
+            # to avoid overwriting concurrent mutations from parallel branches.
+            if isinstance(state_obj, dict):
+                live_todo_lists: dict[str, Any] = state_obj.get("todo_lists") or {}
+            elif hasattr(state_obj, "get"):
+                live_todo_lists = state_obj.get("todo_lists") or {}
+            else:
+                live_todo_lists = state_view.get("todo_lists") or {}
+
+            live_entry = live_todo_lists.get(SUPERVISOR_LEDGER_LIST_ID)
+            if isinstance(live_entry, dict):
+                live_items = live_entry.get("items") or []
+            elif isinstance(live_entry, list):
+                live_items = live_entry
+            else:
+                return
+
+            for live_item in live_items:
+                if (
+                    isinstance(live_item, dict)
+                    and live_item.get("item_id") == item_id_to_complete
+                ):
+                    live_item["status"] = "completed"
+                    live_item["completed"] = True
+                    live_item["completed_at"] = datetime.now(UTC).isoformat()
+                    break
+
+            # Write the mutated live structure back to the session proxy.
+            if isinstance(state_obj, dict):
+                state_obj["todo_lists"] = live_todo_lists
+            elif hasattr(state_obj, "__setitem__"):
+                state_obj["todo_lists"] = live_todo_lists
+        except Exception:
+            _log.warning(
+                "ledger_completion_callback: could not mark ledger item complete "
+                "for specialist %r; Session Status panel may show stale progress.",
+                specialist_name,
+                exc_info=True,
+            )
+
+    return _completion_callback
+
+
+# ---------------------------------------------------------------------------
 # transfer_to_agent ledger guard (AH-160)
 # ---------------------------------------------------------------------------
 
@@ -724,6 +880,47 @@ meta_ads_specialist(query="Retrieve last-4-week spend...")
 # Both respond; then the coordinator emits the next ready task (synthesis):
 # Turn 2 — sequential: synthesis depends on both root tasks:
 google_analytics_specialist(query="Using {ga_result} and {meta_result}...")
+```
+
+### After a specialist task completes
+
+> **HARD RULE — after a specialist task completes, your next response MUST be a
+> solo `update_todo_list` call.** After a specialist function-response arrives
+> that completes a ledger item, emit exactly one response that is ONLY
+> `update_todo_list(list_id="supervisor_ledger", item_id="<id>", completed=True)`.
+> **Skipping this update is a violation.** The solo rule still applies — do NOT
+> combine the `update_todo_list` call with a specialist dispatch or any other
+> tool call in the same response.
+>
+> Only in the response **after** the `update_todo_list` call may you dispatch
+> the next ready task(s).
+>
+> **Why this matters:** the `supervisor_ledger` is the canonical progress record
+> read by the Session Status panel and by the compaction-survival checkpoint
+> mechanism. A ledger that stays at 0/N after a successful run defeats both.
+
+#### Worked example — update after each task
+
+```
+# Root tasks fan out in parallel (Turn 1):
+google_analytics_specialist(query="Retrieve weekly engaged sessions...")
+meta_ads_specialist(query="Retrieve last-4-week spend...")
+
+# Both return results. Mark each complete before dispatching synthesis.
+# Turn 2 — solo update for task 1:
+update_todo_list(list_id="supervisor_ledger", item_id="ga_engagement", completed=True)
+
+# Turn 3 — solo update for task 2:
+update_todo_list(list_id="supervisor_ledger", item_id="meta_spend", completed=True)
+
+# Turn 4 — both updates done; now dispatch synthesis:
+google_analytics_specialist(query="Using {ga_result} and {meta_result}...")
+
+# Synthesis returns. Mark it complete.
+# Turn 5 — solo update:
+update_todo_list(list_id="supervisor_ledger", item_id="synthesis", completed=True)
+
+# Turn 6 — synthesis update done; synthesize and reply to the user.
 ```
 
 ### Approval Checkpoints
