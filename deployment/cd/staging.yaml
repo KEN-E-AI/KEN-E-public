@@ -483,8 +483,12 @@ steps:
         fi
         # Staging gate — intentionally looser than the CH-PRD-02 100 ms product
         # target.  Staging runs on a small (1 vCPU / 1 GiB) Cloud Run service
-        # with min_instances=1, maxScale=20, containerConcurrency=80; 1000
-        # polling VUs still surface scale-up + Firestore-cold-cache tail
+        # whose autoscaling/concurrency are NOT pinned in this CD config —
+        # gcloud run deploy preserves the live service values (currently
+        # ~maxScale=20, default containerConcurrency=80; no --min-instances is
+        # set here, so min is whatever the live service holds, not necessarily
+        # 1).  Pinning these explicitly is tracked in CH-73.  100 polling VUs
+        # still surface scale-up + Firestore-cold-cache tail
         # latency that dominates p95 non-deterministically across runs (build
         # b7f69874 p95=13s, build c2d97134 p95=77s, same code).  Gate on p90
         # instead, which sits below the scale-up tail and is consistent
