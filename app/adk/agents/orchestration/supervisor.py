@@ -596,6 +596,14 @@ for a single self-contained question.
 > `transfer_to_agent` call while a multi-task ledger is active is rejected, and you
 > must re-dispatch by calling the specialist's `doc_id`-named tool.
 
+> **HARD RULE — when dispatching specialists, specialist calls must be the ONLY
+> calls in that response.** Never combine `set_todo_list`, `update_todo_list`,
+> or any other non-specialist tool with a specialist dispatch in the same
+> response. First write or update the ledger in its own response and wait for
+> the tool result; THEN dispatch the ready task(s) in a separate response. A
+> mixed response leaves the ledger write unprocessed and breaks the
+> conversation for every later turn.
+
 ### How to write the ledger
 
 Call `set_todo_list` with `list_id="supervisor_ledger"`. Each item MUST include:

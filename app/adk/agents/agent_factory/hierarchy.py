@@ -200,6 +200,9 @@ def build_hierarchy(
     # is unset the resolver attaches every default-global function tool (e.g.
     # ``create_visualization``) but no agent-as-tool (google_search /
     # numerical_analyst are opt-in / not default_global).
+    from app.adk.agents.agent_factory.content_repair import (
+        repair_orphaned_function_calls_before_model,
+    )
     from app.adk.agents.agent_factory.root_tools_attacher import (
         attach_root_tools_before_agent_callback,
     )
@@ -299,6 +302,14 @@ def build_hierarchy(
             # Ordering constraint: span callback reads the state key written by
             # the attach callback above — must remain AFTER it in this list.
             specialists_span_before_agent_callback,
+        ],
+        additional_before_model_callbacks=[
+            # Pads unanswered historical function calls with synthetic
+            # responses so a mixed parallel turn (regular tool + task
+            # dispatches) dropped by ADK's chat wrapper cannot poison the
+            # session with a 400 FC/FR-count mismatch. Also heals sessions
+            # already poisoned. See content_repair.py module docstring.
+            repair_orphaned_function_calls_before_model,
         ],
         additional_after_model_callbacks=[
             # Ordering constraint: adk_after_model_callback captures thought

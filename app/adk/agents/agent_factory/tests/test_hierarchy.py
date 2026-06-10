@@ -993,3 +993,42 @@ class TestSeedSpecialistDispatchTools:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestContentRepairWiring:
+    def test_root_agent_gets_repair_before_model_callback(self) -> None:
+        """build_hierarchy must register repair_orphaned_function_calls_before_model
+        on the root's before_model callbacks — without it a mixed parallel turn
+        (regular tool + task dispatches) poisons the session with a Gemini 400
+        FC/FR-count mismatch (see content_repair.py)."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.agents.agent_factory.content_repair import (
+            repair_orphaned_function_calls_before_model,
+        )
+
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        fake_db = _FakeFirestoreDb(docs)
+        captured: dict[str, Any] = {}
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured["before_model"] = kwargs.get(
+                "additional_before_model_callbacks"
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_spy,
+            ),
+        ):
+            h.build_hierarchy(db=fake_db)
+
+        assert captured["before_model"] is not None
+        assert repair_orphaned_function_calls_before_model in captured["before_model"]
