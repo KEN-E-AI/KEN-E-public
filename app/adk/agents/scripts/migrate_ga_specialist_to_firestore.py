@@ -216,10 +216,13 @@ GA_SPECIALIST_CONFIG: dict[str, Any] = {
     "name": "Aria",
     "title": "Analytics Specialist",
 
-    # AH-149: bumped from gemini-2.0-flash — Gemini 2.5+ rejects mixing code
-    # execution with function tools on a single LlmAgent (HTTP 400). Code
-    # execution is now delegated to the numerical_analyst AgentTool leaf.
-    "model": "gemini-2.5-flash",
+    # AH-149: bumped from gemini-2.0-flash (discontinued upstream 2026-06-01) —
+    # Gemini 2.5+ rejects mixing code execution with function tools on a single
+    # LlmAgent (HTTP 400), so code execution is delegated to the
+    # numerical_analyst AgentTool leaf. Bumped again to gemini-3.5-flash (GA
+    # 2026-05-19) to match the live staging/prod configs; gemini-2.5-flash
+    # retires no earlier than 2026-10-16.
+    "model": "gemini-3.5-flash",
     "instruction": GA_SPECIALIST_INSTRUCTION,
     "temperature": 0.2,
     "description": (

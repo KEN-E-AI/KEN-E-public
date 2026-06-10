@@ -18,9 +18,9 @@ Pool characteristics:
   boundaries.
 * Separate ``_cap_lock`` (``threading.Lock``) for LRU cap enforcement — runs
   outside the stripe lock to prevent same-stripe self-deadlock.
-* ``aclose()`` on every eviction path — the McpToolset ``aclose()`` closes the
+* ``close()`` on every eviction path — the McpToolset ``close()`` closes the
   underlying SSE transport.  Called on LRU eviction, TTL sweep, and manual
-  evict.  ``aclose()`` raising is caught and logged so pool integrity is never
+  evict.  ``close()`` raising is caught and logged so pool integrity is never
   compromised.
 
 Kind-specific key shapes:
@@ -289,7 +289,7 @@ class McpToolsetPool:
                 del self._pool[pool_key]
                 toolset_to_close, _ = entry
 
-        # Span and aclose() outside the lock — both can yield to the event loop.
+        # Span and close() outside the lock — both can yield to the event loop.
         pool_size_after = len(self._pool)
         # AH-77 Item E: emit (kind, server_id) only — no pool_key or creds_hash.
         evict_kind = pool_key[0] if pool_key else None
@@ -307,10 +307,11 @@ class McpToolsetPool:
 
         if toolset_to_close is not None:
             try:
-                await toolset_to_close.aclose()
+                # ADK 2.0 McpToolset's async closer is close(); it has no aclose().
+                await toolset_to_close.close()
             except Exception:
                 logger.warning(
-                    "mcp_pool_aclose_failed",
+                    "mcp_pool_close_failed",
                     # AH-77 Item E: log kind + server_id only.
                     extra={
                         "kind": evict_kind,
@@ -374,7 +375,7 @@ class McpToolsetPool:
         inserted entry share a stripe slot.
 
         Pool integrity is maintained by deleting entries from ``_pool`` before
-        awaiting ``aclose()``: the cap lock is released before any I/O so
+        awaiting ``close()``: the cap lock is released before any I/O so
         other pool operations are not blocked during close.
 
         Locking note: ``_pool`` is guarded by two distinct locks — the per-key
@@ -382,7 +383,7 @@ class McpToolsetPool:
         process-wide ``_cap_lock`` (for LRU cap enforcement here). They cover
         disjoint critical sections, not the same one: stripe locks serialise
         operations on a particular key; ``_cap_lock`` serialises the
-        "pop_lru → release → aclose" sweep across all keys. Raw dict mutations
+        "pop_lru → release → close" sweep across all keys. Raw dict mutations
         (``del``, iteration of ``items()``) are GIL-atomic, so the two locks do
         not race for ``OrderedDict`` integrity — they coordinate higher-level
         semantics. Consolidating them into one lock would re-introduce the
@@ -410,10 +411,10 @@ class McpToolsetPool:
             ):
                 pass
             try:
-                await toolset.aclose()
+                await toolset.close()
             except Exception:
                 logger.warning(
-                    "mcp_pool_lru_aclose_failed",
+                    "mcp_pool_lru_close_failed",
                     # AH-77 Item E: log kind + server_id only.
                     extra={"kind": lru_kind, "server_id": lru_server_id},
                     exc_info=True,

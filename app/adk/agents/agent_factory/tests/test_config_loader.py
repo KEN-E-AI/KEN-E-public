@@ -1172,3 +1172,39 @@ class TestConfigLoader:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# Model-catalogue advisory check (warning-only — never rejects)
+# ---------------------------------------------------------------------------
+
+
+class TestModelCatalogueWarning:
+    """An unknown model string loads fine but logs a warning.
+
+    Validation must stay non-fatal: a raising validator silently drops the
+    agent from the hierarchy (the AH-85 ``extra="forbid"`` incident), and
+    MER-E writes model strings KEN-E's catalogue may lag behind.
+    """
+
+    def test_unknown_model_warns_but_loads(self) -> None:
+        from app.adk.agents.agent_factory import config_loader
+
+        with patch.object(config_loader, "logger") as mock_logger:
+            cfg = config_loader.MergedAgentConfig(
+                model="totally-bogus-model", instruction="hi"
+            )
+
+        assert cfg.model == "totally-bogus-model"
+        mock_logger.warning.assert_called_once()
+
+    def test_known_model_loads_without_warning(self) -> None:
+        from app.adk.agents.agent_factory import config_loader
+
+        with patch.object(config_loader, "logger") as mock_logger:
+            cfg = config_loader.MergedAgentConfig(
+                model="gemini-3.5-flash", instruction="hi"
+            )
+
+        assert cfg.model == "gemini-3.5-flash"
+        mock_logger.warning.assert_not_called()

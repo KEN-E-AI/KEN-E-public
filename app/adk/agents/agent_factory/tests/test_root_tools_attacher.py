@@ -1332,19 +1332,23 @@ class TestPreservesSpecialistTaskTools:
         ):
             attach_root_tools(root, account_id="acc_no_dup")
 
-        # --- Assert: AT MOST ONE _TaskAgentTool per name ---
+        # --- Assert: EXACTLY ONE _TaskAgentTool per name ---
+        # == 1, not <= 1: zero would be the other failure mode this machinery
+        # produces — a vanished declaration means the specialist is never
+        # dispatchable (the "I'll report back" class of bug).
         task_tools_ga = [
             t
             for t in root.tools
             if isinstance(t, _TaskAgentTool)
             and getattr(t, "name", None) == "google_analytics_specialist"
         ]
-        assert len(task_tools_ga) <= 1, (
-            f"Duplicate _TaskAgentTool('google_analytics_specialist') found in "
-            f"root.tools after both attach callbacks ran: "
+        assert len(task_tools_ga) == 1, (
+            f"Expected exactly one _TaskAgentTool('google_analytics_specialist') in "
+            f"root.tools after both attach callbacks ran; got {len(task_tools_ga)}: "
             f"{[getattr(t, 'name', repr(t)) for t in root.tools]}. "
-            "This causes Gemini 400 'Duplicate function declaration found' on "
-            "gemini-3.1-pro-preview (and any strict model)."
+            "Duplicates cause Gemini 400 'Duplicate function declaration found' on "
+            "gemini-3.1-pro-preview (and any strict model); zero means the "
+            "specialist is silently undispatchable."
         )
         # The specialist must remain dispatchable after dedup.
         assert any(

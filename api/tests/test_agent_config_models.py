@@ -753,3 +753,26 @@ class TestConfigAuditEntry:
 
         with pytest.raises(ValidationError):
             ConfigAuditEntry(**payload)
+
+
+class TestGemini35FlashSupported:
+    """gemini-3.5-flash went live in staging+prod configs on 2026-06-10 (GA
+    model since 2026-05-19); the catalogue must accept it or every API-side
+    validation of those docs fails."""
+
+    def test_in_supported_models(self) -> None:
+        assert "gemini-3.5-flash" in SUPPORTED_MODELS
+
+    def test_agent_config_accepts_it(self) -> None:
+        payload = _valid_agent_config()
+        payload["model"] = "gemini-3.5-flash"
+
+        config = AgentConfig(**payload)
+
+        assert config.model == "gemini-3.5-flash"
+
+    def test_catalogue_is_shared_single_source(self) -> None:
+        # The api-layer frozenset must BE the shared one (no second mirror).
+        from shared.supported_models import SUPPORTED_MODELS as shared_models
+
+        assert SUPPORTED_MODELS is shared_models

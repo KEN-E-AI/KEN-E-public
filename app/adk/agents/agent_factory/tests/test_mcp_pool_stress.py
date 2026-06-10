@@ -2,7 +2,7 @@
 
 Simulates 1 hour of sustained pool traffic (3 600 "turns") in seconds by
 patching ``time.monotonic``.  Verifies that every evicted toolset — whether
-by LRU cap or idle-TTL sweep — has ``aclose()`` called exactly once, and
+by LRU cap or idle-TTL sweep — has ``close()`` called exactly once, and
 that the pool never exceeds ``_MAX_ENTRIES`` entries.
 
 Run selectively via::
@@ -29,9 +29,9 @@ from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
 
 
 def _make_toolset() -> AsyncMock:
-    """Return a fresh AsyncMock that tracks ``aclose()`` calls."""
+    """Return a fresh AsyncMock that tracks ``close()`` calls."""
     t = AsyncMock()
-    t.aclose = AsyncMock()
+    t.close = AsyncMock()
     return t
 
 
@@ -52,8 +52,8 @@ async def test_no_sse_leak_under_1hour_simulated_traffic() -> None:
 
     Assertions:
     - Pool never exceeds _MAX_ENTRIES at any point.
-    - Every evicted toolset (LRU + TTL) had aclose() called exactly once.
-    - No toolset still in the pool at the end has aclose() called.
+    - Every evicted toolset (LRU + TTL) had close() called exactly once.
+    - No toolset still in the pool at the end has close() called.
     """
     pool = McpToolsetPool()
     # Use a small cap so LRU evictions happen frequently throughout the run.
@@ -108,21 +108,21 @@ async def test_no_sse_leak_under_1hour_simulated_traffic() -> None:
     mock_time.monotonic.return_value = t_sim
     await pool.sweep_idle()
 
-    # Verify: every evicted toolset had aclose() called exactly once.
-    # A toolset currently in the pool should NOT have aclose() called.
+    # Verify: every evicted toolset had close() called exactly once.
+    # A toolset currently in the pool should NOT have close() called.
     live_pool_keys = set(pool._pool.keys())
     for pool_key, toolset in all_toolsets.items():
         if pool_key in live_pool_keys:
-            # Still in pool — aclose must NOT have been called
-            assert toolset.aclose.call_count == 0, (
-                f"Live toolset {pool_key} had aclose() called "
-                f"{toolset.aclose.call_count} time(s) — SSE leak!"
+            # Still in pool — close must NOT have been called
+            assert toolset.close.call_count == 0, (
+                f"Live toolset {pool_key} had close() called "
+                f"{toolset.close.call_count} time(s) — SSE leak!"
             )
         else:
-            # Evicted — aclose must have been called exactly once (AC-12)
-            assert toolset.aclose.call_count == 1, (
-                f"Evicted toolset {pool_key} had aclose() called "
-                f"{toolset.aclose.call_count} time(s), expected exactly 1 — SSE leak!"
+            # Evicted — close must have been called exactly once (AC-12)
+            assert toolset.close.call_count == 1, (
+                f"Evicted toolset {pool_key} had close() called "
+                f"{toolset.close.call_count} time(s), expected exactly 1 — SSE leak!"
             )
 
 

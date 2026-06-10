@@ -107,6 +107,22 @@ class MergedAgentConfig(BaseModel):
             )
         return v
 
+    # Advisory only — MUST NOT raise: a raising validator silently drops the
+    # agent from the hierarchy (the AH-85 extra="forbid" incident), and MER-E
+    # writes model strings this catalogue may lag behind. Failure surfaces at
+    # the first Vertex call either way; this just makes the drift visible.
+    @field_validator("model")
+    @classmethod
+    def _warn_unknown_model(cls, v: str) -> str:
+        from shared.supported_models import SUPPORTED_MODELS
+
+        if v not in SUPPORTED_MODELS:
+            logger.warning(
+                "Agent config model is not in the shared catalogue.",
+                extra={"model": v},
+            )
+        return v
+
     # Phase 3 (AH-18 / PRD §4) — Global config flags
     available_to_copy: bool = True
     automatically_available: bool = True

@@ -2269,4 +2269,41 @@ To run `gemini-3.1-pro-preview` in staging/prod, model serving must route to `gl
 
 ---
 
+## Review 52 — Every Gemini call retries transient errors (registry-level `ResilientGemini`); Vertex 429 ≠ quota
+
+**Date:** 2026-06-10
+**PR:** #970
+**Scope:** Model-call resilience for the agent runtime. Adds `agents/agent_factory/resilient_model.py` (`ResilientGemini` + `LLMRegistry` re-registration from `apply_model_location_env()`), moves the model catalogue to `shared/supported_models.py`, and rides two latent-bug fixes (context-cache `min_tokens` 2048→4096; MCP pool `aclose()`→`close()`). Updates [`KEN-E-System-Architecture.md`](../KEN-E-System-Architecture.md) §11.1.1/§11.3.3/§11.4 and the [agentic-harness README](components/agentic-harness/README.md) §7. Full investigation: [`docs/spike-vertex-429-long-running-tasks.md`](../spike-vertex-429-long-running-tasks.md).
+
+### Summary
+
+A staging chat turn (2026-06-10) died after ~14 minutes / 31 LLM calls on a single transient `429 RESOURCE_EXHAUSTED`. Root cause was layered: (1) google-genai treats `retry_options=None` as a **never-retry** policy, and every KEN-E agent is built from a model *string* → ADK's `LLMRegistry.new_llm` constructs a bare `Gemini` with `retry_options=None`; (2) the 429 itself was **not a per-project quota** — current Gemini models carry none (Cloud Quotas API verified; zero `quota/exceeded` events during the incident) — but shared-pool contention, for which Google's documented remedy is client-side backoff. Survival math: at the observed throttle rate a 2-hour unattended task completes ≈0.01% of the time without retry vs >99.99% with 5-attempt backoff. This was the gap behind "cannot run long tasks unattended".
+
+A capacity finding **corrects the framing introduced alongside Review 51**: the `global` endpoint is Vertex's *largest* capacity pool and Google's #1 recommended 429 remedy — routing all models to `global` (Review 51) did not reduce throughput. Review 51's revert trigger remains purely a **data-residency** obligation, not a capacity fix; non-global endpoints actually carry a +10% token-price premium.
+
+### Decision
+
+- **Registry-level default, not per-call-site wiring.** `ResilientGemini` (defaults `retry_options=HttpRetryOptions()` → genai's 5-attempt, 1–60s exponential-jitter backoff on 408/429/5xx) is registered over the `gemini-*` patterns from `apply_model_location_env()`, which already runs at deploy build and per chat turn — covering root, specialists, reviewers, and AgentTool leaves with zero construction-site changes, no pickling of registry state, and validity in both deploy venvs (google-adk 2.0.0 and 1.34.1).
+- **Uniform retry policy across chat and task contexts (explicit).** Google's guidance distinguishes fail-fast (interactive) from full backoff (background); the uniform policy costs at most ~15s added latency before a terminal failure on a chat turn, which is accepted. Per-context tuning is deferred until latency telemetry warrants it — the registry mechanism has no per-context hook today.
+- **Streaming caveat recorded.** Retry wraps request initiation; mid-stream failures on token-streaming calls are not retried. KEN-E's LLM calls are non-streaming (`StreamingMode.NONE`), so present coverage is complete.
+- **Convention: never construct a bare `Gemini(...)`** — it bypasses the registry default (the compaction summarizer in `deploy_ken_e.py` now uses `ResilientGemini`).
+- **Single-source model catalogue.** `SUPPORTED_MODELS` moved to `shared/supported_models.py` (consumed by the API validators and a new **warning-only** check in the ADK config loader — warning-only because a raising validator silently drops the agent, the AH-85 lesson). `gemini-3.5-flash` (GA 2026-05-19, live in staging/prod configs) added; the GA-specialist seed updated to match.
+- **Escape valves deferred, documented.** Priority PayGo (+80%/token, one header), Flex PayGo (−50%, background), and Provisioned Throughput remain unimplemented options in the spike's matrix, to be adopted only if post-retry telemetry shows exhaustion. Checkpoint/resume on retry exhaustion is the remaining structural follow-up for hours-long unattended tasks.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/resilient_model.py` (+ tests) | New: `ResilientGemini`, `ensure_resilient_gemini_registered()` |
+| `app/adk/agents/agent_factory/model_routing.py` | `apply_model_location_env()` carries the registration |
+| `app/adk/deploy_ken_e.py` | Summarizer → `ResilientGemini`; `ContextCacheConfig.min_tokens` 2048→4096 (Gemini server minimum — caching had never engaged) |
+| `app/adk/agents/agent_factory/mcp_pool.py` (+ tests) | Evict paths `aclose()`→`close()` (ADK 2.0 has no `aclose`; evicted toolsets leaked); tests spec'd against real `McpToolset` |
+| `shared/supported_models.py` + `api/.../agent_config_models.py` + `app/adk/.../config_loader.py` | Catalogue single-sourced; `gemini-3.5-flash` added; ADK-side warning-only check |
+| `docs/KEN-E-System-Architecture.md` | §11.1.1 Model-invocation row; §11.3.3 Vertex model-serving capacity; §11.4 429 risk row + stale reviewer-model fix (v4.6) |
+| `docs/design/components/agentic-harness/README.md` | §7 "Model resilience" conventions |
+| `docs/spike-vertex-429-long-running-tasks.md` | The investigation + options matrix (Tier 1 implemented; Tiers 2–3 pending) |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 52) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

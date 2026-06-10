@@ -29,10 +29,10 @@ from google.adk.agents.context_cache_config import ContextCacheConfig
 # ADK App configuration imports
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
-from google.adk.models import Gemini
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from vertexai import agent_engines
 
+from app.adk.agents.agent_factory.resilient_model import ResilientGemini
 from app.adk.deploy_packaging import assemble_deploy_tree
 
 # Set up logging
@@ -425,7 +425,11 @@ def deploy_ken_e() -> str | None:
         # Compaction: Summarizes older conversation events to stay within token limits
         # Caching: Caches static content (instructions, tools) for cost/latency savings
         logger.info("Configuring context compaction and caching...")
-        compaction_summarizer = LlmEventSummarizer(llm=Gemini(model="gemini-2.5-flash"))
+        # ResilientGemini: this stored instance bypasses the LLMRegistry, so it
+        # must carry the backoff-retry default itself.
+        compaction_summarizer = LlmEventSummarizer(
+            llm=ResilientGemini(model="gemini-2.5-flash")
+        )
         compaction_config = EventsCompactionConfig(
             summarizer=compaction_summarizer,
             compaction_interval=5,  # Compact every 5 user invocations
@@ -440,7 +444,10 @@ def deploy_ken_e() -> str | None:
             plugins=[ReflectAndRetryToolPlugin(max_retries=2)],
             events_compaction_config=compaction_config,
             context_cache_config=ContextCacheConfig(
-                min_tokens=2048,  # Cache if static content exceeds this threshold
+                # Gemini's server-side minimum cacheable size is 4096 tokens;
+                # anything lower makes every CreateCachedContent call 400 and
+                # caching never engages.
+                min_tokens=4096,
                 ttl_seconds=600,  # 10 min cache lifetime (good for chat sessions)
                 cache_intervals=5,  # Max reuses before cache refresh
             ),

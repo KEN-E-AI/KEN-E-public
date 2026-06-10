@@ -9,7 +9,7 @@ Coverage map
 * AC-11 — McpToolsetPool reuse: same (kind, key) returns same toolset;
   build_fn called exactly once (tests 2, 3, 4).
 * AC-12 — McpToolsetPool eviction cleanup: LRU + TTL eviction paths call
-  aclose() exactly once; aclose() raising is caught + pool integrity
+  close() exactly once; close() raising is caught + pool integrity
   preserved (tests 5, 6, 7, 8).
 * AC-14 — McpToolsetPool concurrent safety: same-key single-flight via
   asyncio.gather x 10; different-key calls do not serialise (tests 9, 10).
@@ -40,11 +40,24 @@ from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
 # ---------------------------------------------------------------------------
 
 
+class _ToolsetSpec:
+    """Mirror of ADK 2.0 ``McpToolset``'s closing surface: ``close()`` is the
+    async closer; there is no ``aclose()``. A local class rather than the real
+    ``McpToolset`` because other test files stub ``google.adk.tools.mcp_tool``
+    in ``sys.modules``, so spec'ing the real class is import-order-dependent
+    (``InvalidSpecError: Cannot spec a Mock object`` when a stub leaks)."""
+
+    async def close(self) -> None: ...
+
+
 def _make_toolset() -> AsyncMock:
-    """Return a fresh AsyncMock that tracks ``aclose()`` calls."""
-    mock = AsyncMock()
-    mock.aclose = AsyncMock()
-    return mock
+    """Return a fresh spec'd AsyncMock that tracks ``close()`` calls.
+
+    ``spec_set`` so calling a method that does not exist on the toolset
+    surface raises instead of silently passing — a bare AsyncMock hid the
+    ``aclose()``-vs-``close()`` bug for a full ADK release.
+    """
+    return AsyncMock(spec_set=_ToolsetSpec)
 
 
 # ---------------------------------------------------------------------------
@@ -179,13 +192,13 @@ async def test_lru_bump_on_hit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — LRU eviction calls aclose exactly once
+# Test 5 — LRU eviction calls close exactly once
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_lru_eviction_calls_aclose() -> None:
-    """Inserting the 5th key with _MAX_ENTRIES=4 evicts the LRU and calls aclose."""
+async def test_lru_eviction_calls_close() -> None:
+    """Inserting the 5th key with _MAX_ENTRIES=4 evicts the LRU and calls close."""
     pool = McpToolsetPool()
     pool._MAX_ENTRIES = 4  # type: ignore[assignment]
 
@@ -213,11 +226,11 @@ async def test_lru_eviction_calls_aclose() -> None:
         build_fn=_make_build_fn("k4"),
     )
 
-    toolsets["k0"].aclose.assert_called_once()  # AC-12
+    toolsets["k0"].close.assert_called_once()  # AC-12
 
 
 # ---------------------------------------------------------------------------
-# Test 6 — TTL sweep evicts old entries and calls aclose
+# Test 6 — TTL sweep evicts old entries and calls close
 # ---------------------------------------------------------------------------
 
 
@@ -249,7 +262,7 @@ async def test_sweep_idle_ttl() -> None:
 
     assert len(pool._pool) == 0
     for t in toolsets:
-        t.aclose.assert_called_once()  # AC-12 TTL path
+        t.close.assert_called_once()  # AC-12 TTL path
 
 
 # ---------------------------------------------------------------------------
@@ -295,24 +308,24 @@ async def test_sweep_idle_partial() -> None:
     assert ("cloud_run", "srv", "acc", "fresh") in pool._pool
     assert ("cloud_run", "srv", "acc", "stale1") not in pool._pool
     assert ("cloud_run", "srv", "acc", "stale2") not in pool._pool
-    toolsets["stale1"].aclose.assert_called_once()
-    toolsets["stale2"].aclose.assert_called_once()
-    toolsets["fresh"].aclose.assert_not_called()
+    toolsets["stale1"].close.assert_called_once()
+    toolsets["stale2"].close.assert_called_once()
+    toolsets["fresh"].close.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# Test 8 — aclose() raising is tolerated; entry still removed
+# Test 8 — close() raising is tolerated; entry still removed
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_aclose_raise_tolerated() -> None:
-    """If aclose() raises, the entry is still removed and pool integrity is preserved."""
+async def test_close_raise_tolerated() -> None:
+    """If close() raises, the entry is still removed and pool integrity is preserved."""
     pool = McpToolsetPool()
     pool._MAX_ENTRIES = 1  # type: ignore[assignment]
 
     boom = _make_toolset()
-    boom.aclose.side_effect = RuntimeError("toolset exploded")
+    boom.close.side_effect = RuntimeError("toolset exploded")
 
     call_n = 0
 
@@ -341,7 +354,7 @@ async def test_aclose_raise_tolerated() -> None:
 
     assert ("cloud_run", "srv", "acc", "boom") not in pool._pool  # AC-12 entry removed
     assert len(pool._pool) == 1
-    boom.aclose.assert_called_once()
+    boom.close.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +530,7 @@ async def test_stale_before_guard_skips_refreshed_entry() -> None:
     await pool.evict(pool_key, stale_before=cutoff)
 
     assert pool_key in pool._pool, "Refreshed entry should not be evicted"
-    toolset.aclose.assert_not_called()
+    toolset.close.assert_not_called()
 
 
 # ===========================================================================

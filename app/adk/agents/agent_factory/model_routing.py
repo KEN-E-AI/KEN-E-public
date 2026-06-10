@@ -57,6 +57,9 @@ from __future__ import annotations
 
 import os
 
+from app.adk.agents.agent_factory.resilient_model import (
+    ensure_resilient_gemini_registered,
+)
 from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
@@ -158,6 +161,11 @@ def apply_model_location_env(
     Returns:
         The resolved location string that was written to the environment.
     """
+    # Piggyback on this call site: it runs at deploy build time AND per chat
+    # turn, i.e. in every process before any model call — exactly where the
+    # retry-capable Gemini subclass must own the gemini-* registry entries.
+    ensure_resilient_gemini_registered()
+
     env: str = environment or os.environ.get("ENVIRONMENT") or "development"
     location = resolve_model_location(env, data_region=data_region)
 

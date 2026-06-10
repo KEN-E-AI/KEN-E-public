@@ -2,7 +2,7 @@
 
 AH-149 (Phase 2): assertions updated to reflect the numerical_analyst split:
   - ``code_execution_enabled`` is now ``False`` (was ``True``).
-  - ``model`` is now ``gemini-2.5-flash`` (was ``gemini-2.0-flash``).
+  - ``model`` is now ``gemini-3.5-flash`` (was ``gemini-2.0-flash``, then ``gemini-2.5-flash``).
   - ``tool_ids`` is an explicit 6-item list (was ``None``; AH-140 added function.create_visualization).
 
 Coverage map:
@@ -113,9 +113,10 @@ def test_prd_required_fields_present() -> None:
     assert config["name"] == "Aria", "name must be 'Aria'"
     assert config["title"] == "Analytics Specialist", "title must be 'Analytics Specialist'"
 
-    # Core fields — AH-149: model bumped to gemini-2.5-flash.
-    assert config["model"] == "gemini-2.5-flash", (
-        f"model must be 'gemini-2.5-flash' (AH-149); got {config['model']!r}"
+    # Core fields — AH-149 bumped to gemini-2.5-flash; re-bumped to 3.5-flash
+    # (GA 2026-05-19) to match the live staging/prod configs.
+    assert config["model"] == "gemini-3.5-flash", (
+        f"model must be 'gemini-3.5-flash'; got {config['model']!r}"
     )
     assert config["temperature"] == 0.2
     assert isinstance(config["instruction"], str) and config["instruction"].strip()
@@ -184,7 +185,7 @@ def test_config_validates_against_merged_agent_config() -> None:
     # Should not raise.
     validated = MergedAgentConfig.model_validate(stripped)
     # AH-149: model bumped; code execution moved to numerical_analyst leaf.
-    assert validated.model == "gemini-2.5-flash"
+    assert validated.model == "gemini-3.5-flash"
     assert validated.code_execution_enabled is False
     assert validated.ken_e_sub_agent is True
     assert validated.default_acceptance_criteria == script.GA_SPECIALIST_ACCEPTANCE_CRITERIA
@@ -293,7 +294,7 @@ def test_idempotency_agent_doc_is_written(monkeypatch: pytest.MonkeyPatch) -> No
     agent_doc = fake_db.get_doc("agent_configs", "google_analytics_specialist")
     assert agent_doc is not None, "agent_configs/google_analytics_specialist must be written"
     # AH-149: model bumped; code execution moved to numerical_analyst leaf.
-    assert agent_doc["model"] == "gemini-2.5-flash"
+    assert agent_doc["model"] == "gemini-3.5-flash"
     assert agent_doc["ken_e_sub_agent"] is True
     assert agent_doc["code_execution_enabled"] is False
     assert agent_doc["mcp_servers"] == ["google_analytics_mcp"]

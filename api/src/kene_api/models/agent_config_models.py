@@ -24,29 +24,10 @@ from pydantic import BaseModel, Field, field_validator
 from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
 from shared.trace_metadata import SEMVER_PATTERN
 
-# Supported model identifiers. Updated as new Gemini/OpenAI models are released.
-SUPPORTED_MODELS: frozenset[str] = frozenset(
-    {
-        # Gemini 3 models (latest, preview)
-        "gemini-3.1-flash-preview",
-        "gemini-3.1-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-3-pro-preview",
-        # Gemini 2.5 models (current stable). 2.0-flash and 2.0-flash-exp
-        # were retired upstream and are intentionally not listed here.
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        # Gemini 1.5 models (stable fallback)
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-        # OpenAI models (used by formatters)
-        "gpt-4o",
-        "gpt-4o-2024-08-06",
-        "gpt-4o-mini",
-        "o1-preview",
-        "o1-mini",
-    }
-)
+# Supported model identifiers — single source in shared/supported_models.py
+# (also consumed by the ADK config loader's advisory check); re-exported here
+# for the existing import surface.
+from shared.supported_models import SUPPORTED_MODELS
 
 _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
