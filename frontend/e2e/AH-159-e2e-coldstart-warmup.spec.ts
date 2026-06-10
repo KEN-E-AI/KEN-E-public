@@ -41,13 +41,15 @@ function extractStep(yaml: string, stepId: string): string {
 let config: string;
 let globalSetupSrc: string;
 let helpers: string;
-let prChecks: string;
+let e2eYaml: string;
 
 test.beforeAll(() => {
   config = readFile("frontend/playwright.config.ts");
   globalSetupSrc = readFile("frontend/e2e/global-setup.ts");
   helpers = readFile("frontend/e2e/helpers.ts");
-  prChecks = readFile("deployment/ci/pr_checks.yaml");
+  // The e2e step was split into its own standalone build (pr-checks-e2e
+  // trigger); CI=true is set there, not in pr_checks.yaml.
+  e2eYaml = readFile("deployment/ci/pr_checks_e2e.yaml");
 });
 
 test("TC-1: playwright.config registers the global-setup warm-up", () => {
@@ -70,7 +72,7 @@ test("TC-3: signInAs accepts a redirect-timeout override (default 45s)", () => {
 });
 
 test("TC-4: the e2e Cloud Build step exports CI=true", () => {
-  const e2eStep = extractStep(prChecks, "frontend-e2e-tests");
+  const e2eStep = extractStep(e2eYaml, "frontend-e2e-tests");
   expect(e2eStep).not.toBe("");
   expect(e2eStep).toMatch(/^\s+- 'CI=true'/m);
 });

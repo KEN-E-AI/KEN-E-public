@@ -5,16 +5,24 @@
  * running app server, Cloud Build access, or PR-merge precondition is needed
  * — every check is pure file inspection.
  *
- * TC-Static  All 16 ACs pass (consolidated sweep).
- * TC-1       e2e path-filter: git fetch --depth=500, fail-open on merge-base
- *            error (AC-4).
+ * NOTE: the Playwright E2E step was later split out of pr_checks.yaml into its
+ * own standalone build (deployment/ci/pr_checks_e2e.yaml), fired by a dedicated
+ * `pr-checks-e2e` trigger gated on included_files (deployment/terraform/
+ * build_triggers.tf). Assertions about the E2E step therefore read
+ * pr_checks_e2e.yaml; the old inline `--depth=500` path-filter and the isolated
+ * /workspace/frontend-e2e copy are gone (superseded by trigger-level gating and
+ * a standalone build with no shared node_modules to protect).
+ *
+ * TC-Static  All ACs pass (consolidated sweep).
+ * TC-1       E2E gated by its own trigger's included_files; the broken
+ *            `--depth=500` path-filter was removed (AC-4).
  * TC-2       @playwright/test pinned to 1.49.0 (image version); no
  *            playwright install command in e2e step (AC-1, AC-2, AC-3).
  * TC-3       api-install step; api-integration and api-unit run in parallel
  *            on distinct emulator ports (AC-5, AC-6, AC-7).
  * TC-4       frontend-install shared step; a11y waits only on
- *            frontend-install (not e2e tail); no duplicate npm ci; e2e is
- *            isolated + fully parallel (AC-8, AC-9, AC-10, AC-15).
+ *            frontend-install (not e2e tail); no duplicate npm ci; e2e is a
+ *            standalone build (AC-8, AC-9, AC-10, AC-15).
  * TC-5       SKIP — post-merge loop validation is a human protocol (5–10+
  *            CI builds required; cannot be automated in a single run).
  * TC-6       Lever 3 mypy-cache SAVE lives in the push-to-main staging.yaml
@@ -58,23 +66,54 @@ function extractStep(yaml: string, stepId: string): string {
   return nextStep === -1 ? block : block.slice(0, nextStep)
 }
 
+/**
+ * Extract a `resource "google_cloudbuild_trigger" "<name>" { … }` block from
+ * Terraform — from the resource header to the next top-level `resource "` line.
+ * Returns an empty string if the resource is not found.
+ */
+function extractTfResource(tf: string, name: string): string {
+  const marker = `resource "google_cloudbuild_trigger" "${name}"`
+  const start = tf.indexOf(marker)
+  if (start === -1) return ""
+  const next = tf.indexOf('\nresource "', start + marker.length)
+  return next === -1 ? tf.slice(start) : tf.slice(start, next)
+}
+
+/**
+ * Drop `#` comment lines from a step body so an explanatory comment that
+ * mentions a command (e.g. "npm ci") does not trip a command-presence check.
+ */
+function commands(step: string): string {
+  return step
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .join("\n")
+}
+
 // ─── Shared state loaded once ─────────────────────────────────────────────────
 
 let yaml: string
+let e2eYaml: string
 let stagingYaml: string
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pkg: { devDependencies?: Record<string, string> }
 let lock: string
 let pyproject: string
 let terraform: string
+let triggers: string
 
 test.beforeAll(() => {
   yaml = readFile("deployment/ci/pr_checks.yaml")
+  // The Playwright E2E step lives in its own standalone build, fired by the
+  // dedicated `pr-checks-e2e` trigger (build_triggers.tf). It was split out of
+  // pr_checks.yaml, so E2E-step assertions read pr_checks_e2e.yaml.
+  e2eYaml = readFile("deployment/ci/pr_checks_e2e.yaml")
   stagingYaml = readFile("deployment/cd/staging.yaml")
   pkg = JSON.parse(readFile("frontend/package.json"))
   lock = readFile("frontend/package-lock.json")
   pyproject = readFile("pyproject.toml")
   terraform = readFile("deployment/terraform/storage.tf")
+  triggers = readFile("deployment/terraform/build_triggers.tf")
 })
 
 // Extract the mypy dir/flag args from a step body (the lines between
@@ -91,7 +130,7 @@ function mypyArgs(step: string): string[] {
 
 // ─── TC-Static ────────────────────────────────────────────────────────────────
 
-test("TC-Static: All 14 ACs pass static file inspection", () => {
+test("TC-Static: All ACs pass static file inspection", () => {
   // AC-1: package.json exact pin — no caret or tilde.
   expect(pkg.devDependencies?.["@playwright/test"]).toBe("1.49.0")
 
@@ -101,16 +140,23 @@ test("TC-Static: All 14 ACs pass static file inspection", () => {
     /"node_modules\/@playwright\/test"[\s\S]{0,200}"version":\s*"1\.49\.0"/
   )
 
-  // AC-3: No playwright install COMMAND in the frontend-e2e-tests step.
-  // The step may contain "playwright install" in YAML comments explaining the
-  // image-pin contract — that is expected documentation.  Only shell command
-  // invocations (`npx playwright install …`) are prohibited.
-  const e2eStep = extractStep(yaml, "frontend-e2e-tests")
+  // AC-3: No playwright install COMMAND in the frontend-e2e-tests step (now in
+  // its own pr_checks_e2e.yaml). The step may contain "playwright install" in
+  // comments explaining the image-pin contract — that is expected
+  // documentation. Only shell command invocations are prohibited.
+  const e2eStep = extractStep(e2eYaml, "frontend-e2e-tests")
+  expect(e2eStep).not.toBe("")
   expect(e2eStep).not.toMatch(/^\s+npx playwright install/m)
   expect(e2eStep).not.toMatch(/^\s+playwright install\b/m)
 
-  // AC-4: git fetch --depth=500 in e2e path-filter.
-  expect(e2eStep).toContain("--depth=500")
+  // AC-4: E2E is gated at the trigger level by included_files. The old inline
+  // `git fetch --depth=500` + merge-base path-filter was removed — it could
+  // never work in the depth-1 detached Playwright checkout (no remote/creds),
+  // so it always fell open to the full suite (see pr_checks_e2e.yaml header).
+  const e2eTrigger = extractTfResource(triggers, "pr_checks_e2e")
+  expect(e2eTrigger).toContain('filename = "deployment/ci/pr_checks_e2e.yaml"')
+  expect(e2eTrigger).toContain("included_files")
+  expect(e2eTrigger).toContain('"frontend/**"')
 
   // AC-5: api-install step exists, waitFor: ['-'], runs uv sync --frozen.
   const apiInstallStep = extractStep(yaml, "api-install")
@@ -142,15 +188,16 @@ test("TC-Static: All 14 ACs pass static file inspection", () => {
   expect(feInstallStep).toContain("waitFor: ['-']")
   expect(feInstallStep).toContain("npm ci --prefer-offline")
 
-  // AC-9: frontend-typecheck waitFor: ['frontend-install']; no npm ci.
+  // AC-9: frontend-typecheck waitFor: ['frontend-install']; no npm ci command
+  // (comments that mention npm ci are ignored).
   const typecheckStep = extractStep(yaml, "frontend-typecheck")
   expect(typecheckStep).toContain("waitFor: ['frontend-install']")
-  expect(typecheckStep).not.toContain("npm ci")
+  expect(commands(typecheckStep)).not.toContain("npm ci")
 
-  // AC-10: frontend-a11y-tests waitFor: ['frontend-install']; no npm ci.
+  // AC-10: frontend-a11y-tests waitFor: ['frontend-install']; no npm ci command.
   const a11yStep = extractStep(yaml, "frontend-a11y-tests")
   expect(a11yStep).toContain("waitFor: ['frontend-install']")
-  expect(a11yStep).not.toContain("npm ci")
+  expect(commands(a11yStep)).not.toContain("npm ci")
 
   // AC-11: GCS bucket resource for ci-mypy-cache exists in Terraform with 30-day lifecycle.
   expect(terraform).toContain("ci_mypy_cache")
@@ -171,14 +218,14 @@ test("TC-Static: All 14 ACs pass static file inspection", () => {
   const appAdkStep = extractStep(yaml, "app-adk-tests")
   expect(appAdkStep).toContain('-m "not slow"')
 
-  // AC-15: frontend-e2e-tests installs into an ISOLATED node_modules (a copy of
-  // the frontend tree under /workspace/frontend-e2e) and is fully parallel
-  // (waitFor: ['-']). It must NOT `cd frontend` + `npm ci` into the shared dir —
-  // that was the structural source of the TS6053 race.
+  // AC-15: the E2E step is a standalone build (waitFor: ['-']) that installs
+  // directly into frontend/ via `npm ci --prefer-offline`. The isolated
+  // /workspace/frontend-e2e copy the old in-pr_checks step needed (to dodge the
+  // TS6053 race on the shared node_modules) is gone — a standalone build has no
+  // shared dir to protect — and the step no longer lives in pr_checks.yaml.
   expect(e2eStep).toContain("waitFor: ['-']")
-  expect(e2eStep).toContain("cd /workspace/frontend-e2e")
-  expect(e2eStep).toContain("tar --exclude=node_modules")
-  expect(e2eStep).not.toMatch(/cd frontend\s*\n\s*npm ci/)
+  expect(e2eStep).toContain("npm ci --prefer-offline")
+  expect(extractStep(yaml, "frontend-e2e-tests")).toBe("")
 
   // AC-16: the dead PR-only mypy-cache-save is gone from pr_checks.yaml; the
   // real SAVE lives in the push-to-main staging.yaml (verified in TC-6).
@@ -186,20 +233,23 @@ test("TC-Static: All 14 ACs pass static file inspection", () => {
   expect(extractStep(stagingYaml, "mypy-cache-save")).not.toBe("")
 })
 
-// ─── TC-1: e2e path-filter depth + fail-open ──────────────────────────────────
+// ─── TC-1: e2e gated by its own trigger's included_files ──────────────────────
 
-test("TC-1: e2e path-filter uses --depth=500 and fails open on merge-base error", () => {
-  const e2eStep = extractStep(yaml, "frontend-e2e-tests")
+test("TC-1: E2E runs in its own trigger gated by included_files (replaces the broken path-filter)", () => {
+  // The old inline `git fetch --depth=500` + merge-base path-filter was removed:
+  // it could never work in the Playwright image (depth-1 detached checkout, no
+  // git remote or credentials), so `git fetch origin main` always failed and the
+  // guard always fell open to the full suite. Gating now happens at the trigger
+  // level via included_files, so backend/docs-only PRs never start this build.
+  const e2eTrigger = extractTfResource(triggers, "pr_checks_e2e")
+  expect(e2eTrigger).toContain('filename = "deployment/ci/pr_checks_e2e.yaml"')
+  expect(e2eTrigger).toContain("included_files")
+  expect(e2eTrigger).toContain('"frontend/**"')
 
-  // --depth=500 covers ~3 months of commit history without the cost of
-  // --unshallow; --depth=50 (the previous value) could miss the merge-base
-  // on long-lived feature branches.
-  expect(e2eStep).toContain("--depth=500")
-
-  // Fail-open: if BASE is empty (merge-base failed), run the full E2E suite
-  // rather than silently skipping the gate.
-  expect(e2eStep).toMatch(/\[ -z .+BASE.+ \]/)
-  expect(e2eStep).toContain("running full E2E suite")
+  // The dead path-filter must not have crept back into the standalone step.
+  const e2eStep = extractStep(e2eYaml, "frontend-e2e-tests")
+  expect(e2eStep).not.toBe("")
+  expect(e2eStep).not.toContain("--depth=")
 })
 
 // ─── TC-2: Playwright package pin ────────────────────────────────────────────
@@ -210,10 +260,11 @@ test("TC-2: @playwright/test pinned to 1.49.0 exactly; no playwright install com
   expect(playwrightPin).toBe("1.49.0")
   expect(playwrightPin).not.toMatch(/^\^|^~|^>/)
 
-  // AC-3: no playwright install COMMAND in the e2e Cloud Build step.
-  // Comments that explain the image-pin contract are expected; only shell
-  // command invocations are prohibited.
-  const e2eStep = extractStep(yaml, "frontend-e2e-tests")
+  // AC-3: no playwright install COMMAND in the e2e Cloud Build step
+  // (pr_checks_e2e.yaml). Comments that explain the image-pin contract are
+  // expected; only shell command invocations are prohibited.
+  const e2eStep = extractStep(e2eYaml, "frontend-e2e-tests")
+  expect(e2eStep).not.toBe("")
   expect(e2eStep).not.toMatch(/^\s+npx playwright install/m)
   expect(e2eStep).not.toMatch(/^\s+playwright install\b/m)
 
@@ -262,10 +313,10 @@ test("TC-4: frontend-install shared step; a11y-tests no longer tails e2e; no red
   expect(feInstallStep).toContain("waitFor: ['-']")
   expect(feInstallStep).toContain("npm ci --prefer-offline")
 
-  // frontend-typecheck waits only on frontend-install and has no npm ci.
+  // frontend-typecheck waits only on frontend-install and runs no npm ci command.
   const typecheckStep = extractStep(yaml, "frontend-typecheck")
   expect(typecheckStep).toContain("waitFor: ['frontend-install']")
-  expect(typecheckStep).not.toContain("npm ci")
+  expect(commands(typecheckStep)).not.toContain("npm ci")
 
   // frontend-a11y-tests waits only on frontend-install (not e2e or typecheck).
   const a11yStep = extractStep(yaml, "frontend-a11y-tests")
@@ -274,15 +325,15 @@ test("TC-4: frontend-install shared step; a11y-tests no longer tails e2e; no red
   // a11y critical path.
   expect(a11yStep).not.toContain("waitFor: ['frontend-e2e-tests")
   expect(a11yStep).not.toContain("waitFor: ['frontend-typecheck")
-  expect(a11yStep).not.toContain("npm ci")
+  expect(commands(a11yStep)).not.toContain("npm ci")
 
-  // e2e installs into an isolated copy and is fully parallel — so there is no
-  // writer of the shared frontend/node_modules other than frontend-install, and
-  // both readers (typecheck, a11y) wait on it. Race is structural, not timed.
-  const e2eStep = extractStep(yaml, "frontend-e2e-tests")
+  // E2E now runs in its own standalone build (pr_checks_e2e.yaml), so the shared
+  // frontend/node_modules has exactly one writer (frontend-install) and both
+  // readers (typecheck, a11y) wait on it. The e2e step is no longer part of this
+  // build at all.
+  expect(extractStep(yaml, "frontend-e2e-tests")).toBe("")
+  const e2eStep = extractStep(e2eYaml, "frontend-e2e-tests")
   expect(e2eStep).toContain("waitFor: ['-']")
-  expect(e2eStep).toContain("cd /workspace/frontend-e2e")
-  expect(e2eStep).not.toMatch(/cd frontend\s*\n\s*npm ci/)
 })
 
 // ─── TC-6: Lever 3 mypy-cache save relocated to push-to-main ──────────────────
