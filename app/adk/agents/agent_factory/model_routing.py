@@ -11,15 +11,22 @@ the deploy artifact is loaded with ``load_dotenv(..., override=False)``, so the
 platform value wins and any ``GOOGLE_CLOUD_LOCATION=global`` in the baked file
 is silently ignored.
 
-Some newly-released / preview Gemini models (e.g. ``gemini-3.5-flash``,
-``gemini-3.1-pro-preview``) are only served on the ``global`` and *multi-region*
-(``us`` / ``eu``) endpoints and 404 on single-region endpoints like
-``us-central1``.  For the development environment we therefore need
-``GOOGLE_CLOUD_LOCATION=global``; for staging/prod we use the US/EU multi-region
-locations (``us`` / ``eu``) — google-genai maps these to
-``https://aiplatform.{us,eu}.rep.googleapis.com`` — so the preview models
-resolve there too.  Either way the value must be visible to every
-``genai.Client`` constructed after agent startup.
+Some newly-released / preview Gemini models 404 on single-region endpoints like
+``us-central1``.  ``gemini-3.5-flash`` is served on the ``global`` *and* the
+``us`` / ``eu`` *multi-region* endpoints, but ``gemini-3.1-pro-preview`` is
+served on the ``global`` endpoint **only** — not on the multi-region endpoints
+(Review 51, 2026-06-10).  So until that model reaches the multi-region
+endpoints, **every** environment (dev, staging, and prod) must serve from
+``GOOGLE_CLOUD_LOCATION=global`` for it to resolve.  Either way the value must
+be visible to every ``genai.Client`` constructed after agent startup.
+
+INTERIM residency note: routing staging/prod to ``global`` relaxes design
+decision D4 ("never ``global``") for the *model-serving plane only*, and is
+safe **only while EU sign-ups are gated** (D6).  When ``gemini-3.1-pro-preview``
+is served on the ``us`` / ``eu`` multi-region endpoints, ``resolve_model_location``
+must be reverted to in-geography routing (``US → "us"``, ``EU → "eu"``) — this is
+the AH-PRD-11 per-account work.  See the REVERT TRIGGER in
+``resolve_model_location`` and ``data-residency-architecture.md`` §3.5.
 
 Solution
 --------
@@ -60,17 +67,18 @@ logger = get_structured_logger(__name__)
 # ``us`` / ``eu`` are the US / EU *multi-region* locations.  google-genai maps
 # them to the multi-region endpoints ``https://aiplatform.us.rep.googleapis.com``
 # / ``https://aiplatform.eu.rep.googleapis.com`` (``_MULTI_REGIONAL_LOCATIONS``
-# in ``google.genai._api_client``).  We route staging/prod model serving here
-# rather than to a single region (``us-central1`` / ``europe-west1``) so that
-# newly-released / preview Gemini models — which are served only on the global
-# and multi-region endpoints, not on single regions — resolve instead of 404ing.
-# This affects model serving only; ``VERTEX_AI_LOCATION`` (Agent Engine,
-# embeddings, sandboxes) stays a single region — see the module docstring.
+# in ``google.genai._api_client``).  They guarantee in-geography (US-wide /
+# EU-wide) processing — the in-geography target this resolver will be reverted
+# to (see the REVERT TRIGGER below).  Currently UNUSED: ``gemini-3.1-pro-preview``
+# is not served on them yet, so all environments serve from ``global`` for now.
+# Retained for the future in-geography restoration.
 _LOCATION_GLOBAL = "global"
 _LOCATION_US = "us"
 _LOCATION_EU = "eu"
 
-# Environments that should route to the global endpoint.
+# Environments that route to the global endpoint for residency reasons even in
+# steady state (dev holds no regulated data).  Staging/prod *also* route to
+# ``global`` for now — see the REVERT TRIGGER in ``resolve_model_location``.
 _GLOBAL_ENVS: frozenset[str] = frozenset({"development", "dev"})
 
 
@@ -80,16 +88,33 @@ def resolve_model_location(
 ) -> str:
     """Return the Vertex AI model-serving location for the given environment.
 
-    Decision table
-    ~~~~~~~~~~~~~~
-    * ``development`` / ``dev``  → ``"global"``   (global-only models, dev only)
-    * anything else, EU region   → ``"eu"``   (EU multi-region endpoint)
-    * anything else, US / None   → ``"us"``   (US multi-region endpoint, default)
+    Decision table (interim — Review 51, 2026-06-10)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    * **every** environment → ``"global"``
 
-    Staging/prod route to the US/EU *multi-region* locations (``us`` / ``eu``)
-    rather than single regions (``us-central1`` / ``europe-west1``) so that
-    preview / newly-released Gemini models resolve — those are served only on
-    the global and multi-region endpoints, not on single regions.
+    ``gemini-3.1-pro-preview`` is served on the ``global`` endpoint **only** —
+    not on the ``us`` / ``eu`` multi-region endpoints (those serve the older
+    preview models, but not this one).  So model serving routes to ``global``
+    everywhere until the model reaches the multi-region endpoints.  This relaxes
+    D4's "never ``global``" for the model-serving plane and is safe only while
+    EU sign-ups stay gated (D6).  ``VERTEX_AI_LOCATION`` (engine / sandbox /
+    session) is unaffected and stays single-region.
+
+    ⚠️ REVERT TRIGGER (in-geography restoration)
+    --------------------------------------------
+    When ``gemini-3.1-pro-preview`` is served on the ``us`` / ``eu`` multi-region
+    endpoints, restore in-geography routing — **required before any EU account
+    goes live**:
+
+        if env_normalized in _GLOBAL_ENVS:        # dev stays global
+            return _LOCATION_GLOBAL
+        region_normalized = (data_region or "").strip().lower()
+        if region_normalized in {"eu", "europe"}:
+            return _LOCATION_EU                    # EU → eu multi-region
+        return _LOCATION_US                        # US / default → us multi-region
+
+    This is the AH-PRD-11 per-account work; see
+    ``data-residency-architecture.md`` §3.5.
 
     Args:
         environment: Value of the ``ENVIRONMENT`` env var
@@ -97,22 +122,17 @@ def resolve_model_location(
             Case-insensitive; leading/trailing whitespace is stripped.
         data_region: Optional data-residency region string sourced from the
             account record (e.g. ``"EU"``, ``"Europe"``, ``"US"``,
-            ``"United States"``).  Currently only consulted for
-            non-development environments.  ``None`` / unknown → US default.
+            ``"United States"``).  Currently **unused** — all environments
+            resolve to ``global`` (see the REVERT TRIGGER).  Retained as the
+            documented extension hook for per-account EU routing.
 
     Returns:
-        One of ``"global"``, ``"eu"``, or ``"us"``.
+        ``"global"`` (every environment, interim).
     """
-    env_normalized = (environment or "").strip().lower()
-
-    if env_normalized in _GLOBAL_ENVS:
-        return _LOCATION_GLOBAL
-
-    region_normalized = (data_region or "").strip().lower()
-    if region_normalized in {"eu", "europe"}:
-        return _LOCATION_EU
-
-    return _LOCATION_US
+    # Interim: all environments serve from ``global`` (see the REVERT TRIGGER in
+    # the docstring).  ``environment`` / ``data_region`` are intentionally not
+    # branched on until in-geography routing is restored.
+    return _LOCATION_GLOBAL
 
 
 def apply_model_location_env(

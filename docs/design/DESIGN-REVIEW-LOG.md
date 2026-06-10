@@ -2228,4 +2228,45 @@ D4 as written ("**Regional** Vertex model endpoints — never `global` … us-ce
 
 ---
 
+## Review 51 — Model-serving temporarily routes to `global` for `gemini-3.1-pro-preview` (D4 interim exception)
+
+**Date:** 2026-06-10
+**PR:** (this change)
+**Scope:** Reverses the staging/prod half of Review 50 for the model-serving plane only: `resolve_model_location()` now returns `global` for **every** environment (was `us`/`eu` multi-region for staging/prod). Updates [D4](data-residency-architecture.md), §3.2/§3.5, the model-promotion gate, R-03, and Q6, plus [AH-PRD-11](components/agentic-harness/projects/AH-PRD-11-agent-reasoning-inference-residency.md) and [AH-PRD-16](components/agentic-harness/projects/AH-PRD-16-model-tier-registry.md). Does **not** touch `VERTEX_AI_LOCATION` (Agent Engine / sandbox / session plane), which stays single-region.
+
+### Summary
+
+Review 50 routed staging/prod model serving to the `us`/`eu` **multi-region** endpoints on the premise that preview / newly-released Gemini models are served on the global **and** multi-region endpoints — so multi-region would both serve them and keep inference in-geography. That premise is **false for `gemini-3.1-pro-preview`**: it is served on the **`global` endpoint only**, not on `us`/`eu` multi-region. So it still `404 NOT_FOUND`s after Review 50 (`.../locations/us/...` cannot serve it). The contradicting claim was stated outright in AH-PRD-16 ("a model available on `global` is generally also served at `us`/`eu`") and is now corrected.
+
+To run `gemini-3.1-pro-preview` in staging/prod, model serving must route to `global` — the only endpoint that serves it.
+
+### Decision
+
+- **Model-serving location** (`GOOGLE_CLOUD_LOCATION`, applied in-process by `apply_model_location_env`): `global` for **all** environments (dev unchanged; staging/prod US **and** EU now `global`, interim). `resolve_model_location` returns `global` and no longer branches on `environment` / `data_region`.
+- **D4's "never `global`" is a recorded, time-boxed exception, not retired.** It remains the steady-state intent; `global` is tolerated for the model-serving plane only because the alternative is no `gemini-3.1-pro-preview` at all.
+- **Safe only under the D6 EU-sign-up gate.** `global` gives no processing-location guarantee, so EU inference can leave the EU. This is acceptable **only** while EU sign-ups are gated and no EU account is live. The interim must be reverted before any EU account goes live.
+- **REVERT TRIGGER (the future change).** When `gemini-3.1-pro-preview` is served on the `us` / `eu` multi-region endpoints, restore in-geography routing — `EU → "eu"`, `US → "us"` — in `model_routing.py` and `.env.{staging,production}`. This is the model-serving half of AH-PRD-11. The trigger is documented in three load-bearing places: the resolver's docstring/comment, the `.env` comments, and data-residency-architecture.md §3.5's ⚠️ revert reminder.
+- **Model-promotion gate — recorded exception.** `gemini-3.1-pro-preview` passes neither the single-region nor the multi-region in-geography test, so the gate as written forbids it. It was promoted on `global` as a conscious, recorded exception scoped to the D6-gated window — not a silent bypass.
+- **`VERTEX_AI_LOCATION` untouched.** Engine / sandbox / session stay single-region; the model-serving location continues to be computed independently (the mechanism caveat / AC-3 invariant is unaffected).
+
+### Consequences
+
+- Resolver `data_region` branch is dormant again (was activated in spirit by Review 50's `us`/`eu` split). AH-PRD-11's per-account work now both **activates** the `data_region` argument **and restores** the `us`/`eu` return values — the two are coupled into one future change.
+- Residency posture for model inference is temporarily **relaxed** (US + EU on `global`) — unlike Review 50, this *is* a step back toward `global`, mitigated entirely by the D6 gate + the revert reminder.
+- Takes effect only after the **chat engine** (`deploy_ken_e.py`) and **strategy supervisor** (`deploy_with_sys_version.py`) are redeployed; the GCP project must also have preview access to `gemini-3.1-pro-preview`.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/model_routing.py` + tests | `resolve_model_location` → `global` for all envs; docstring/comments carry the REVERT TRIGGER; `test_model_routing.py` + `test_sub_agent_attacher.py` assert `global` |
+| `app/adk/.env.{staging,production}` | `GOOGLE_CLOUD_LOCATION=global` (interim) + revert-trigger comment |
+| `docs/design/data-residency-architecture.md` | D4 interim exception; §3.2/§3.5 tables → `global`; resolver description; model-promotion-gate recorded exception; R-03 row; Q6; ⚠️ FUTURE-ACTION revert reminder |
+| `docs/design/components/agentic-harness/projects/AH-PRD-11-...md` | resolver table / AC-1 / §8 test notes: interim `global`, `us`/`eu` as the revert target this PRD restores |
+| `docs/design/components/agentic-harness/projects/AH-PRD-16-model-tier-registry.md` | corrected the "`global` ⇒ also on `us`/`eu`" claim (`gemini-3.1-pro-preview` is the counterexample); `model_routing` reframed as `global` (dev + interim staging/prod) |
+| `docs/design/components/PROJECT-PLANNER.md` | AH-PRD-11 row: interim `global` + pending in-geography revert |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 51) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

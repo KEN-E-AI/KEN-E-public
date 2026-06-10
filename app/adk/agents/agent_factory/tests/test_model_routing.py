@@ -36,26 +36,28 @@ from app.adk.agents.agent_factory.model_routing import (
         ("Development", None, "global"),
         ("DEVELOPMENT", None, "global"),
         ("  development  ", None, "global"),
-        # --- staging → multi-region ---
-        ("staging", None, "us"),
-        ("staging", "US", "us"),
-        ("staging", "United States", "us"),
-        ("staging", "EU", "eu"),
-        ("staging", "Europe", "eu"),
-        # --- production → multi-region ---
-        ("production", None, "us"),
-        ("production", "US", "us"),
-        ("production", "EU", "eu"),
-        # --- unknown env falls back to US multi-region (safe default, no exception) ---
-        ("test", None, "us"),
-        ("", None, "us"),
-        # --- data_region case/whitespace normalisation ---
-        ("staging", "eu", "eu"),
-        ("production", "  EU  ", "eu"),
-        ("production", "  europe  ", "eu"),
-        # --- unknown data_region → US default ---
-        ("staging", "APAC", "us"),
-        ("staging", "unknown-region", "us"),
+        # --- staging → global (interim; Review 51) ---
+        # gemini-3.1-pro-preview is served on the global endpoint only — not on
+        # the us/eu multi-region endpoints — so every env serves from global for
+        # now.  Reverts to us/eu per region once the model is multi-region-served.
+        ("staging", None, "global"),
+        ("staging", "US", "global"),
+        ("staging", "United States", "global"),
+        ("staging", "EU", "global"),
+        ("staging", "Europe", "global"),
+        # --- production → global (interim; Review 51) ---
+        ("production", None, "global"),
+        ("production", "US", "global"),
+        ("production", "EU", "global"),
+        # --- unknown env → global (interim; safe default, no exception) ---
+        ("test", None, "global"),
+        ("", None, "global"),
+        # --- data_region currently ignored (all → global, interim) ---
+        ("staging", "eu", "global"),
+        ("production", "  EU  ", "global"),
+        ("production", "  europe  ", "global"),
+        ("staging", "APAC", "global"),
+        ("staging", "unknown-region", "global"),
     ],
 )
 def test_resolve_model_location(
@@ -81,14 +83,18 @@ def test_apply_model_location_env_dev_sets_global(
     assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
 
 
-def test_apply_model_location_env_staging_sets_multi_region(
+def test_apply_model_location_env_staging_sets_global(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Staging environment must set GOOGLE_CLOUD_LOCATION=us (US multi-region)."""
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "global")  # simulate stale value
+    """Staging must set GOOGLE_CLOUD_LOCATION=global (interim; Review 51).
+
+    gemini-3.1-pro-preview is served on the global endpoint only, so staging
+    serves from global until the model reaches the multi-region endpoints.
+    """
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")  # simulate stale
     result = apply_model_location_env("staging")
-    assert result == "us"
-    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us"
+    assert result == "global"
+    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
 
 
 def test_apply_model_location_env_reads_env_var(
@@ -124,14 +130,17 @@ def test_apply_model_location_env_overrides_platform_injected_value(
     assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
 
 
-def test_apply_model_location_env_prod_sets_us_multi_region(
+def test_apply_model_location_env_prod_sets_global(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Production must override the platform-injected single region with us."""
+    """Production must override the platform-injected single region with global.
+
+    Interim (Review 51): gemini-3.1-pro-preview is global-only.
+    """
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")  # platform-injected
     result = apply_model_location_env("production")
-    assert result == "us"
-    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us"
+    assert result == "global"
+    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
 
 
 def test_apply_model_location_env_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -144,8 +153,13 @@ def test_apply_model_location_env_idempotent(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_apply_model_location_env_eu_staging(monkeypatch: pytest.MonkeyPatch) -> None:
-    """EU data-region in staging should route to the EU multi-region (eu)."""
+    """EU data-region in staging routes to global in the interim (Review 51).
+
+    data_region is currently ignored — all environments serve from global
+    until gemini-3.1-pro-preview reaches the eu multi-region endpoint, at which
+    point this must revert to ``eu`` (the REVERT TRIGGER in model_routing.py).
+    """
     monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
     result = apply_model_location_env("staging", data_region="EU")
-    assert result == "eu"
-    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "eu"
+    assert result == "global"
+    assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
