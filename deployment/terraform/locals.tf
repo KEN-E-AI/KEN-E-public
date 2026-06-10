@@ -75,15 +75,20 @@ locals {
     production  = var.prod_project_id
   }
 
-  # Chat orphan-scan Cloud Scheduler jobs target all three environments (CH-PRD-05 / CH-51).
-  # Same three-environment pattern as skills_bucket_project_ids — dev is included so
-  # the scheduled maintenance jobs run there too, but dev stays out of deploy_project_ids
-  # (which would also pull in CICD SA grants and log sinks). Keys match the kene-api
-  # Cloud Run service names in locals.kene_api_service_names; see cloud_scheduler.tf.
+  # Chat orphan-scan Cloud Scheduler jobs target only the environments where the
+  # kene-api service is actually deployed to Cloud Run — staging + production
+  # (matches deploy_project_ids). Dev is intentionally excluded: kene-api is NOT
+  # deployed to ken-e-dev (no dev CD target; ken-e-dev runs only mer-e-* on Cloud
+  # Run), so data.google_cloud_run_service.kene_api["development"] cannot resolve
+  # and the scheduler would have no endpoint to POST to. Dev is local-testing only;
+  # its orphan-scan can be run on demand via `python -m kene_api.chat.artifact_orphan_scan`
+  # and `python -m kene_api.chat.adk_session_orphan_scan`. The scan only reconciles
+  # chat artifacts / ADK sessions; it never creates or deletes account or organization
+  # records, so dev test accounts/orgs are out of its purview anyway.
+  # Keys match the kene-api Cloud Run service names in locals.kene_api_service_names.
   chat_orphan_scan_projects = {
-    development = "ken-e-dev"
-    staging     = var.staging_project_id
-    production  = var.prod_project_id
+    staging    = var.staging_project_id
+    production = var.prod_project_id
   }
 
   # Cloud Run service names for the kene-api service per environment.

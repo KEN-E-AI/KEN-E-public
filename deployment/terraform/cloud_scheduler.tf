@@ -14,11 +14,11 @@
 
 # Cloud Scheduler jobs for the chat orphan-scan maintenance endpoints (CH-PRD-05 / CH-51).
 #
-# Two jobs per environment (6 total):
+# Two jobs per environment (4 total — staging + production):
 #   chat-orphan-scan-gcs         — POST /api/v1/internal/chat/orphan-scan/gcs     @ 04:00 UTC daily
 #   chat-orphan-scan-adk-session — POST /api/v1/internal/chat/orphan-scan/adk-session @ 04:30 UTC daily
 #
-# Environment map: local.chat_orphan_scan_projects (development / staging / production).
+# Environment map: local.chat_orphan_scan_projects (staging / production).
 # Cloud Scheduler API enablement: cloudscheduler.googleapis.com is in local.shared_services
 # (staging + prod via terraform); dev is enabled out-of-band consistent with other dev resources.
 #

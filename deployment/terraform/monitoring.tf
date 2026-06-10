@@ -234,12 +234,21 @@ resource "google_logging_metric" "mcp_pool_size" {
   name   = "agentic_harness/mcp_pool_size"
   filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"mcp_pool_checkout\""
 
+  # DISTRIBUTION (not INT64): a value_extractor is only valid on DISTRIBUTION
+  # metrics. We track the distribution of pool sizes seen at checkout; explicit
+  # buckets sized for a connection pool (tune bounds per AH-PRD-09 if needed).
   metric_descriptor {
     metric_kind = "DELTA"
-    value_type  = "INT64"
+    value_type  = "DISTRIBUTION"
   }
 
   value_extractor = "EXTRACT(jsonPayload.pool_size_after)"
+
+  bucket_options {
+    explicit_buckets {
+      bounds = [1, 2, 5, 10, 20, 50]
+    }
+  }
 }
 
 resource "google_logging_metric" "dispatch_error_count" {
