@@ -568,15 +568,14 @@ class TestDefaultGlobalFunctionTools:
             # Mimic the real filter: keep the supplied function-tool candidates.
             return RosterResolution(tools=list(kwargs["function_tools"]))
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_default_global_tools", return_value=[viz]
-        ), patch.object(
-            rta, "resolve_specialist_roster", side_effect=_fake_resolver
-        ), patch(
-            "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
-            return_value=[],
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(rta, "resolve_default_global_tools", return_value=[viz]),
+            patch.object(rta, "resolve_specialist_roster", side_effect=_fake_resolver),
+            patch(
+                "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
+                return_value=[],
+            ),
         ):
             attach_root_tools(agent, account_id="acc_viz")
 
@@ -592,17 +591,20 @@ class TestDefaultGlobalFunctionTools:
         sup_todo = _make_tool("set_todo_list")
         sup_save = _make_tool("save_pending_supervisor_tasks")
 
-        with patch.object(
-            rta, "get_cached_merged_config", return_value=cfg
-        ), patch.object(
-            rta, "resolve_default_global_tools", return_value=[roster_todo]
-        ), patch.object(
-            rta,
-            "resolve_specialist_roster",
-            return_value=RosterResolution(tools=[roster_todo]),
-        ), patch(
-            "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
-            return_value=[sup_todo, sup_save],
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_default_global_tools", return_value=[roster_todo]
+            ),
+            patch.object(
+                rta,
+                "resolve_specialist_roster",
+                return_value=RosterResolution(tools=[roster_todo]),
+            ),
+            patch(
+                "app.adk.agents.orchestration.supervisor.get_supervisor_function_tools",
+                return_value=[sup_todo, sup_save],
+            ),
         ):
             attach_root_tools(agent, account_id="acc_dedupe")
 
@@ -1214,3 +1216,138 @@ class TestPreservesSpecialistTaskTools:
         )
         # And the specialist remains dispatchable via find_agent (still in sub_agents).
         assert root.find_agent("google_analytics_specialist") is specialist
+
+    @pytest.mark.usefixtures("_mock_supervisor_tools_empty")
+    def test_no_duplicate_task_tool_on_hash_hit_early_return(self) -> None:
+        """Regression: gemini-3.1-pro-preview rejects duplicate function declarations.
+
+        Exact production interleaving that produces the duplicate:
+
+        1. ``_seed_specialist_dispatch_tools`` (deploy-time) appends a placeholder
+           ``_TaskAgentTool("google_analytics_specialist")`` to the original root.
+        2. ADK 2.0 clones the root per-turn; the clone shallow-copies ``tools``,
+           so the placeholder is present from turn 1 onward.
+        3. ``attach_specialists_before_agent_callback`` (callback 1) runs and
+           ``_reconcile`` appends a *real* ``_TaskAgentTool("google_analytics_specialist")``.
+        4. ``attach_root_tools_before_agent_callback`` (callback 2) runs on turn ≥ 2:
+           ``_applied_hash == content_hash`` AND ``root.tools`` is non-empty
+           (callback 1 just appended the real tool) → **early return, no rebuild**.
+        5. Result: two ``_TaskAgentTool("google_analytics_specialist")`` entries in
+           ``root.tools`` → Gemini 400 "Duplicate function declaration found".
+
+        The fix is in ``_reconcile`` (sub_agent_attacher.py): before appending a
+        new ``_TaskAgentTool``, check whether a same-named tool already exists in
+        ``root.tools``; if so, skip the append.  This test drives the real
+        ``attach_account_specialists`` → ``_reconcile`` path so the guard is
+        exercised, then drives ``attach_root_tools`` with a hash-hit (early-return)
+        to confirm it does NOT introduce a rebuild-path duplicate either.
+        """
+        import hashlib
+
+        from google.adk.agents import LlmAgent
+        from google.adk.tools.agent_tool import _TaskAgentTool
+
+        from app.adk.agents.agent_factory import sub_agent_attacher as saa
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.agent_factory.roster import RosterResolution
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            _make_task_agent_tool,
+            attach_account_specialists,
+        )
+
+        # --- Build root with a deploy-time placeholder already in tools ---
+        root = _make_root_agent()
+        specialist_agent = LlmAgent(
+            name="google_analytics_specialist",
+            model="gemini-2.0-flash",
+            mode="task",
+        )
+        placeholder = _make_task_agent_tool(specialist_agent)
+        assert placeholder is not None
+        root.tools.append(placeholder)
+        # root.tools = [placeholder_ga].  Simulates what _seed_specialist_dispatch_tools
+        # puts into the deploy-time root, which the per-turn clone shallow-copies.
+
+        # --- Pre-commit the root-tools applied hash to simulate "turn ≥ 2" ---
+        # attach_root_tools will see an unchanged hash + non-empty tools and
+        # early-return without rebuilding.
+        cfg = _make_config(tool_ids=None)
+        cfg.model_dump_json.return_value = '{"tool_ids": null}'
+        pre_hash = hashlib.sha256(cfg.model_dump_json().encode()).hexdigest()
+        rta._applied_hash = pre_hash
+
+        # --- Reset the sub_agent_attacher applied-state so _reconcile actually runs ---
+        saa._reset_applied_state_for_tests()
+
+        # --- Run callback 1: attach_account_specialists (calls _reconcile) ---
+        # _reconcile detects google_analytics_specialist as task-dispatchable and
+        # attempts to append a _TaskAgentTool.  The guard must prevent the append
+        # because placeholder_ga is already in root.tools under the same name.
+        def _list(_account_id: str) -> list[str]:
+            return ["google_analytics_specialist"]
+
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
+            return MergedAgentConfig(
+                instruction="GA specialist instruction.",
+                model="gemini-2.0-flash",
+                description="Google Analytics specialist",
+                visible_in_frontend=True,
+                ken_e_sub_agent=True,
+            )
+
+        def _resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Any = None,
+            **_kw: object,
+        ) -> LlmAgent:
+            return specialist_agent
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                side_effect=_list,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=_resolve_config,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_resolve_agent,
+            ),
+        ):
+            attach_account_specialists(root, "acc_no_dup")
+
+        # --- Run callback 2: attach_root_tools with hash-hit → early return ---
+        with (
+            patch.object(rta, "get_cached_merged_config", return_value=cfg),
+            patch.object(
+                rta, "resolve_specialist_roster", return_value=RosterResolution()
+            ),
+        ):
+            attach_root_tools(root, account_id="acc_no_dup")
+
+        # --- Assert: AT MOST ONE _TaskAgentTool per name ---
+        task_tools_ga = [
+            t
+            for t in root.tools
+            if isinstance(t, _TaskAgentTool)
+            and getattr(t, "name", None) == "google_analytics_specialist"
+        ]
+        assert len(task_tools_ga) <= 1, (
+            f"Duplicate _TaskAgentTool('google_analytics_specialist') found in "
+            f"root.tools after both attach callbacks ran: "
+            f"{[getattr(t, 'name', repr(t)) for t in root.tools]}. "
+            "This causes Gemini 400 'Duplicate function declaration found' on "
+            "gemini-3.1-pro-preview (and any strict model)."
+        )
+        # The specialist must remain dispatchable after dedup.
+        assert any(
+            getattr(s, "name", None) == "google_analytics_specialist"
+            for s in root.sub_agents
+        ), "Specialist must remain in sub_agents for find_agent dispatch."

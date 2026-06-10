@@ -459,6 +459,14 @@ def _attach_locked(
             if task_tool is not None:
                 desired_tools.append(task_tool)
 
+    # Deduplicate by name (first-occurrence wins) so the model never receives two
+    # function declarations with the same name.  This covers the hash-miss rebuild
+    # path: attach_specialists_before_agent_callback may already have appended a
+    # _TaskAgentTool for a specialist, and the sub_agents loop above would create a
+    # second one wrapping the same sub-agent.  dedupe_tools_by_name is idempotent
+    # and O(N) — safe to apply on every rebuild.
+    desired_tools = dedupe_tools_by_name(desired_tools)
+
     current_tools: list[Any] = list(root.tools)
     if not _tools_equal(current_tools, desired_tools):
         root.tools[:] = desired_tools

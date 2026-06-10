@@ -452,7 +452,20 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
             task_tool = _make_task_agent_tool(new_sub)
             tools = getattr(root_agent, "tools", None)
             if task_tool is not None and isinstance(tools, list):
-                tools.append(task_tool)
+                # Guard: skip if a same-named tool already exists.  A deploy-time
+                # placeholder (seeded by _seed_specialist_dispatch_tools in
+                # hierarchy.py) shares the specialist's name; appending on top of
+                # it would produce two identically-named _TaskAgentTool entries in
+                # root.tools — causing a Gemini 400 "Duplicate function declaration
+                # found" error on strict models (e.g. gemini-3.1-pro-preview).
+                # attach_root_tools_before_agent_callback (which runs after this
+                # callback) rebuilds root.tools on config-hash misses, replacing
+                # the placeholder; on hash-hit early-returns it does NOT rebuild,
+                # leaving the placeholder in place — making this guard the only
+                # defence against duplicates on those turns.
+                existing_names = {getattr(t, "name", None) for t in tools}
+                if task_tool.name not in existing_names:
+                    tools.append(task_tool)
             elif task_tool is not None:
                 logger.warning(
                     "[RECONCILE] Cannot inject _TaskAgentTool for %r: "
