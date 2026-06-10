@@ -179,6 +179,7 @@ steps:
           --allow-unauthenticated \
           --memory=1Gi \
           --port=8000 \
+          --timeout=3600 \
           --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
           --vpc-connector=ken-e-prod-connector \
           --clear-secrets \

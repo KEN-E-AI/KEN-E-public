@@ -378,7 +378,7 @@ steps:
             --allow-unauthenticated \
             --memory=1Gi \
             --port=8000 \
-            --timeout=300 \
+            --timeout=3600 \
             --cpu-boost \
             --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
             --vpc-connector=ken-e-staging-connector \
