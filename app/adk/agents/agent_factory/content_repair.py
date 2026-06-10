@@ -10,7 +10,7 @@ turn with N function calls followed by fewer than N function responses, and
 every subsequent request that replays that history is rejected by Gemini —
 ``400 INVALID_ARGUMENT: Please ensure that the number of function response
 parts is equal to the number of function call parts`` — permanently poisoning
-the session (staging incident 2026-06-10, session 4303283520916160512).
+the session (staging incident 2026-06-10; session ID in internal incident log).
 
 ``repair_orphaned_function_calls_before_model`` walks ``llm_request.contents``
 and pads every HISTORICAL model turn's unanswered function calls with a
@@ -23,9 +23,10 @@ stored session events keep the imbalance forever, so affected sessions work
 only while this callback stays registered. Disabling it re-breaks every
 session that ever hit the drop. It also does not execute the dropped tool
 call (the model is told the call was interrupted and may re-issue it). The
-proper fix is upstream in ADK's wrapper — tracked in AH-164; this callback
-should outlive it as a safety net for anything else that orphans a call
-(e.g. a turn crashing between call and response).
+proper fix is upstream in ADK's wrapper — see ``docs/adk-upstream-tracker.md``
+for the filed bug, fix-watch criteria, and monitoring narrative. This callback
+should outlive the upstream fix as a safety net for anything else that orphans
+a call (e.g. a turn crashing between call and response).
 
 Matching prefers function-call ids; when ids are absent (they can be stripped
 between event storage and request assembly) it falls back to name-multiset
