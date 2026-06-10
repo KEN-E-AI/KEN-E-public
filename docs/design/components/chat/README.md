@@ -114,7 +114,8 @@ A developer reading only this section should understand: this component owns the
 │                                                     category_id=null         │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-                    Daily reconciliation (CH-PRD-05)
+              Daily reconciliation (CH-PRD-05) — staging + prod
+              (dev is local-only; run on demand via the CLI)
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  04:00 UTC — GCS blob orphan scan: alert on blobs without metadata rows     │

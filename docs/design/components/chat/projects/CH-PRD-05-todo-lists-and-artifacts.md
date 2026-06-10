@@ -378,6 +378,13 @@ When v2 ships the user-upload UI, a second badge variant ("Uploaded") will be in
 
 ### 5.7 Orphan reconciliation jobs (two)
 
+> **Deployment scope: staging + production only.** `chat_orphan_scan_projects`
+> (`deployment/terraform/locals.tf`) excludes `development` because `kene-api` is
+> not deployed to Cloud Run in `ken-e-dev` (dev is local-testing only; the
+> Cloud Scheduler job would have no endpoint to POST to). In dev, run the scans
+> on demand: `python -m kene_api.chat.artifact_orphan_scan` /
+> `python -m kene_api.chat.adk_session_orphan_scan`.
+
 **GCS blob orphans — `kene_api.chat.artifact_orphan_scan`** (Cloud Scheduler → Cloud Run, daily 04:00 UTC):
 
 ```python
