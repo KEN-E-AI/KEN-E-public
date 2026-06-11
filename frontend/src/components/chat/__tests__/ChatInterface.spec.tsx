@@ -240,7 +240,7 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
     );
 
     // Step 2: render ChatInterface with onSessionResolved prop.
-    render(
+    const { rerender } = render(
       <ChatStreamProvider>
         <ChatInterface
           sessionId="pending_abc123"
@@ -254,12 +254,31 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
     await userEvent.type(textarea, "test message");
     await userEvent.keyboard("{Enter}");
 
-    // Step 4: wait for the stream to complete.
+    // Step 4: wait for the session event to resolve and onSessionResolved to fire.
+    await waitFor(() => {
+      expect(onSessionResolved).toHaveBeenCalledWith("real_vertex_id_999");
+    });
+
+    // After re-keying, the TurnState lives under "real_vertex_id_999". Simulate
+    // the navigation that onSessionResolved triggers in the real app so
+    // ChatInterface re-subscribes to the real id and renders the streamed text.
+    await act(async () => {
+      rerender(
+        <ChatStreamProvider>
+          <ChatInterface
+            sessionId="real_vertex_id_999"
+            onSessionResolved={onSessionResolved}
+          />
+        </ChatStreamProvider>,
+      );
+    });
+
+    // Step 5: wait for the stream to complete and text to appear.
     await waitFor(() => {
       expect(screen.getByText("Hello from agent.")).toBeInTheDocument();
     });
 
-    // Step 5: assert onSessionResolved was called exactly once with the real id.
+    // Step 6: assert onSessionResolved was called exactly once with the real id.
     expect(onSessionResolved).toHaveBeenCalledTimes(1);
     expect(onSessionResolved).toHaveBeenCalledWith("real_vertex_id_999");
   });

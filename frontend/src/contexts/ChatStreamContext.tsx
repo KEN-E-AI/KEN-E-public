@@ -208,6 +208,27 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
     }
   }, [accountId]);
 
+  // ─── reKey: atomically move a TurnState from one key to another ──────────
+  // Called when the session id becomes known mid-stream (onCreateSession or
+  // a "session" SSE event), so the state is findable by the real id that the
+  // subscriber's useChatStream(sessionId) will use after the URL updates.
+  function reKey(oldKey: string, newKey: string) {
+    if (oldKey === newKey) return;
+    const state = mapRef.current.get(oldKey);
+    if (state) {
+      mapRef.current.set(newKey, state);
+      mapRef.current.delete(oldKey);
+    }
+    // Transfer refcount so the existing subscriber count is preserved.
+    const count = refCountRef.current.get(oldKey) ?? 0;
+    if (count > 0) {
+      refCountRef.current.set(newKey, count);
+    }
+    refCountRef.current.delete(oldKey);
+    // NOTE: historyLoadedRef and globalLocallyCreatedRef are NOT transferred
+    // here — they are keyed by the real session id and managed by the callers.
+  }
+
   // ─── subscribe / unsubscribe ─────────────────────────────────────────────
 
   function subscribe(key: string) {
@@ -433,6 +454,15 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
       accountId: optsAccountId,
     } = opts;
 
+    // activeKey tracks the current Map key for this stream. It starts as `key`
+    // (the caller's key: "" for no-session, or the real session id for existing
+    // sessions). When onCreateSession resolves a real id or a "session" SSE
+    // event reconciles pending_→real, we call reKey() and update activeKey so
+    // all subsequent setState calls land under the real id. Without this, the
+    // TurnState would stay under "" while ChatInterface re-renders with
+    // sessionId=realId and getState(realId) returns default state.
+    let activeKey = key;
+
     // Per-turn local accumulators (closure variables, not React state)
     let collectedThoughts: string[] = [];
     type BubbleState = { id: string; accumulated: string };
@@ -441,8 +471,9 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
     let currentAssistantId = assistantId;
     let hasStreamedText = false;
 
+    // Closes over `activeKey` (let) — always checks the current key.
     const isSuperseded = () => {
-      const s = mapRef.current.get(key);
+      const s = mapRef.current.get(activeKey);
       return !s || s.turnSeq !== turnSeq;
     };
 
@@ -456,12 +487,18 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
         const newId = await onCreateSession();
         if (!newId) throw new Error("SESSION_CREATE_FAILED");
 
+        // Re-key BEFORE calling onSessionStarted so that when navigation fires
+        // and ChatInterface re-renders with sessionId=newId, getState(newId)
+        // finds the in-flight TurnState rather than returning default state.
+        reKey(activeKey, newId);
+        activeKey = newId;
+
         // Guard: mark the new id as locally created before navigating so the
         // history-load effect (which fires when sessionId prop changes) doesn't
         // clobber the in-flight stream.
         globalLocallyCreatedRef.current.add(newId);
         historyLoadedRef.current.add(newId);
-        setState(key, (s) => {
+        setState(activeKey, (s) => {
           const newSet = new Set(s.locallyCreated);
           newSet.add(newId);
           return { ...s, locallyCreated: newSet };
@@ -479,29 +516,36 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
         if (isSuperseded()) break;
 
         if (event.type === "session") {
+          const realId = event.sessionId;
+          // Re-key BEFORE calling onSessionResolved so navigation finds the
+          // TurnState under the real id.
+          if (activeKey !== realId) {
+            reKey(activeKey, realId);
+            activeKey = realId;
+          }
           // Guard real id before parent navigates
-          globalLocallyCreatedRef.current.add(event.sessionId);
-          historyLoadedRef.current.add(event.sessionId);
-          setState(key, (s) => {
+          globalLocallyCreatedRef.current.add(realId);
+          historyLoadedRef.current.add(realId);
+          setState(activeKey, (s) => {
             const newSet = new Set(s.locallyCreated);
-            newSet.add(event.sessionId);
+            newSet.add(realId);
             return { ...s, locallyCreated: newSet };
           });
-          activeSessionId = event.sessionId;
-          onSessionResolved?.(event.sessionId);
+          activeSessionId = realId;
+          onSessionResolved?.(realId);
         } else if (event.type === "status") {
-          setState(key, (s) => ({ ...s, liveStatus: event.label }));
+          setState(activeKey, (s) => ({ ...s, liveStatus: event.label }));
         } else if (event.type === "reasoning") {
           collectedThoughts = [...collectedThoughts, event.text];
           const snapshot = collectedThoughts;
-          setState(key, (s) => ({
+          setState(activeKey, (s) => ({
             ...s,
             liveThoughts: snapshot,
           }));
         } else if (event.type === "artifacts") {
           if (event.artifacts.length > 0) {
             const targetId = currentAssistantId ?? assistantId;
-            setState(key, (s) => ({
+            setState(activeKey, (s) => ({
               ...s,
               messages: s.messages.map((m) =>
                 m.id === targetId
@@ -518,7 +562,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
           }
         } else if (event.type === "error") {
           if (hasStreamedText) {
-            setState(key, (s) => ({
+            setState(activeKey, (s) => ({
               ...s,
               liveStatus: null,
               messages: s.messages.map((m) =>
@@ -532,7 +576,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
               ),
             }));
           } else {
-            setState(key, (s) => ({
+            setState(activeKey, (s) => ({
               ...s,
               liveStatus: null,
               messages: s.messages.map((m) =>
@@ -545,8 +589,8 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
         } else {
           // Text event
           // Clear liveStatus on first text event
-          if (mapRef.current.get(key)?.liveStatus !== null) {
-            setState(key, (s) => ({ ...s, liveStatus: null }));
+          if (mapRef.current.get(activeKey)?.liveStatus !== null) {
+            setState(activeKey, (s) => ({ ...s, liveStatus: null }));
           }
 
           const incomingAuthor = event.author ?? "model";
@@ -559,7 +603,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
               });
               if (incomingAuthor !== "model") {
                 // Update placeholder's author field
-                setState(key, (s) => ({
+                setState(activeKey, (s) => ({
                   ...s,
                   messages: s.messages.map((m) =>
                     m.id === assistantId ? { ...m, author: incomingAuthor } : m,
@@ -573,7 +617,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
                 id: newId,
                 accumulated: "",
               });
-              setState(key, (s) => ({
+              setState(activeKey, (s) => ({
                 ...s,
                 messages: [
                   ...s.messages,
@@ -596,7 +640,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
 
           const bubbleId = bubble.id;
           const accumulated = bubble.accumulated;
-          setState(key, (s) => ({
+          setState(activeKey, (s) => ({
             ...s,
             messages: s.messages.map((m) =>
               m.id === bubbleId ? { ...m, content: accumulated } : m,
@@ -610,7 +654,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
       // Persist reasoning on final bubble
       const finalThoughts = collectedThoughts;
       const duration = Math.round((Date.now() - turnStartTime) / 1000);
-      setState(key, (s) => ({
+      setState(activeKey, (s) => ({
         ...s,
         status: "idle",
         liveStatus: null,
@@ -645,7 +689,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
 
       if (name === "CanceledError" || name === "AbortError") {
         // handleStop already appended the stopped message; remove the ghost placeholder
-        setState(key, (s) => ({
+        setState(activeKey, (s) => ({
           ...s,
           status: "idle",
           liveStatus: null,
@@ -658,7 +702,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
       if (err instanceof StreamInterruptedError) {
         const interruptedSessionId = err.sessionId;
 
-        setState(key, (s) => ({
+        setState(activeKey, (s) => ({
           ...s,
           status: "idle",
           liveStatus: null,
@@ -668,7 +712,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
         const recoveryTurn = turnSeq;
 
         if (!interruptedSessionId || isPendingSessionId(interruptedSessionId)) {
-          setState(key, (s) => ({
+          setState(activeKey, (s) => ({
             ...s,
             messages: s.messages.map((m) =>
               m.id === currentAssistantId
@@ -680,7 +724,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
         }
 
         // Drop from locallyCreated so history effect can fire after recovery
-        setState(key, (s) => {
+        setState(activeKey, (s) => {
           const newSet = new Set(s.locallyCreated);
           newSet.delete(interruptedSessionId);
           return { ...s, locallyCreated: newSet };
@@ -693,9 +737,9 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
 
         const applyRecoveredAnswer = (content: string) => {
           if (isSuperseded()) return;
-          const currentTurnSeq = mapRef.current.get(key)?.turnSeq;
+          const currentTurnSeq = mapRef.current.get(activeKey)?.turnSeq;
           if (currentTurnSeq !== recoveryTurn) return;
-          setState(key, (s) => ({
+          setState(activeKey, (s) => ({
             ...s,
             recoveryStatus: "recovered",
             messages: [
@@ -711,7 +755,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
           }));
         };
 
-        setState(key, (s) => ({
+        setState(activeKey, (s) => ({
           ...s,
           recoveryStatus: "recovering",
           status: "recovering",
@@ -722,7 +766,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
             await getConversationHistory(interruptedSessionId),
           );
           if (isSuperseded()) return;
-          const currentTurnSeq = mapRef.current.get(key)?.turnSeq;
+          const currentTurnSeq = mapRef.current.get(activeKey)?.turnSeq;
           if (currentTurnSeq !== recoveryTurn) return;
           if (recovered !== null) {
             applyRecoveredAnswer(recovered);
@@ -733,10 +777,10 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
         }
 
         if (isSuperseded()) return;
-        const currentTurnSeqCheck = mapRef.current.get(key)?.turnSeq;
+        const currentTurnSeqCheck = mapRef.current.get(activeKey)?.turnSeq;
         if (currentTurnSeqCheck !== recoveryTurn) return;
 
-        setState(key, (s) => ({
+        setState(activeKey, (s) => ({
           ...s,
           recoveryStatus: "waiting",
           status: "waiting",
@@ -760,7 +804,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
             clearInterval(pollId);
             return;
           }
-          const currentTurnSeqPoll = mapRef.current.get(key)?.turnSeq;
+          const currentTurnSeqPoll = mapRef.current.get(activeKey)?.turnSeq;
           if (currentTurnSeqPoll !== recoveryTurn) {
             clearInterval(pollId);
             return;
@@ -771,11 +815,12 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
               await getConversationHistory(interruptedSessionId),
             );
             if (isSuperseded()) return;
-            const currentTurnSeqAfterFetch = mapRef.current.get(key)?.turnSeq;
+            const currentTurnSeqAfterFetch =
+              mapRef.current.get(activeKey)?.turnSeq;
             if (currentTurnSeqAfterFetch !== recoveryTurn) return;
             if (recovered !== null) {
               clearInterval(pollId);
-              setState(key, (s) => ({ ...s, recoveryPollRef: null }));
+              setState(activeKey, (s) => ({ ...s, recoveryPollRef: null }));
               applyRecoveredAnswer(recovered);
               return;
             }
@@ -785,7 +830,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
 
           if (attempts >= MAX_ATTEMPTS) {
             clearInterval(pollId);
-            setState(key, (s) => {
+            setState(activeKey, (s) => {
               if (s.turnSeq !== recoveryTurn) return s;
               return {
                 ...s,
@@ -806,7 +851,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
           }
         }, 5_000);
 
-        setState(key, (s) => ({ ...s, recoveryPollRef: pollId }));
+        setState(activeKey, (s) => ({ ...s, recoveryPollRef: pollId }));
         return;
       }
 
@@ -815,7 +860,7 @@ export function ChatStreamProvider({ children }: { children: ReactNode }) {
           ? "Couldn't start a new session. Please try again."
           : "An error occurred. Please try again.";
 
-      setState(key, (s) => ({
+      setState(activeKey, (s) => ({
         ...s,
         status: "idle",
         liveStatus: null,

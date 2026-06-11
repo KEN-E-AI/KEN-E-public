@@ -472,4 +472,87 @@ describe("ChatStreamProvider — core behaviors", () => {
       resolveStream();
     });
   });
+
+  // d. placeholder key → real id re-keying: state is findable under the real id
+  test("(d) re-key: state is visible under realId after onCreateSession resolves", async () => {
+    // Stream stays alive until we release it — simulates an in-flight turn.
+    let resolveStream!: () => void;
+    mockStream.mockReturnValue(
+      (async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: "reasoning", text: "thinking…" };
+        yield { type: "text", text: "partial answer" };
+        await new Promise<void>((r) => {
+          resolveStream = r;
+        });
+      })() as any,
+    );
+
+    // onCreateSession returns a real id synchronously (via a resolved promise).
+    const REAL_ID = "real-session-abc";
+    const onCreateSession = vi.fn().mockResolvedValue(REAL_ID);
+    const onSessionStarted = vi.fn();
+
+    // Simulate the provider/subscriber pair inside a SINGLE Wrapper (same
+    // provider instance — this is the real-app scenario where ChatStreamProvider
+    // never unmounts during SPA navigation).
+    let sendRef!: (input: string, opts: SendOptions) => void;
+
+    // Phase 1: subscriber uses null sessionId (bare /chat, no session yet).
+    function ConditionalSubscriber({
+      sessionId,
+    }: {
+      sessionId: string | null;
+    }) {
+      const stream = useChatStream(sessionId);
+      React.useEffect(() => {
+        sendRef = stream.send;
+      }, [stream.send]);
+      return (
+        <div>
+          <span data-testid="streaming">{String(stream.isStreaming)}</span>
+          <span data-testid="msgs">{stream.messages.length}</span>
+          <span data-testid="thoughts">{stream.liveThoughts.join(",")}</span>
+        </div>
+      );
+    }
+
+    const { rerender } = render(
+      <Wrapper>
+        <ConditionalSubscriber sessionId={null} />
+      </Wrapper>,
+    );
+
+    // Start streaming from the no-session subscriber (key = "").
+    await act(async () => {
+      sendRef("hello", { onCreateSession, onSessionStarted });
+    });
+
+    // onSessionStarted fires when onCreateSession resolves inside runStream.
+    await waitFor(() => expect(onSessionStarted).toHaveBeenCalledWith(REAL_ID));
+
+    // Simulate the navigation: rerender the SAME provider tree with the real sessionId.
+    await act(async () => {
+      rerender(
+        <Wrapper>
+          <ConditionalSubscriber sessionId={REAL_ID} />
+        </Wrapper>,
+      );
+    });
+
+    // After the re-key, the new subscriber (sessionId=REAL_ID) should see the
+    // streaming state — NOT the default intro state.
+    await waitFor(() => {
+      expect(screen.getByTestId("streaming").textContent).toBe("true");
+    });
+
+    // Reasoning event should be visible under the real id.
+    expect(screen.getByTestId("thoughts").textContent).toBe("thinking…");
+    // Messages: intro was replaced by userMsg + assistantPlaceholder during send.
+    expect(Number(screen.getByTestId("msgs").textContent)).toBeGreaterThan(1);
+
+    // Clean up
+    await act(async () => {
+      resolveStream();
+    });
+  });
 });

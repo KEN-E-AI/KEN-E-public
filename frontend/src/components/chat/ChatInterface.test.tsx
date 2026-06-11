@@ -486,7 +486,7 @@ describe("ChatInterface", () => {
     const onSessionStarted = vi.fn();
     mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
 
-    render(
+    const { rerender } = render(
       <ChatStreamProvider>
         <ChatInterface
           onCreateSession={onCreateSession}
@@ -506,6 +506,21 @@ describe("ChatInterface", () => {
       expect(mockStreamChatCompletion.mock.calls[0][1]).toBe("new-sess-1"),
     );
     expect(onSessionStarted).toHaveBeenCalledWith("new-sess-1");
+
+    // After re-keying, the TurnState lives under "new-sess-1". Simulate the
+    // navigation that onSessionStarted triggers in the real app so ChatInterface
+    // re-subscribes to the real id and can render the streamed content.
+    await act(async () => {
+      rerender(
+        <ChatStreamProvider>
+          <ChatInterface
+            sessionId="new-sess-1"
+            onSessionStarted={onSessionStarted}
+          />
+        </ChatStreamProvider>,
+      );
+    });
+
     await waitFor(() => expect(screen.getByText("Reply")).toBeInTheDocument());
   });
 
