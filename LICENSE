@@ -1,0 +1,69 @@
+KEN-E PROPRIETARY SOFTWARE — EVALUATION LICENSE
+
+Copyright (c) 2026 KEN-E, LLC. All rights reserved.
+
+This source code and all materials contained in this repository (collectively, the
+"Software") are the proprietary property of KEN-E, LLC. The Software is made publicly
+accessible on this repository solely for the limited purpose of evaluation in connection
+with the Google for Startups AI Agents Challenge 2026 (the "Contest"). The Software is
+not open-source software, and is not made available under any open-source license.
+
+1. LIMITED EVALUATION GRANT
+
+KEN-E, LLC grants Google LLC, Devpost, Inc., and the judges and administrators of the
+Contest a non-exclusive, non-transferable, royalty-free license to access, view, clone,
+and execute the Software solely for the purpose of evaluating it as a Contest submission,
+during the period from June 11, 2026 through June 30, 2026 (the "Evaluation Period").
+
+2. RESERVED RIGHTS
+
+All other rights are expressly reserved. No license, right, or interest in or to the
+Software is granted to any other person or entity. Without limiting the foregoing, no
+person is granted any right to:
+
+  (a) copy, reproduce, distribute, mirror, or republish the Software, in whole or in part,
+      except as strictly necessary for evaluation as a Contest submission;
+
+  (b) create derivative works based on the Software;
+
+  (c) use the Software, in whole or in part, to train, fine-tune, evaluate, benchmark, or
+      otherwise develop any machine learning model, dataset, or AI system;
+
+  (d) use the Software, in whole or in part, for any commercial purpose, including without
+      limitation the development or operation of any product or service;
+
+  (e) sublicense, transfer, or assign any rights in the Software to any third party;
+
+  (f) remove, alter, or obscure any copyright, trademark, or other proprietary notices
+      contained in the Software.
+
+3. THIRD-PARTY SOFTWARE
+
+The Software may include or depend on third-party software libraries that are licensed
+separately under their own terms. Nothing in this license modifies the rights or
+obligations applicable to such third-party software, which remain governed by their
+respective licenses.
+
+4. TRADEMARKS
+
+"KEN-E" and any related logos or marks are trademarks of KEN-E, LLC. "DiveTeam" and any
+related marks are trademarks of their respective owners. No trademark rights are granted
+under this license.
+
+5. NO WARRANTIES
+
+THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING WITHOUT LIMITATION ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, NON-INFRINGEMENT, OR ACCURACY. KEN-E, LLC SHALL HAVE NO LIABILITY ARISING FROM OR
+RELATING TO THE SOFTWARE OR THIS LICENSE.
+
+6. TERMINATION
+
+The license granted in Section 1 terminates automatically at the end of the Evaluation
+Period, or upon any breach of this license, whichever occurs first. Upon termination, all
+rights to access, view, clone, or execute the Software immediately cease.
+
+7. CONTACT
+
+For licensing inquiries, commercial use, or any other questions regarding the Software,
+contact KEN-E, LLC at ken@ken-e.ai.
