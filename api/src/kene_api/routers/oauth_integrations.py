@@ -16,6 +16,7 @@ from fastapi.responses import RedirectResponse
 from shared.secrets import get_env_or_secret
 
 from ..auth import UserContext
+from ..auth.account_org import resolve_owning_organization_id
 from ..auth.user_context import get_current_user_context
 from ..cache import ga_credentials_key
 from ..firestore import get_firestore_service
@@ -121,14 +122,14 @@ async def authorize_google_analytics(
     # Track OAuth attempt
     track_oauth_attempt("google_analytics")
 
-    # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(
-        account_id, required_roles=["edit", "admin", "editor"]
+    owning_org_id = await resolve_owning_organization_id(account_id)
+    if not owning_org_id or not current_user.has_account_permission(
+        account_id, owning_org_id, required_level="edit"
     ):
         track_oauth_callback_error("google_analytics", "permission_denied")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to manage this account's integrations",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
@@ -404,14 +405,14 @@ async def refresh_google_analytics_token(
     """
     logger.info(f"[TOKEN_REFRESH] Starting token refresh for account {account_id}")
 
-    # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(
-        account_id, required_roles=["edit", "admin", "editor"]
+    owning_org_id = await resolve_owning_organization_id(account_id)
+    if not owning_org_id or not current_user.has_account_permission(
+        account_id, owning_org_id, required_level="edit"
     ):
         track_token_refresh_failure("google_analytics", "permission_denied")
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to manage this account's integrations",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     try:
@@ -500,13 +501,13 @@ async def disconnect_google_analytics(
     """
     Disconnect Google Analytics by removing stored tokens.
     """
-    # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(
-        account_id, required_roles=["edit", "admin", "editor"]
+    owning_org_id = await resolve_owning_organization_id(account_id)
+    if not owning_org_id or not current_user.has_account_permission(
+        account_id, owning_org_id, required_level="edit"
     ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to manage this account's integrations",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     try:
@@ -542,11 +543,13 @@ async def get_google_analytics_properties(
     """
     Get list of Google Analytics properties accessible with the stored OAuth token.
     """
-    # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(account_id):
+    owning_org_id = await resolve_owning_organization_id(account_id)
+    if not owning_org_id or not current_user.has_account_permission(
+        account_id, owning_org_id, required_level="view"
+    ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to access this account's integrations",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     try:
@@ -628,11 +631,7 @@ async def get_google_analytics_properties(
         logger.info(
             f"[GA_PROPERTIES] Starting to fetch properties for account {account_id}"
         )
-        logger.info(
-            f"[GA_PROPERTIES] Using access token: {access_token[:20]}..."
-            if access_token
-            else "No token"
-        )
+        logger.info("[GA_PROPERTIES] access_token present: %s", bool(access_token))
 
         properties = []
         async with httpx.AsyncClient() as client:
@@ -811,13 +810,13 @@ async def update_selected_properties(
     """
     Update the selected Google Analytics properties for an account.
     """
-    # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(
-        account_id, required_roles=["edit", "admin", "editor"]
+    owning_org_id = await resolve_owning_organization_id(account_id)
+    if not owning_org_id or not current_user.has_account_permission(
+        account_id, owning_org_id, required_level="edit"
     ):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to manage this account's integrations",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     try:
@@ -881,6 +880,15 @@ async def get_google_analytics_status(
     """
     Check the status of Google Analytics integration.
     """
+    owning_org_id = await resolve_owning_organization_id(account_id)
+    if not owning_org_id or not current_user.has_account_permission(
+        account_id, owning_org_id, required_level="view"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+
     try:
         firestore_service = get_firestore_service()
         db = firestore_service.get_client()

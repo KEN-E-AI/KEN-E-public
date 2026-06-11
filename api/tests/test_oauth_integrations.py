@@ -50,6 +50,23 @@ def mock_firestore_service():
     return mock_service
 
 
+@pytest.fixture(autouse=True)
+def mock_org_resolver():
+    """Resolve every account to a fixed owning org (IN-1).
+
+    The account-scoped GA OAuth endpoints now resolve the account's owning
+    organization via Neo4j before the permission check. These endpoint tests
+    isolate the endpoint logic, not org resolution, so patch the resolver to a
+    fixed org id — cross-org denial is covered in ``test_oauth_permissions.py``.
+    Harmless no-op for the callback tests, which never call the resolver.
+    """
+    with patch(
+        "src.kene_api.routers.oauth_integrations.resolve_owning_organization_id",
+        AsyncMock(return_value="org123"),
+    ):
+        yield
+
+
 class TestOAuthAuthorization:
     """Test OAuth authorization endpoints."""
 
@@ -119,8 +136,14 @@ class TestOAuthAuthorization:
     def test_authorize_google_analytics_permission_denied(
         self, client, mock_firestore_service
     ):
-        """Test Google Analytics OAuth with insufficient permissions."""
-        # A bare Mock() makes user.has_account_access(...) return a truthy
+        """Test Google Analytics OAuth with insufficient permissions.
+
+        A viewer of the resolved owning org (``org123``) lacks the ``edit``
+        level the authorize endpoint requires. The endpoint returns 404 (not
+        403) so a cross-org caller cannot distinguish "denied" from
+        "nonexistent account" — the IN-1 anti-enumeration behaviour.
+        """
+        # A bare Mock() makes user.has_account_permission(...) return a truthy
         # Mock, silently bypassing the permission check the test wants to
         # exercise. UserContext implements the method against real data.
         user = UserContext(
@@ -147,8 +170,8 @@ class TestOAuthAuthorization:
                         params={"account_id": "test_account_id"},
                     )
 
-            assert response.status_code == status.HTTP_403_FORBIDDEN
-            assert "permission" in response.json()["detail"].lower()
+            assert response.status_code == status.HTTP_404_NOT_FOUND
+            assert "not found" in response.json()["detail"].lower()
         finally:
             app.dependency_overrides.clear()
 
