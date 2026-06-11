@@ -86,3 +86,19 @@ class TestCheckAccountAccess:
             result = await check_account_access(account_id="any_acc", user=super_admin)
 
         assert result is super_admin
+
+    @pytest.mark.asyncio
+    async def test_backend_unavailable_raises_503_without_audit(self, org_a_admin):
+        """503 (backend unavailable) re-raises without writing an access-denied audit."""
+        from src.kene_api.auth.user_context import check_account_access
+
+        mock_audit_logger = MagicMock()
+        mock_audit_logger.log_access_denied = AsyncMock()
+
+        with patch(_GUARD, AsyncMock(side_effect=HTTPException(status_code=503, detail="Authorization backend unavailable"))):
+            with patch(_AUDIT, return_value=mock_audit_logger):
+                with pytest.raises(HTTPException) as exc_info:
+                    await check_account_access(account_id="acc_a", user=org_a_admin)
+
+        assert exc_info.value.status_code == 503
+        mock_audit_logger.log_access_denied.assert_not_called()

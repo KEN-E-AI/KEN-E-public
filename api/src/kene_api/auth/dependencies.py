@@ -36,7 +36,9 @@ async def get_current_user_optional(
     """
     Get current user from Bearer token (optional).
 
-    Returns None if no token provided or token is invalid.
+    Returns None when no token is provided or the token is invalid (ValueError
+    from ``verify_id_token``). Any other exception propagates so backend errors
+    (Firestore outage, SDK init failure) are not silently masked.
 
     Args:
         credentials: HTTP Bearer credentials
@@ -94,7 +96,7 @@ async def get_current_user_optional(
 
         return user_context
 
-    except Exception as e:
+    except ValueError as e:
         logger.warning(f"Failed to authenticate user: {e}")
         return None
 

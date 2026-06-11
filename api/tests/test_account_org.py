@@ -51,18 +51,21 @@ class TestResolveOwningOrganizationId:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_neo4j_exception_returns_none_and_logs_warning(self, caplog):
-        """Returns None and logs a WARNING when Neo4j raises."""
-        from src.kene_api.auth.account_org import resolve_owning_organization_id
+    async def test_neo4j_exception_raises_auth_backend_unavailable_and_logs_warning(self, caplog):
+        """Raises AuthBackendUnavailable and logs a WARNING when Neo4j raises."""
+        from src.kene_api.auth.account_org import (
+            AuthBackendUnavailable,
+            resolve_owning_organization_id,
+        )
 
         with patch(
             f"{_RESOLVER}.neo4j_service.execute_query",
             AsyncMock(side_effect=RuntimeError("connection refused")),
         ):
             with caplog.at_level(logging.WARNING, logger="src.kene_api.auth.account_org"):
-                result = await resolve_owning_organization_id("acc_123")
+                with pytest.raises(AuthBackendUnavailable):
+                    await resolve_owning_organization_id("acc_123")
 
-        assert result is None
         assert any(
             "resolve_owning_organization_id" in rec.message for rec in caplog.records
         )
@@ -124,6 +127,7 @@ class TestResolveOwningOrganizationIdCache:
     async def test_transient_neo4j_error_not_cached(self):
         """A transient Neo4j exception is not cached; next call retries."""
         from src.kene_api.auth.account_org import (
+            AuthBackendUnavailable,
             _set_time_provider,
             resolve_owning_organization_id,
         )
@@ -138,9 +142,9 @@ class TestResolveOwningOrganizationIdCache:
             ]
         )
         with patch(f"{_RESOLVER}.neo4j_service.execute_query", error_then_ok):
-            # First call — exception, returns None, NOT cached.
-            result1 = await resolve_owning_organization_id("acc_err")
-            assert result1 is None
+            # First call — raises AuthBackendUnavailable, NOT cached.
+            with pytest.raises(AuthBackendUnavailable):
+                await resolve_owning_organization_id("acc_err")
 
             # Second call at same timestamp — cache miss because error was not cached.
             result2 = await resolve_owning_organization_id("acc_err")
@@ -350,3 +354,23 @@ class TestComputeAccountAccessLevel:
         assert r1 == "edit"
         assert r2 == "edit"
         assert mock_query.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_neo4j_outage_raises_503(self, org_admin):
+        """A Neo4j outage surfaces as a controlled 503, not an uncontrolled 500.
+
+        compute_account_access_level is not a security gate, but the resolver it
+        reuses can raise AuthBackendUnavailable; it must fail closed at 503 so a
+        future non-gate-first caller never leaks a raw 500.
+        """
+        from fastapi import HTTPException
+        from src.kene_api.auth.account_org import compute_account_access_level
+
+        with patch(
+            f"{_RESOLVER}.neo4j_service.execute_query",
+            AsyncMock(side_effect=RuntimeError("Neo4j down")),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await compute_account_access_level(org_admin, "acc_outage")
+
+        assert exc_info.value.status_code == 503

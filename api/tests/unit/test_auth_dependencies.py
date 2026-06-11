@@ -116,11 +116,11 @@ class TestGetCurrentUserOptional:
     async def test_returns_none_on_invalid_token(
         self, mock_credentials, mock_firestore_service
     ):
-        """Test that None is returned when token verification fails."""
+        """Test that None is returned when token verification raises ValueError."""
         # Arrange
         with patch(
             "src.kene_api.auth.dependencies.verify_id_token",
-            side_effect=Exception("Invalid token"),
+            side_effect=ValueError("Invalid token: id token has expired"),
         ):
             # Act
             result = await get_current_user_optional(
@@ -129,6 +129,25 @@ class TestGetCurrentUserOptional:
 
             # Assert
             assert result is None
+
+    @pytest.mark.asyncio
+    async def test_propagates_non_auth_errors(
+        self, mock_credentials, mock_firestore_service, mock_firestore_client
+    ):
+        """Non-auth errors (e.g. Firestore outage) are NOT swallowed."""
+        # Arrange: token verifies OK but Firestore client raises
+        decoded_token = {"uid": "user_xyz", "email": "user@example.com"}
+        mock_firestore_service.get_client.side_effect = RuntimeError("Firestore unavailable")
+
+        with patch(
+            "src.kene_api.auth.dependencies.verify_id_token",
+            return_value=decoded_token,
+        ):
+            # Act + Assert: RuntimeError propagates instead of returning None
+            with pytest.raises(RuntimeError, match="Firestore unavailable"):
+                await get_current_user_optional(
+                    mock_credentials, mock_firestore_service
+                )
 
     @pytest.mark.asyncio
     async def test_returns_none_when_no_credentials(self, mock_firestore_service):

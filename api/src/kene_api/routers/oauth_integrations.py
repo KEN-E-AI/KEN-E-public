@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 from shared.secrets import get_env_or_secret
 
 from ..auth import UserContext
-from ..auth.account_org import resolve_owning_organization_id
+from ..auth.account_org import AuthBackendUnavailable, resolve_owning_organization_id
 from ..auth.user_context import get_current_user_context
 from ..cache import ga_credentials_key
 from ..firestore import get_firestore_service
@@ -122,7 +122,13 @@ async def authorize_google_analytics(
     # Track OAuth attempt
     track_oauth_attempt("google_analytics")
 
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authorization backend unavailable",
+        ) from None
     if not owning_org_id or not current_user.has_account_permission(
         account_id, owning_org_id, required_level="edit"
     ):
@@ -405,7 +411,13 @@ async def refresh_google_analytics_token(
     """
     logger.info(f"[TOKEN_REFRESH] Starting token refresh for account {account_id}")
 
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authorization backend unavailable",
+        ) from None
     if not owning_org_id or not current_user.has_account_permission(
         account_id, owning_org_id, required_level="edit"
     ):
@@ -501,7 +513,13 @@ async def disconnect_google_analytics(
     """
     Disconnect Google Analytics by removing stored tokens.
     """
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authorization backend unavailable",
+        ) from None
     if not owning_org_id or not current_user.has_account_permission(
         account_id, owning_org_id, required_level="edit"
     ):
@@ -543,7 +561,13 @@ async def get_google_analytics_properties(
     """
     Get list of Google Analytics properties accessible with the stored OAuth token.
     """
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authorization backend unavailable",
+        ) from None
     if not owning_org_id or not current_user.has_account_permission(
         account_id, owning_org_id, required_level="view"
     ):
@@ -810,7 +834,13 @@ async def update_selected_properties(
     """
     Update the selected Google Analytics properties for an account.
     """
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authorization backend unavailable",
+        ) from None
     if not owning_org_id or not current_user.has_account_permission(
         account_id, owning_org_id, required_level="edit"
     ):
@@ -880,7 +910,13 @@ async def get_google_analytics_status(
     """
     Check the status of Google Analytics integration.
     """
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authorization backend unavailable",
+        ) from None
     if not owning_org_id or not current_user.has_account_permission(
         account_id, owning_org_id, required_level="view"
     ):

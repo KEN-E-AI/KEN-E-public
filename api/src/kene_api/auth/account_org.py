@@ -9,9 +9,9 @@ for account-scoped endpoints.  ``UserContext.has_account_access`` is unsafe
 and deprecated — do not use it in new code.  See IN-2 for context.
 
 **NOTE: ``compute_account_access_level`` is NOT a security gate.** It is a
-non-raising helper for callers that already hold a ``require_account_access_for``
-grant and need to compute the user's highest access level without a second
-Neo4j hop.  Always call ``require_account_access_for`` first.
+helper for callers that already hold a ``require_account_access_for`` grant and
+need to compute the user's highest access level without a second Neo4j hop.
+Always call ``require_account_access_for`` first.
 """
 
 import logging
@@ -29,6 +29,16 @@ if TYPE_CHECKING:
     from ..auth.models import UserContext
 
 logger = logging.getLogger(__name__)
+
+
+class AuthBackendUnavailable(Exception):
+    """Raised by ``resolve_owning_organization_id`` when Neo4j is unreachable.
+
+    The account's existence cannot be determined; callers must fail closed
+    at 503 rather than treating this as a not-found (404).  Transient errors
+    are never cached, so the next request retries.
+    """
+
 
 _QUERY = """
 MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
@@ -53,7 +63,8 @@ RETURN org.organization_id AS organization_id
 # Confirmed misses (account not found, empty graph result) are cached for
 # _MISS_TTL (default 0 — not cached). This prevents a newly-created account
 # from being unreachable for a full TTL window after provisioning.
-# Transient Neo4j exceptions are never cached.
+# Transient Neo4j exceptions are never cached (the resolver raises
+# AuthBackendUnavailable instead of returning a value to cache).
 #
 # Cache size is capped at _MAX_CACHE_ENTRIES to bound memory on instances that
 # see many distinct account IDs. Simple FIFO eviction: when the cap is reached,
@@ -122,9 +133,13 @@ def _install_cache(account_id: str, org_id: str | None, now: float) -> None:
 async def resolve_owning_organization_id(account_id: str) -> str | None:
     """Return the organization_id that owns *account_id*, or None.
 
-    Returns None when:
-    - No :BELONGS_TO edge exists for the account (account not found).
-    - Any Neo4j exception occurs (fail-closed — the caller should 404 or 503).
+    Returns None when no :BELONGS_TO edge exists for the account (account not
+    found).
+
+    Raises:
+        AuthBackendUnavailable: When a Neo4j exception occurs. Callers must
+            respond with 503 — this is a backend-availability failure, not a
+            not-found condition.
 
     **Caching behaviour:**
     - Confirmed hits (org found) are cached for ``KENE_ACCOUNT_ORG_CACHE_TTL_SECONDS``
@@ -132,7 +147,8 @@ async def resolve_owning_organization_id(account_id: str) -> str | None:
     - Confirmed misses (account not found) are cached for
       ``KENE_ACCOUNT_ORG_MISS_TTL_SECONDS`` (default 0 — not cached) so that
       newly-created accounts are accessible immediately after provisioning.
-    - Transient Neo4j exceptions are *not* cached so the next request retries.
+    - Transient Neo4j exceptions are *not* cached (they raise) so the next
+      request retries.
     - The ``Account-[:BELONGS_TO]->Organization`` edge is assumed immutable.
       An account reparent would take up to TTL seconds to propagate on each
       instance.  This is acceptable because account reparents are out-of-spec
@@ -146,14 +162,17 @@ async def resolve_owning_organization_id(account_id: str) -> str | None:
     try:
         result = await neo4j_service.execute_query(_QUERY, {"account_id": account_id})
         org_id: str | None = result[0]["organization_id"] if result else None
-    except Exception:
+    except Exception as e:
         logger.warning(
             "resolve_owning_organization_id failed for account_id=%s",
             account_id,
             exc_info=True,
         )
-        # Do NOT cache transient errors — let the next call retry.
-        return None
+        # Do NOT cache transient errors — fail closed at 503 and let the next
+        # call retry.
+        raise AuthBackendUnavailable(
+            f"Neo4j unavailable while resolving organization for account {account_id}"
+        ) from e
 
     # Cache confirmed hit or confirmed miss (subject to per-type TTL).
     _install_cache(account_id, org_id, now)
@@ -175,6 +194,9 @@ async def require_account_access_for(
     - The account does not exist or its owning org cannot be resolved.
     - The user does not have the required permission level.
 
+    Raises ``HTTPException(503, "Authorization backend unavailable")`` when the
+    auth backend (Neo4j) is unreachable — fail-closed, never granting access.
+
     Returns ``None`` on success.
 
     Super-admins are never blocked (short-circuits before the resolver call).
@@ -189,7 +211,13 @@ async def require_account_access_for(
     if user.is_super_admin:
         return
 
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Authorization backend unavailable"
+        ) from None
+
     if owning_org_id is None or not user.has_account_permission(
         account_id, owning_org_id, required_level
     ):
@@ -213,13 +241,25 @@ async def compute_account_access_level(
     - ``"view"`` when the user has view-only permission.
     - ``None`` when the user has no access (resolver miss or no permission).
 
+    Raises ``HTTPException(503, "Authorization backend unavailable")`` if the
+    resolver hits a Neo4j outage. In the gate-first flow this is unreachable —
+    ``require_account_access_for`` already populated the cache (Neo4j up) or
+    503'd first (Neo4j down) — but the resolver can raise, so this fails closed
+    rather than surfacing an uncontrolled 500 to a future non-gate-first caller.
+
     Reuses the cached ``resolve_owning_organization_id`` — a second call within
     the same request is a microsecond cache hit, never a second Neo4j round-trip.
     """
     if user.is_super_admin:
         return "admin"
 
-    owning_org_id = await resolve_owning_organization_id(account_id)
+    try:
+        owning_org_id = await resolve_owning_organization_id(account_id)
+    except AuthBackendUnavailable:
+        raise HTTPException(
+            status_code=503, detail="Authorization backend unavailable"
+        ) from None
+
     if owning_org_id is None:
         return None
 

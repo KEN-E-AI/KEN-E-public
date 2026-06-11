@@ -162,3 +162,37 @@ class TestRequireAccountAccessFor:
             result = await require_account_access_for(org_a_admin, "acc_a")
 
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_auth_backend_unavailable_raises_503(self, org_a_admin):
+        """AuthBackendUnavailable from the resolver propagates as 503."""
+        from src.kene_api.auth.account_org import (
+            AuthBackendUnavailable,
+            require_account_access_for,
+        )
+
+        with patch(
+            f"{_MODULE}.resolve_owning_organization_id",
+            AsyncMock(side_effect=AuthBackendUnavailable("neo4j down")),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await require_account_access_for(org_a_admin, "acc_a", "view")
+
+        assert exc.value.status_code == 503
+        assert "unavailable" in exc.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_super_admin_bypasses_unavailable_backend(self, super_admin):
+        """Super-admin is allowed even when Neo4j is unavailable (resolver never called)."""
+        from src.kene_api.auth.account_org import (
+            AuthBackendUnavailable,
+            require_account_access_for,
+        )
+
+        with patch(
+            f"{_MODULE}.resolve_owning_organization_id",
+            AsyncMock(side_effect=AuthBackendUnavailable("neo4j down")),
+        ):
+            result = await require_account_access_for(super_admin, "acc_a", "view")
+
+        assert result is None

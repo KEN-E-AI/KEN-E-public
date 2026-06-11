@@ -24,6 +24,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from ..auth import UserContext
+from ..auth.account_org import require_account_access_for
 from ..auth.dependencies import get_user_context_for_polling
 from ..auth.models import SUPER_ADMIN_ROLE
 from ..auth.user_context import get_current_user_context
@@ -286,33 +287,7 @@ async def get_account(
     **Note:** User must have access to the account.
     """
     try:
-        # Check if user has access to this account
-        # First, we need to find which organization this account belongs to
-        org_query = """
-        MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
-        RETURN org.organization_id as organization_id
-        """
-        org_result = await db.execute_query(org_query, {"account_id": account_id})
-
-        if not org_result:
-            raise HTTPException(status_code=404, detail=ACCOUNT_NOT_FOUND_MESSAGE)
-
-        organization_id = org_result[0]["organization_id"]
-
-        # Now check access with the organization context
-        if not user.is_super_admin:
-            # Check if user has organization access
-            if not user.has_organization_access(organization_id):
-                raise HTTPException(
-                    status_code=403, detail=f"Access denied to account {account_id}"
-                )
-
-            # If user is view-role, check account-specific permissions
-            if user.organization_permissions.get(organization_id) == "view":
-                if account_id not in user.account_permissions:
-                    raise HTTPException(
-                        status_code=403, detail=f"Access denied to account {account_id}"
-                    )
+        await require_account_access_for(user, account_id, "view")
 
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
@@ -1879,18 +1854,22 @@ async def get_account_creation_status(
     GET /api/v1/accounts/{account_id}/creation-status
     ```
     """
-    # Check if account exists and user has access
+    # Access check first — uniform 404 on denial or missing account.
+    # Note: accounts still being created (no BELONGS_TO edge) now return 404
+    # instead of the "processing" status for non-super-admins. The frontend
+    # polling hook swallows errors and retries, so the UX impact is cosmetic.
+    await require_account_access_for(user, account_id, "view")
+
+    # Query account creation status
     account_query = """
-    MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization)
+    MATCH (acc:Account {account_id: $account_id})
     RETURN acc.setup_status as setup_status,
-           acc.setup_completed_at as setup_completed_at,
-           org.organization_id as organization_id
+           acc.setup_completed_at as setup_completed_at
     """
     result = await db.execute_query(account_query, {"account_id": account_id})
 
     if not result or len(result) == 0:
-        # Account might be in the process of being created
-        # Return processing status instead of 404 to avoid frontend errors
+        # Race: access was granted but account data not yet queryable
         logger.info(f"Account {account_id} not found yet, likely being created")
         return AccountCreationStatus(
             status="processing",
@@ -1898,11 +1877,6 @@ async def get_account_creation_status(
         )
 
     account_data = result[0]
-    org_id = account_data["organization_id"]
-
-    # Check user has access to the account
-    if not user.is_super_admin and not user.has_organization_access(org_id):
-        raise HTTPException(status_code=403, detail="Access denied to account")
 
     # Check basic status
     setup_status = account_data.get("setup_status", "pending")

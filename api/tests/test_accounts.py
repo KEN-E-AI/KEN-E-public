@@ -153,23 +153,21 @@ def test_get_accounts_by_organization(mock_neo4j_service):
 
 def test_get_account_by_id(mock_neo4j_service):
     """Test getting a specific account."""
-    # get_account now runs an org-lookup BEFORE the account fetch so it can
-    # gate access. Side-effect order: [org_query, account_query].
-    mock_neo4j_service.execute_query.side_effect = [
-        [{"organization_id": "test-org"}],
-        [
-            {
-                "acc": {
-                    "account_id": "test-account",
-                    "account_name": "Test Account",
-                    "organization_id": "test-org",
-                    "industry": "Technology",
-                    "status": "Active",
-                    "websites": ["https://test.com"],
-                    "timezone": "America/New_York",
-                }
+    # Access is now gated by require_account_access_for. The super-admin test
+    # user (see _override_auth_dep) short-circuits before the org resolver, so
+    # the injected db sees a single execute_query call: the account fetch.
+    mock_neo4j_service.execute_query.return_value = [
+        {
+            "acc": {
+                "account_id": "test-account",
+                "account_name": "Test Account",
+                "organization_id": "test-org",
+                "industry": "Technology",
+                "status": "Active",
+                "websites": ["https://test.com"],
+                "timezone": "America/New_York",
             }
-        ],
+        }
     ]
 
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service

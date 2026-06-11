@@ -523,13 +523,21 @@ async def check_account_access(
 
     try:
         await require_account_access_for(user, account_id, required_level="view")
-    except HTTPException:
-        audit_logger = get_audit_logger()
-        await audit_logger.log_access_denied(
-            user_id=user.user_id,
-            resource_type="account",
-            resource_id=account_id,
-            required_permission=None,
-        )
+    except HTTPException as e:
+        if e.status_code == 404:
+            audit_logger = get_audit_logger()
+            await audit_logger.log_access_denied(
+                user_id=user.user_id,
+                resource_type="account",
+                resource_id=account_id,
+                required_permission=None,
+            )
+        elif e.status_code == 503:
+            logger.warning(
+                "Auth backend unavailable during account access check "
+                "account_id=%s user_id=%s",
+                account_id,
+                user.user_id,
+            )
         raise
     return user

@@ -588,3 +588,79 @@ class TestOAuthCrossOrgIsolation:
                 )
         # Super-admin bypasses auth → reaches business logic → not-configured response
         assert result.status.value == "not_configured"
+
+
+class TestOAuthNeo4jOutage503:
+    """Verify that all six OAuth GA endpoints return 503 when Neo4j is unavailable."""
+
+    @pytest.fixture
+    def any_user(self):
+        return UserContext(
+            user_id="u1",
+            email="user@org-a.com",
+            organization_permissions={"org_A": "admin"},
+            account_permissions={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_authorize_neo4j_outage_503(self, any_user):
+        from src.kene_api.auth.account_org import AuthBackendUnavailable
+        from src.kene_api.routers.oauth_integrations import authorize_google_analytics
+
+        with patch(_RESOLVER, AsyncMock(side_effect=AuthBackendUnavailable("down"))):
+            with pytest.raises(HTTPException) as exc:
+                await authorize_google_analytics(account_id="acc_a", current_user=any_user)
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_refresh_neo4j_outage_503(self, any_user):
+        from src.kene_api.auth.account_org import AuthBackendUnavailable
+        from src.kene_api.routers.oauth_integrations import refresh_google_analytics_token
+
+        with patch(_RESOLVER, AsyncMock(side_effect=AuthBackendUnavailable("down"))):
+            with pytest.raises(HTTPException) as exc:
+                await refresh_google_analytics_token(account_id="acc_a", current_user=any_user)
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_disconnect_neo4j_outage_503(self, any_user):
+        from src.kene_api.auth.account_org import AuthBackendUnavailable
+        from src.kene_api.routers.oauth_integrations import disconnect_google_analytics
+
+        with patch(_RESOLVER, AsyncMock(side_effect=AuthBackendUnavailable("down"))):
+            with pytest.raises(HTTPException) as exc:
+                await disconnect_google_analytics(account_id="acc_a", current_user=any_user)
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_get_properties_neo4j_outage_503(self, any_user):
+        from src.kene_api.auth.account_org import AuthBackendUnavailable
+        from src.kene_api.routers.oauth_integrations import get_google_analytics_properties
+
+        with patch(_RESOLVER, AsyncMock(side_effect=AuthBackendUnavailable("down"))):
+            with pytest.raises(HTTPException) as exc:
+                await get_google_analytics_properties(account_id="acc_a", current_user=any_user)
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_update_properties_neo4j_outage_503(self, any_user):
+        from src.kene_api.auth.account_org import AuthBackendUnavailable
+        from src.kene_api.routers.oauth_integrations import update_selected_properties
+
+        update_req = Mock()
+        with patch(_RESOLVER, AsyncMock(side_effect=AuthBackendUnavailable("down"))):
+            with pytest.raises(HTTPException) as exc:
+                await update_selected_properties(
+                    account_id="acc_a", request=update_req, current_user=any_user
+                )
+        assert exc.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_get_status_neo4j_outage_503(self, any_user):
+        from src.kene_api.auth.account_org import AuthBackendUnavailable
+        from src.kene_api.routers.oauth_integrations import get_google_analytics_status
+
+        with patch(_RESOLVER, AsyncMock(side_effect=AuthBackendUnavailable("down"))):
+            with pytest.raises(HTTPException) as exc:
+                await get_google_analytics_status(account_id="acc_a", current_user=any_user)
+        assert exc.value.status_code == 503
