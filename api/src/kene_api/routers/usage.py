@@ -94,8 +94,13 @@ async def check_cost_access(
         return True
 
     # Account admins can view account costs
-    if account_id and user.has_account_access(account_id, ["edit"]):
-        return True
+    if account_id:
+        from ..auth.account_org import require_account_access_for
+        try:
+            await require_account_access_for(user, account_id, "edit")
+            return True
+        except HTTPException:
+            pass
 
     return False
 
@@ -175,11 +180,11 @@ async def get_account_costs(
     Get usage costs for an account.
     Requires admin access to the account.
     """
-    # Check access
+    # Check access (raises 404 anti-enumeration per IN-2 contract for account-scoped checks)
     if not await check_cost_access(user, account_id=account_id):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required to view account costs",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     try:

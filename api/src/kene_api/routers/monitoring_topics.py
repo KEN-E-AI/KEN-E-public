@@ -73,12 +73,13 @@ async def test_account_access(
     user: UserContext = Depends(get_current_user_context),
 ) -> dict:
     """Test endpoint to debug account access."""
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
     return {
         "account_id": account_id,
         "user_id": user.user_id,
         "email": user.email,
         "is_super_admin": user.is_super_admin,
-        "has_account_access": user.has_account_access(account_id),
         "accessible_accounts": user.accessible_accounts,
         "organization_permissions": user.organization_permissions,
         "account_permissions": user.account_permissions,
@@ -228,11 +229,8 @@ async def get_monitoring_topics(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> MonitoringTopicsResponse:
     """Get all monitoring topics for an account."""
-    # Check user has access to this account
-    if not user.has_account_access(account_id) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         doc = firestore.get_document(
@@ -296,11 +294,8 @@ async def update_company_keywords(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Update company keywords for an account."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -369,11 +364,8 @@ async def update_customer_keywords(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Update customer keywords for an account."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -458,11 +450,8 @@ async def search_customer_concepts(
     )
 
     # Check user has access to this account
-    if not user.has_account_access(account_id) and not user.is_super_admin:
-        logger.warning(f"Access denied for user {user.email} to account {account_id}")
-        raise HTTPException(
-            status_code=403, detail=f"Access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         # Check cache first (if available)
@@ -519,11 +508,8 @@ async def add_customer_concept(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> CustomerKeywordConcept:
     """Add a customer keyword with selected concept disambiguation."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -613,11 +599,8 @@ async def remove_customer_concept(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Remove a customer concept."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         # Get current document
@@ -699,11 +682,8 @@ async def add_competitor(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Add a new competitor to monitor."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -781,11 +761,8 @@ async def update_competitor(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Update an existing competitor."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -863,11 +840,8 @@ async def delete_competitor(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Delete a competitor from monitoring."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         # Get current document
@@ -926,11 +900,8 @@ async def add_customer_profile_keywords(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Add a new customer profile to monitoring."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -1012,11 +983,8 @@ async def update_customer_profile_keywords(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Update an existing customer profile entry."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # Validate account_id matches
     if request.account_id != account_id:
@@ -1096,11 +1064,8 @@ async def delete_customer_profile_keywords(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
     """Delete a customer profile from monitoring."""
-    # Check user has write access to this account
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Write access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         # Get current document
@@ -1161,11 +1126,8 @@ async def get_company_keywords_paginated(
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> PaginatedKeywordsResponse:
     """Get company keywords with pagination support."""
-    # Check user has access to this account
-    if not user.has_account_access(account_id) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Access denied to account {account_id}"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         doc = firestore.get_document(
@@ -1331,11 +1293,9 @@ async def cleanup_orphaned_monitoring_entries(
     Raises:
         HTTPException: If user lacks admin access or cleanup fails
     """
-    # Check user has admin access
-    if not user.is_super_admin and not user.has_account_access(account_id, ["admin"]):
-        raise HTTPException(
-            status_code=403, detail=f"Admin access required for account {account_id}"
-        )
+    # Check user has admin access (admin-mapped to edit per IN-2 decision log)
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         # Get monitoring topics

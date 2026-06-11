@@ -33,6 +33,20 @@ class TestMonitoringTopicsConcepts:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(saved)
 
+    @pytest.fixture(autouse=True)
+    def _mock_org_resolver(self):
+        """IN-2: resolve the account's owning org without Neo4j.
+
+        ``require_account_access_for`` resolves the owning org via Neo4j; patch
+        it to a fixed org so concept endpoints reach their logic. Denial tests
+        set ``has_account_permission.return_value = False`` to force a 404.
+        """
+        with patch(
+            "src.kene_api.auth.account_org.resolve_owning_organization_id",
+            new=AsyncMock(return_value="org_test"),
+        ):
+            yield
+
     @pytest.fixture
     def mock_user_context(self):
         """Authenticate requests via a FastAPI dependency override.
@@ -152,8 +166,12 @@ class TestMonitoringTopicsConcepts:
 
     @pytest.mark.asyncio
     async def test_search_customer_concepts_access_denied(self, mock_user_context):
-        """Test access denied for unauthorized user."""
-        mock_user_context.has_account_access.return_value = False
+        """Test access denied for unauthorized user.
+
+        IN-2: the gate calls ``has_account_permission``; denial returns 404
+        'Account not found' (anti-enumeration), not 403.
+        """
+        mock_user_context.has_account_permission.return_value = False
         mock_user_context.is_super_admin = False
 
         response = client.get(
@@ -161,8 +179,8 @@ class TestMonitoringTopicsConcepts:
             params={"term": "test"},
         )
 
-        assert response.status_code == 403
-        assert "Access denied" in response.json()["detail"]
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_add_customer_concept_success(

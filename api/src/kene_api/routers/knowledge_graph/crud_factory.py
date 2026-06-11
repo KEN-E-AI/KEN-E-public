@@ -40,6 +40,9 @@ async def check_graph_access(
 ) -> UserContext:
     """Check if user has required access level for graph operations.
 
+    Delegates to the cross-org-safe ``require_account_access_for`` guard.
+    Raises 404 on denial (anti-enumeration, consistent with IN-1 / IN-2).
+
     Args:
         account_id: Account ID to check access for
         user: Current user context
@@ -49,47 +52,11 @@ async def check_graph_access(
         User context if access granted
 
     Raises:
-        HTTPException: If access denied
+        HTTPException(404): If access denied or account not found
     """
-    # Super admins always have access
-    if user.is_super_admin:
-        return user
+    from ...auth.account_org import require_account_access_for
 
-    # Check if user has org admin/owner access (grants access to ALL accounts)
-    has_org_admin = any(
-        role in ["admin", "owner"] for role in user.organization_permissions.values()
-    )
-    if has_org_admin:
-        logger.info(
-            f"[check_graph_access] Access granted via org admin for user {user.email}"
-        )
-        return user
-
-    # For non-admin users, check account-specific permissions
-    if required_level == "edit":
-        # Edit requires explicit "edit" role
-        if not user.has_account_access(account_id, ["edit"]):
-            logger.warning(
-                f"[check_graph_access] Edit access denied for user {user.email} to account {account_id}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Insufficient permissions for edit access to account {account_id}",
-            )
-    else:
-        # View access: just check if account is accessible
-        if not user.has_account_access(account_id) and not user.is_super_admin:
-            logger.warning(
-                f"[check_graph_access] View access denied for user {user.email} to account {account_id}"
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied to account {account_id}",
-            )
-
-    logger.info(
-        f"[check_graph_access] Access granted for user {user.email} to account {account_id}"
-    )
+    await require_account_access_for(user, account_id, required_level)
     return user
 
 

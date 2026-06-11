@@ -63,6 +63,19 @@ _STUB_STRATEGY_DOC: dict[str, Any] = {
 class TestStrategyRouterShapeParity:
     """Verify each strategy-router endpoint uses the Shape B Firestore path."""
 
+    @pytest.fixture(autouse=True)
+    def patch_owning_org_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stub the Neo4j resolver so tests don't require a live database.
+
+        Returns a fixed org_id that matches mock_user's account_permissions.
+        """
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr(
+            "src.kene_api.auth.account_org.resolve_owning_organization_id",
+            AsyncMock(return_value="org_test"),
+        )
+
     @pytest.fixture
     def mock_user(self) -> UserContext:
         return UserContext(
@@ -342,6 +355,16 @@ class TestStrategyRouterShapeParity:
 
 class TestStrategyAuditWriteReadParity:
     """Assert log_strategy_action write path == get_strategy_audit_log read path."""
+
+    @pytest.fixture(autouse=True)
+    def patch_owning_org_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stub the Neo4j resolver so tests don't require a live database."""
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr(
+            "src.kene_api.auth.account_org.resolve_owning_organization_id",
+            AsyncMock(return_value="org_test"),
+        )
 
     @pytest.fixture
     def mock_user(self) -> UserContext:

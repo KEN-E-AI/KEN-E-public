@@ -515,10 +515,15 @@ async def check_account_access(
 ) -> UserContext:
     """FastAPI dependency gating every account-scoped route on membership.
 
-    Non-members receive 403. Returns UserContext so downstream handlers that
-    need it can declare it as a dependency without a second auth round-trip.
+    Non-members receive 404 (anti-enumeration — matches IN-1 / IN-2 convention).
+    Returns UserContext so downstream handlers that need it can declare it as a
+    dependency without a second auth round-trip.
     """
-    if not user.has_account_access(account_id):
+    from .account_org import require_account_access_for
+
+    try:
+        await require_account_access_for(user, account_id, required_level="view")
+    except HTTPException:
         audit_logger = get_audit_logger()
         await audit_logger.log_access_denied(
             user_id=user.user_id,
@@ -526,5 +531,5 @@ async def check_account_access(
             resource_id=account_id,
             required_permission=None,
         )
-        raise HTTPException(status_code=403, detail="forbidden")
+        raise
     return user

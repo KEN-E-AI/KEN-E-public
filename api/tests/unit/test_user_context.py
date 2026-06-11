@@ -15,38 +15,30 @@ from src.kene_api.auth.user_context import (
 class TestUserContext:
     """Test UserContext dataclass methods."""
 
-    def test_has_account_access_without_roles(self):
-        """Test account access check without specific roles."""
+    def test_has_account_access_is_deprecated(self):
+        """has_account_access raises NotImplementedError (IN-2 — unsafe any-org-admin bypass)."""
         user = UserContext(
             user_id="test-user",
             email="test@example.com",
             account_permissions={"acc_1": "admin", "acc_2": "viewer"},
             organization_permissions={},
         )
+        with pytest.raises(NotImplementedError):
+            user.has_account_access("acc_1")
 
-        # Should have access to accounts in permissions
-        assert user.has_account_access("acc_1") is True
-        assert user.has_account_access("acc_2") is True
-
-        # Should not have access to other accounts
-        assert user.has_account_access("acc_3") is False
-
-    def test_has_account_access_with_roles(self):
-        """Test account access check with specific role requirements."""
+    def test_has_account_permission_replaces_has_account_access(self):
+        """has_account_permission is the safe replacement — test it covers equivalent logic."""
         user = UserContext(
             user_id="test-user",
             email="test@example.com",
-            account_permissions={"acc_1": "admin", "acc_2": "viewer"},
+            # "admin" → "edit" mapping (account_permissions uses edit/view)
+            account_permissions={"acc_1": "edit", "acc_2": "view"},
             organization_permissions={},
         )
-
-        # Should have access with correct role
-        assert user.has_account_access("acc_1", ["admin"]) is True
-        assert user.has_account_access("acc_2", ["viewer", "admin"]) is True
-
-        # Should not have access with wrong role
-        assert user.has_account_access("acc_1", ["viewer"]) is False
-        assert user.has_account_access("acc_2", ["admin"]) is False
+        # Explicit account permissions work via has_account_permission
+        assert user.has_account_permission("acc_1", "any_org", "edit") is True
+        assert user.has_account_permission("acc_2", "any_org", "view") is True
+        assert user.has_account_permission("acc_3", "any_org", "view") is False
 
     def test_has_organization_access_without_roles(self):
         """Test organization access check without specific roles."""

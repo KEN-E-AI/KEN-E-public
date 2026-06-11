@@ -313,14 +313,16 @@ class TestOAuthPropertiesPermissions:
 
 
 class TestUserContextPermissionLogic:
-    """Test UserContext permission logic."""
+    """Test UserContext permission logic.
 
-    def test_super_admin_has_access_to_any_account(self, super_admin_user):
-        """Super admins should have access to any account."""
-        assert super_admin_user.has_account_access("any_account_id")
-        assert super_admin_user.has_account_access(
-            "any_account_id", required_roles=["edit"]
-        )
+    has_account_access() is deprecated (IN-2); these tests verify it raises.
+    Cross-org isolation is now tested in test_require_account_access_for.py.
+    """
+
+    def test_has_account_access_is_deprecated(self, org_admin_user):
+        """has_account_access() raises NotImplementedError — it is unsafe (IN-2)."""
+        with pytest.raises(NotImplementedError, match="has_account_access is unsafe"):
+            org_admin_user.has_account_access("acc123")
 
     def test_org_admin_has_no_implicit_cross_account_access(self, org_admin_user):
         """Org admin of org123 must not have access to an account owned by a different org."""
@@ -333,24 +335,20 @@ class TestUserContextPermissionLogic:
             "acc123", organization_id="org_other", required_level="edit"
         )
 
-    def test_account_editor_has_access_to_their_account(self, account_editor_user):
-        """Users with edit permission should have access to their account."""
-        assert account_editor_user.has_account_access("acc123")
-        assert account_editor_user.has_account_access("acc123", required_roles=["edit"])
+    def test_account_editor_permission(self, account_editor_user):
+        """Users with edit permission have edit + view via has_account_permission."""
+        assert account_editor_user.has_account_permission("acc123", "any_org", "edit")
+        assert account_editor_user.has_account_permission("acc123", "any_org", "view")
+        assert not account_editor_user.has_account_permission("other_account", "any_org", "view")
 
-    def test_account_editor_no_access_to_other_accounts(self, account_editor_user):
-        """Users should not have access to accounts they don't have permissions for."""
-        assert not account_editor_user.has_account_access("other_account")
+    def test_viewer_permission(self, viewer_user):
+        """Viewers have view but not edit via has_account_permission."""
+        assert viewer_user.has_account_permission("acc123", "any_org", "view")
+        assert not viewer_user.has_account_permission("acc123", "any_org", "edit")
 
-    def test_viewer_has_view_access_only(self, viewer_user):
-        """Viewers should have view access but not edit."""
-        assert viewer_user.has_account_access("acc123")
-        assert viewer_user.has_account_access("acc123", required_roles=["view"])
-        assert not viewer_user.has_account_access("acc123", required_roles=["edit"])
-
-    def test_no_access_user_cannot_access(self, no_access_user):
-        """Users with no permissions should not have access."""
-        assert not no_access_user.has_account_access("acc123")
+    def test_no_access_user(self, no_access_user):
+        """Users with no permissions denied."""
+        assert not no_access_user.has_account_permission("acc123", "any_org", "view")
 
 
 class TestOAuthCrossOrgIsolation:

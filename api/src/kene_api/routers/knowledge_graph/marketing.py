@@ -178,11 +178,8 @@ async def link_product_category_to_customer_profile(
     user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """Link a product category to a customer profile."""
-    # Check edit permission
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Edit permission denied for account {account_id}"
-        )
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         await service.link_product_category_to_customer_profile(
@@ -215,11 +212,8 @@ async def unlink_product_category_from_customer_profile(
     user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """Unlink a product category from a customer profile with cascade deletion of strategies."""
-    # Check edit permission
-    if not user.has_account_access(account_id, ["edit"]) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Edit permission denied for account {account_id}"
-        )
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         await service.unlink_product_category_from_customer_profile(
@@ -251,11 +245,8 @@ async def list_linked_product_categories(
     user: UserContext = Depends(get_current_user),
 ) -> ProductCategoryListResponse:
     """List all product categories linked to a customer profile."""
-    # Check read permission
-    if not user.has_account_access(account_id) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Access denied to account {account_id}"
-        )
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         categories_data = await service.list_linked_product_categories(
@@ -287,11 +278,8 @@ async def list_linked_customer_profiles(
     user: UserContext = Depends(get_current_user),
 ) -> CustomerProfileListResponse:
     """List all customer profiles linked to a product category via IS_MARKETED_TO."""
-    # Check read permission
-    if not user.has_account_access(account_id) and not user.is_super_admin:
-        raise HTTPException(
-            status_code=403, detail=f"Access denied to account {account_id}"
-        )
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         profiles_data = await service.list_linked_customer_profiles(
@@ -915,7 +903,8 @@ async def create_rollup_marketing_hub(
     Note: This is typically auto-generated during account setup.
     Manual creation is only needed if regenerating the rollup.
     """
-    await user.check_account_access(account_id, "edit")
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     created_hub = await service.create_rollup_marketing_hub(
         account_id=account_id,
@@ -940,7 +929,8 @@ async def get_rollup_marketing_hub(
 
     Returns the hub with links to all 5 rollup strategy nodes.
     """
-    await user.check_account_access(account_id, "view")
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     hub = await service.get_rollup_marketing_hub(account_id)
 
@@ -965,7 +955,8 @@ async def update_rollup_marketing_hub(
     user: UserContext = Depends(get_current_user),
 ) -> RollupMarketingStrategyResponse:
     """Update the RollupMarketingStrategy hub node."""
-    await user.check_account_access(account_id, "edit")
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     updated_hub = await service.update_rollup_marketing_hub(
         account_id=account_id,
@@ -993,7 +984,8 @@ async def delete_rollup_marketing_hub(
     Warning: This does NOT cascade delete the rollup strategies.
     To fully remove rollups, delete individual rollup strategies separately.
     """
-    await user.check_account_access(account_id, "edit")
+    from ...auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     deleted = await service.delete_rollup_marketing_hub(
         account_id=account_id,

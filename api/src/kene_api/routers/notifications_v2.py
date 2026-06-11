@@ -77,11 +77,8 @@ async def create_notification(
     ```
     """
     # Verify user has access to the account
-    if not user.has_account_access(request.account_id):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Access denied to account {request.account_id}",
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, request.account_id, "edit")
 
     try:
         notification_id = await service.create_notification(
@@ -134,11 +131,8 @@ async def get_notifications(
     # Determine which accounts to query
     if account_id:
         # Verify user has access to the specified account
-        if not user.has_account_access(account_id):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied to account {account_id}",
-            )
+        from ..auth.account_org import require_account_access_for
+        await require_account_access_for(user, account_id, "view")
         account_ids = [account_id]
     else:
         # Get all accessible accounts
@@ -347,11 +341,8 @@ async def get_unread_count(
     # Determine which accounts to query
     if account_id:
         # Verify user has access to the specified account
-        if not user.has_account_access(account_id):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access denied to account {account_id}",
-            )
+        from ..auth.account_org import require_account_access_for
+        await require_account_access_for(user, account_id, "view")
         account_ids = [account_id]
     else:
         # Get all accessible accounts

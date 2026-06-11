@@ -1,5 +1,6 @@
 """Tests for authentication models."""
 
+import pytest
 from src.kene_api.auth.models import UserContext
 
 
@@ -190,3 +191,30 @@ class TestUserContext:
             roles=["super_admin"],
         )
         assert user.get_effective_account_role("any_acc", "any_org") == "edit"
+
+
+class TestHasAccountAccessDeprecated:
+    """Verify has_account_access raises unconditionally (IN-2 deprecation)."""
+
+    def test_raises_not_implemented_for_regular_user(self):
+        """has_account_access must raise for a non-super-admin."""
+        user = UserContext(
+            user_id="u1",
+            email="user@example.com",
+            organization_permissions={"org1": "admin"},
+            account_permissions={},
+        )
+        with pytest.raises(NotImplementedError, match="has_account_access is unsafe"):
+            user.has_account_access("acc123")
+
+    def test_raises_not_implemented_for_super_admin(self):
+        """has_account_access must raise even for super-admin (deprecated, not bypassed)."""
+        user = UserContext(
+            user_id="sa1",
+            email="sa@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+            roles=["super_admin"],
+        )
+        with pytest.raises(NotImplementedError):
+            user.has_account_access("any_acc")

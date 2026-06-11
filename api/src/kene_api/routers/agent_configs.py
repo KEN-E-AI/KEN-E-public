@@ -873,8 +873,8 @@ async def list_account_agent_configs(
 
     Reads are allowed for any account member; writes require admin role.
     """
-    if not user.has_account_access(account_id):
-        raise HTTPException(status_code=403, detail="Access denied to this account")
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         global_docs = {
@@ -950,8 +950,8 @@ async def get_account_agent_config(
     db: firestore.Client = Depends(get_firestore),
 ) -> MergedAgentConfig:
     """Fetch the merged config for a specific agent in the context of an account."""
-    if not user.has_account_access(account_id):
-        raise HTTPException(status_code=403, detail="Access denied to this account")
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         merged = _load_merged(db, account_id, config_id)
@@ -979,11 +979,8 @@ async def create_account_agent_config(
 
     The server generates a ``custom_{uuid8}`` config_id.  Requires admin role.
     """
-    if not user.has_account_access(account_id, required_roles=["admin"]):
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required to create agent configurations",
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     custom_id = f"custom_{uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
@@ -1065,11 +1062,8 @@ async def upsert_account_agent_config_overlay(
     existing account doc — POST owns standalone custom-agent creation.
     Requires admin role.
     """
-    if not user.has_account_access(account_id, required_roles=["admin"]):
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required to modify agent configurations",
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     # AH-PRD-06: catalogue cross-check before touching Firestore. Pydantic
     # already enforced format / max-30 / duplicates; this rejects entries
@@ -1147,11 +1141,8 @@ async def delete_account_agent_config(
     For non-custom config IDs the overlay is deleted (revert to global default).
     Requires admin role.
     """
-    if not user.has_account_access(account_id, required_roles=["admin"]):
-        raise HTTPException(
-            status_code=403,
-            detail="Admin role required to delete agent configurations",
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     try:
         overlay_ref = (

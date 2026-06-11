@@ -17,6 +17,24 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _mock_org_resolver():
+    """IN-2: resolve account-scoped endpoints' owning org without Neo4j.
+
+    Account-scoped gates (e.g. notification create) call
+    ``require_account_access_for`` → ``resolve_owning_organization_id`` (Neo4j).
+    Patch it to org_123 (the org ``authed_user`` is admin of). Org-scoped
+    endpoints use ``require_organization_access`` and never hit this resolver.
+    A user who is not an admin of org_123 (``user_no_org_admin``) is still
+    denied, so the without-permission case correctly yields 404.
+    """
+    with mock.patch(
+        "src.kene_api.auth.account_org.resolve_owning_organization_id",
+        new=mock.AsyncMock(return_value="org_123"),
+    ):
+        yield
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -268,7 +286,11 @@ class TestNotificationEndpoints:
     def test_create_notification_without_permission(
         self, client, user_no_org_admin, mock_firestore
     ):
-        """User without access to acc_999 gets 403 (requires no-org-admin user)."""
+        """User without access to acc_999 gets 404.
+
+        IN-2: denial returns 404 'Account not found' (anti-enumeration), not a
+        403 that would confirm the account exists.
+        """
         response = client.post(
             "/api/v1/notifications/",
             json={
@@ -278,5 +300,5 @@ class TestNotificationEndpoints:
             },
         )
 
-        assert response.status_code == 403
-        assert response.json()["detail"] == "Access denied to account acc_999"
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Account not found"

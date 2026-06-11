@@ -41,8 +41,8 @@ async def list_account_tools(
     present. MCP-attached tools are gated on a connected integration for
     the account (see the ``integration_credentials`` collection).
     """
-    if not user.has_account_access(account_id):
-        raise HTTPException(status_code=403, detail="Access denied to this account")
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "view")
 
     try:
         return compose_inventory(account_id=account_id, db=db)

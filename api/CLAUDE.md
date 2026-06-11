@@ -94,7 +94,13 @@ Two FastAPI dependencies: `get_current_user_context()` (required) and `get_optio
 
 ### Authorization
 
-Use `check_graph_access()` pattern with super_admin bypass. See `routers/knowledge_graph/crud_factory.py`. Account/org access checking via `require_account_access()` and `require_organization_access()`.
+**Account-scoped endpoints** — the only sanctioned gate is `require_account_access_for(user, account_id, level)` from `auth/account_org.py`. It resolves the account's owning org, calls `has_account_permission`, and raises `404` on denial (anti-enumeration). Super-admin short-circuits the resolver. Use `"view"` for reads and `"edit"` for writes.
+
+`UserContext.has_account_access()` is **deprecated** (IN-2) — it contains an any-org-admin bypass that breaks multi-tenant isolation. Calling it raises `NotImplementedError`. A CI grep guard (`tests/test_no_has_account_access_usage.py`) enforces this in every PR.
+
+**Knowledge-graph endpoints** — use `check_graph_access()` in `routers/knowledge_graph/crud_factory.py`, which delegates to `require_account_access_for`.
+
+**Organization-scoped endpoints** — use `require_organization_access()` from `auth/dependencies.py`.
 
 ### Repository Pattern
 

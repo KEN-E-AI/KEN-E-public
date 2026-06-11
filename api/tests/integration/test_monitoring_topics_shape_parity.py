@@ -18,7 +18,7 @@ Pre-migration fixture capture step (referenced in DM-28 PR description):
 """
 
 from typing import Any
-from unittest.mock import ANY, MagicMock, call
+from unittest.mock import ANY, AsyncMock, MagicMock, call
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,6 +26,8 @@ from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
+
+_RESOLVER = "src.kene_api.auth.account_org.resolve_owning_organization_id"
 
 # ---------------------------------------------------------------------------
 # Pre-migration fixture — shape lockdown for MonitoringTopics
@@ -77,6 +79,11 @@ def _without_transient(d: dict[str, Any]) -> dict[str, Any]:
 
 class TestMonitoringTopicsShapeParity:
     """Verify GET /api/v1/monitoring-topics/{account_id} uses Shape B Firestore paths."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_owning_org_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stub Neo4j resolver so tests don't require a live database."""
+        monkeypatch.setattr(_RESOLVER, AsyncMock(return_value="org_test"))
 
     @pytest.fixture
     def mock_user(self) -> UserContext:
@@ -226,6 +233,11 @@ class TestMonitoringTopicsWriteShapeParity:
     4. Asserts `update_document` was called with the Shape B collection path
        and document_id "default".
     """
+
+    @pytest.fixture(autouse=True)
+    def _patch_owning_org_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stub Neo4j resolver so tests don't require a live database."""
+        monkeypatch.setattr(_RESOLVER, AsyncMock(return_value="org_test"))
 
     @pytest.fixture
     def mock_user(self) -> UserContext:

@@ -82,6 +82,18 @@ class TestMonitoringTopicsEndpoints:
         yield user
         _clear_user_override()
 
+    @pytest.fixture(autouse=True)
+    def _mock_org_resolver(self):
+        # IN-2: the access gate (require_account_access_for) resolves the
+        # account's owning org via Neo4j. Patch it to org_test so these
+        # endpoint tests don't need a live graph; mock_user is an org_test
+        # admin so the permission check then passes.
+        with mock.patch(
+            "src.kene_api.auth.account_org.resolve_owning_organization_id",
+            new=AsyncMock(return_value="org_test"),
+        ):
+            yield
+
     @pytest.fixture
     def mock_firestore(self):
         service = MagicMock()
@@ -169,14 +181,17 @@ class TestMonitoringTopicsEndpoints:
         assert response.json()["data"]["account_id"] == "acc_test"
 
     def test_get_monitoring_topics_access_denied(self, client, mock_user_no_access):
-        """Test access denied for user without permissions."""
+        """Test access denied for user without permissions.
+
+        IN-2: denial returns 404 'Account not found' (anti-enumeration), not 403.
+        """
         response = client.get(
             "/api/v1/monitoring-topics/acc_test",
             headers={"Authorization": "Bearer test_token"},
         )
 
-        assert response.status_code == 403
-        assert "Access denied" in response.json()["detail"]
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 
     def test_get_monitoring_topics_no_auth(self, client):
         """Test request without authentication."""
@@ -277,15 +292,19 @@ class TestMonitoringTopicsEndpoints:
     def test_update_company_keywords_view_only_access(
         self, client, mock_user_view_only
     ):
-        """Test that view-only users cannot update keywords."""
+        """Test that view-only users cannot update keywords.
+
+        IN-2: insufficient (view-only) access returns 404 'Account not found'
+        (anti-enumeration), not 403.
+        """
         response = client.put(
             "/api/v1/monitoring-topics/acc_test/company",
             json={"account_id": "acc_test", "company_keywords": ["keyword"]},
             headers={"Authorization": "Bearer test_token"},
         )
 
-        assert response.status_code == 403
-        assert "Write access denied" in response.json()["detail"]
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
 
     def test_update_company_keywords_empty_list(
         self, client, mock_user, mock_firestore

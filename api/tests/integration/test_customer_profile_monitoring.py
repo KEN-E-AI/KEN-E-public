@@ -1,6 +1,6 @@
 """Integration tests for customer profile monitoring keywords."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,9 +9,16 @@ from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 
+_RESOLVER = "src.kene_api.auth.account_org.resolve_owning_organization_id"
+
 
 class TestCustomerProfileMonitoring:
     """Test customer profile monitoring keywords CRUD."""
+
+    @pytest.fixture(autouse=True)
+    def _patch_owning_org_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stub Neo4j resolver so tests don't require a live database."""
+        monkeypatch.setattr(_RESOLVER, AsyncMock(return_value="org_test"))
 
     @pytest.fixture
     def mock_user(self):
@@ -105,7 +112,7 @@ class TestCustomerProfileMonitoring:
                 headers={"Authorization": "Bearer test_token"},
             )
 
-            assert response.status_code == 403
+            assert response.status_code == 404
         finally:
             app.dependency_overrides.clear()
 

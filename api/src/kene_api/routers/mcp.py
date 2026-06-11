@@ -384,10 +384,8 @@ async def get_tool_usage(
     Requires: Admin access to the specified account
     """
     # Permission check
-    if not user.is_super_admin and not user.has_account_access(account_id, ["edit"]):
-        raise HTTPException(
-            status_code=403, detail="Admin access required for account usage"
-        )
+    from ..auth.account_org import require_account_access_for
+    await require_account_access_for(user, account_id, "edit")
 
     tracker = _get_usage_tracker()
 

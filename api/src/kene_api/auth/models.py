@@ -62,43 +62,21 @@ class UserContext:
     def has_account_access(
         self, account_id: str, required_roles: list[str] | None = None
     ) -> bool:
-        """Check if user has access to an account with optional role check.
+        """DEPRECATED — Cross-org privilege escalation risk. Do not use.
 
-        Super admins always have edit access.
-        Org admins have implicit edit access to all accounts.
-        View-role users need explicit account permissions.
+        This method granted access to any admin of *any* org without verifying
+        which org owns ``account_id`` (IN-2). It is retained as a stub that
+        raises ``NotImplementedError`` at call time so any surviving call site
+        surfaces a loud failure rather than silently bypassing the tenant
+        isolation check.
 
-        NOTE: This method checks if user has ANY org admin access.
-        Use has_account_permission() for more precise checks when the account's organization is known.
-
-        Args:
-            account_id: The account ID to check
-            required_roles: Optional list of required roles (edit, view)
-
-        Returns:
-            True if user has access, False otherwise
+        Use ``auth.account_org.require_account_access_for`` instead.
+        See IN-2 for migration context.
         """
-        # Super admins always have edit access
-        if self.is_super_admin:
-            return True
-
-        # Check organization access first - need to find the org this account belongs to
-        # For now, check if user has any org admin access (will be refined when we have account-org mapping)
-        has_admin_access = any(
-            role == "admin" for role in self.organization_permissions.values()
+        raise NotImplementedError(
+            "has_account_access is unsafe — any-org-admin bypass removed in IN-2. "
+            "Use auth.account_org.require_account_access_for(user, account_id, level) instead."
         )
-        if has_admin_access:
-            return True
-
-        # Check explicit account permissions
-        if account_id not in self.account_permissions:
-            return False
-
-        if required_roles:
-            user_role = self.account_permissions.get(account_id, "")
-            return user_role in required_roles
-
-        return True
 
     def has_account_permission(
         self, account_id: str, organization_id: str, required_level: str = "view"

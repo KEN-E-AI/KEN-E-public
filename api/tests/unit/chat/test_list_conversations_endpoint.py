@@ -131,8 +131,13 @@ class TestListConversationsFlagOn:
         query: str | None = None,
         limit: int = 20,
         account_id: str | None = None,
+        resolver_org_id: str = _ORG_ID,
     ) -> ListChatSessionsResponse | ConversationListResponse:
-        """Drive the handler via AsyncMock + patch."""
+        """Drive the handler via AsyncMock + patch.
+
+        resolver_org_id: the org returned by the owning-org resolver. Defaults to
+        _ORG_ID which the default _make_user_context() user has edit access to.
+        """
         from src.kene_api.routers.chat import list_conversations
 
         mock_svc = MagicMock()
@@ -146,6 +151,10 @@ class TestListConversationsFlagOn:
             patch(
                 "src.kene_api.routers.chat.get_chat_side_table_service",
                 return_value=mock_svc,
+            ),
+            patch(
+                "src.kene_api.auth.account_org.resolve_owning_organization_id",
+                new=AsyncMock(return_value=resolver_org_id),
             ),
         ):
             return await list_conversations(
@@ -196,6 +205,10 @@ class TestListConversationsFlagOn:
                 "src.kene_api.routers.chat.get_chat_side_table_service",
                 return_value=mock_svc,
             ),
+            patch(
+                "src.kene_api.auth.account_org.resolve_owning_organization_id",
+                new=AsyncMock(return_value=_ORG_ID),
+            ),
         ):
             await list_conversations(
                 cursor=None,
@@ -231,6 +244,10 @@ class TestListConversationsFlagOn:
                 "src.kene_api.routers.chat.get_chat_side_table_service",
                 return_value=mock_svc,
             ),
+            patch(
+                "src.kene_api.auth.account_org.resolve_owning_organization_id",
+                new=AsyncMock(return_value=_ORG_ID),
+            ),
         ):
             await list_conversations(
                 cursor=None,
@@ -260,25 +277,21 @@ class TestListConversationsFlagOn:
 
     @pytest.mark.asyncio
     async def test_cross_account_access_raises_403(self) -> None:
+        """Access denied (404 per IN-2 anti-enumeration contract) when account belongs to a different org."""
         from fastapi import HTTPException
-        from src.kene_api.routers.chat import list_conversations
 
         with pytest.raises(HTTPException) as exc_info:
-            with patch(
-                "src.kene_api.routers.chat.is_feature_enabled",
-                new=AsyncMock(return_value=True),
-            ):
-                await list_conversations(
-                    cursor=None,
-                    category_id=None,
-                    query=None,
-                    limit=20,
-                    # user only has access to _ACCOUNT_ID; passing a different one
-                    account_id="acc_other_9876543210",
-                    user_context=_make_user_context([_ACCOUNT_ID]),
-                )
+            # User has access to _ACCOUNT_ID in _ORG_ID; "acc_other" belongs to "org_other"
+            await self._run(
+                [],
+                None,
+                _make_user_context([_ACCOUNT_ID]),
+                account_id="acc_other_9876543210",
+                resolver_org_id="org_other",  # account belongs to a different org
+            )
 
-        assert exc_info.value.status_code == 403
+        # IN-2: denial is 404 (anti-enumeration) not 403
+        assert exc_info.value.status_code == 404
 
 
 # ---------------------------------------------------------------------------

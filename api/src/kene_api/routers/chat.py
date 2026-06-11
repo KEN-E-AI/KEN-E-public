@@ -1007,11 +1007,8 @@ class AgentEngineClient:
                 # Use provided account_id if given, otherwise use first accessible account
                 if account_id:
                     # SECURITY: Validate user has access to requested account
-                    if not user_context.has_account_access(account_id):
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail=f"Access denied to account {account_id}",
-                        )
+                    from ..auth.account_org import require_account_access_for
+                    await require_account_access_for(user_context, account_id, "view")
                     selected_account_id = account_id
                 else:
                     selected_account_id = user_context.accessible_accounts[0]
@@ -3078,13 +3075,9 @@ async def chat_completion(
         )
 
         # SECURITY: Validate account access if account_id provided
-        if request.account_id and not user_context.has_account_access(
-            request.account_id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied to account {request.account_id}",
-            )
+        if request.account_id:
+            from ..auth.account_org import require_account_access_for
+            await require_account_access_for(user_context, request.account_id, "view")
         # Set Weave root span metadata for trace filtering (scoped via contextvars)
         _attrs_cm = None
         if WEAVE_AVAILABLE:
@@ -3310,13 +3303,9 @@ async def create_conversation(
     """
     try:
         # SECURITY: Validate account access if account_id provided
-        if request.account_id and not user_context.has_account_access(
-            request.account_id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied to account {request.account_id}",
-            )
+        if request.account_id:
+            from ..auth.account_org import require_account_access_for
+            await require_account_access_for(user_context, request.account_id, "view")
 
         now = datetime.now(timezone.utc)
         pending_id = f"pending_{uuid4()}"
@@ -3518,11 +3507,8 @@ async def list_conversations(
                     return ListChatSessionsResponse(items=[], next_cursor=None)
                 resolved_account_id = accounts[0]
 
-            if not user_context.has_account_access(resolved_account_id):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied",
-                )
+            from ..auth.account_org import require_account_access_for
+            await require_account_access_for(user_context, resolved_account_id, "view")
 
             # list_for_user runs a synchronous Firestore .stream() loop; run it
             # off the event loop so it does not block sibling requests sharing
@@ -4153,11 +4139,8 @@ async def invalidate_cache(
     """
     try:
         # SECURITY: Validate user has access to this account
-        if not user_context.has_account_access(account_id):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied to account {account_id}",
-            )
+        from ..auth.account_org import require_account_access_for
+        await require_account_access_for(user_context, account_id, "edit")
 
         redis_service = get_redis_service()
 

@@ -18,7 +18,7 @@ AC coverage (SK-PRD-01 §7):
   AC-9  POST same name same account → 409; same name different account → 201.
   AC-10 POST /validate returns 200 + {valid, errors}; writes no state.
   + 422 with field pointers on validation failure
-  + 403 for non-member user
+  + 404 for non-member user
   + 401 for unauthenticated request
 
 Note: AC-13 (account-deletion sweep) is owned by SK-18.
@@ -429,7 +429,7 @@ def _member_user(account_id: str = ACCOUNT_ID) -> UserContext:
         user_id="user-uid-123",
         email="author@example.com",
         organization_permissions={},
-        account_permissions={account_id: "admin"},
+        account_permissions={account_id: "edit"},
     )
 
 
@@ -494,8 +494,9 @@ class _SkillsRouterBase:
 
     def _install_user(self, user: UserContext) -> None:
         async def _check(account_id: str) -> UserContext:
-            if not user.has_account_access(account_id):
-                raise HTTPException(status_code=403, detail="forbidden")
+            # has_account_access deprecated (IN-2) — grant access based on account_permissions
+            if not user.is_super_admin and account_id not in user.account_permissions:
+                raise HTTPException(status_code=404, detail="Account not found")
             return user
 
         app.dependency_overrides[check_account_access] = _check
@@ -524,12 +525,12 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         resp = client.get(BASE_URL + "/")
         assert resp.status_code == 401
 
-    def test_non_member_get_list_returns_403(self, client, fake_db, fake_storage):
+    def test_non_member_get_list_returns_404(self, client, fake_db, fake_storage):
         self._install_user(_no_access_user())
         resp = client.get(BASE_URL + "/")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_non_member_post_returns_403(self, client, fake_db, fake_storage):
+    def test_non_member_post_returns_404(self, client, fake_db, fake_storage):
         self._install_user(_no_access_user())
         resp = client.post(
             BASE_URL + "/",
@@ -538,9 +539,9 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
             ],
             data={"name": "seo-checklist"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_non_member_put_returns_403(self, client, fake_db, fake_storage):
+    def test_non_member_put_returns_404(self, client, fake_db, fake_storage):
         self._install_user(_no_access_user())
         resp = client.put(
             BASE_URL + "/someSkillId",
@@ -549,7 +550,7 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
             ],
             data={"name": "seo-checklist"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_member_of_other_account_cannot_access(self, client, fake_db, fake_storage):
         """Member of account B cannot access account A's skills endpoint."""
@@ -561,9 +562,9 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         )
         self._install_user(other_user)
         resp = client.get(BASE_URL + "/")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_non_member_validate_returns_403(self, client, fake_db, fake_storage):
+    def test_non_member_validate_returns_404(self, client, fake_db, fake_storage):
         """POST /validate is gated by the router-level check_account_access dependency."""
         self._install_user(_no_access_user())
         resp = client.post(
@@ -572,7 +573,7 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
                 ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
             ],
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -1093,17 +1094,24 @@ class TestValidateEndpoint:
     """AC-10: validate endpoint returns 200 + {valid, errors}; writes no state."""
 
     @pytest.fixture(autouse=True)
-    def _install_auth(self):
+    def _install_auth(self, monkeypatch: pytest.MonkeyPatch):
         """Install a default authenticated user; override per-test as needed."""
+        from unittest.mock import AsyncMock
+
         user = UserContext(
             user_id="test-uid",
             email="tester@example.com",
             organization_permissions={"org_abc": "admin"},
-            account_permissions={ACCOUNT_ID: "admin"},
+            account_permissions={ACCOUNT_ID: "edit"},
         )
         app.dependency_overrides[get_current_user_context] = lambda: user
         mock_fs = MagicMock()
         app.dependency_overrides[get_firestore] = lambda: mock_fs
+        # Return "org_abc" so the user's org_permissions check passes.
+        monkeypatch.setattr(
+            "src.kene_api.auth.account_org.resolve_owning_organization_id",
+            AsyncMock(return_value="org_abc"),
+        )
         yield mock_fs
         app.dependency_overrides.clear()
 
@@ -1262,10 +1270,10 @@ class TestGetSkillDetail(_SkillsRouterBase):
         resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
         assert resp.status_code == 404
 
-    def test_get_non_member_returns_403(self, client, fake_db, fake_storage):
+    def test_get_non_member_returns_404(self, client, fake_db, fake_storage):
         self._install_user(_no_access_user())
         resp = client.get(BASE_URL + "/any-skill-id")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_get_unauthenticated_returns_401(self, client, fake_db, fake_storage):
         resp = client.get(BASE_URL + "/any-skill-id")
@@ -1818,10 +1826,11 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
 
     Natural cross-account (doc absent at path) → 404 (existing behaviour).
     Inconsistent doc (present at path but owner.account_id != path.account_id) → 403.
-    Non-member of path account → 403 (router-level check_account_access dependency).
+    Non-member of path account → 404 (router-level check_account_access dependency,
+    anti-enumeration per IN-2).
     """
 
-    def test_non_member_blocked_on_all_write_endpoints_returns_403(
+    def test_non_member_blocked_on_all_write_endpoints_returns_404(
         self, client, fake_db, fake_storage
     ):
         """Layer 1: non-member blocked on POST, PUT, DELETE before any storage read."""
@@ -1834,7 +1843,7 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
             ],
             data={"name": "seo-checklist"},
         )
-        assert post_resp.status_code == 403
+        assert post_resp.status_code == 404
 
         put_resp = client.put(
             BASE_URL + "/any-skill-id",
@@ -1843,21 +1852,21 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
             ],
             data={"name": "seo-checklist"},
         )
-        assert put_resp.status_code == 403
+        assert put_resp.status_code == 404
 
         del_resp = client.delete(BASE_URL + "/any-skill-id")
-        assert del_resp.status_code == 403
+        assert del_resp.status_code == 404
 
-    def test_non_member_blocked_on_all_read_endpoints_returns_403(
+    def test_non_member_blocked_on_all_read_endpoints_returns_404(
         self, client, fake_db, fake_storage
     ):
         """Layer 1: non-member blocked on GET list, GET detail, GET content, GET resource."""
         self._install_user(_no_access_user())
 
-        assert client.get(BASE_URL + "/").status_code == 403
-        assert client.get(BASE_URL + "/any-id").status_code == 403
-        assert client.get(BASE_URL + "/any-id/content").status_code == 403
-        assert client.get(BASE_URL + "/any-id/resources/ref.md").status_code == 403
+        assert client.get(BASE_URL + "/").status_code == 404
+        assert client.get(BASE_URL + "/any-id").status_code == 404
+        assert client.get(BASE_URL + "/any-id/content").status_code == 404
+        assert client.get(BASE_URL + "/any-id/resources/ref.md").status_code == 404
 
     def test_inconsistent_doc_owner_mismatch_get_detail_returns_403(
         self, client, fake_db, fake_storage
@@ -2033,14 +2042,22 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         assert resp.status_code == 404
 
     async def test_check_account_access_and_check_strategy_access_agree(self):
-        """Dependency regression: both helpers grant access to members, 403 to non-members.
+        """Dependency regression: both helpers grant access to members, 404 to non-members.
 
         Includes a super-admin user to confirm the super-admin bypass works through
         check_strategy_access (which delegates membership to check_account_access).
         """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         from fastapi import HTTPException as FastAPIHTTPException
         from src.kene_api.auth.user_context import check_account_access
         from src.kene_api.routers.strategy import check_strategy_access
+
+        _RESOLVER = "src.kene_api.auth.account_org.resolve_owning_organization_id"
+        _AUDIT_LOGGER = "src.kene_api.auth.user_context.get_audit_logger"
+
+        mock_audit_logger = MagicMock()
+        mock_audit_logger.log_access_denied = AsyncMock()
 
         super_admin_user = UserContext(
             user_id="sa-uid",
@@ -2049,20 +2066,25 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
             account_permissions={},
             roles=["super_admin"],
         )
-        # Membership gate: member passes, non-member gets 403.
+        # Membership gate: member passes, non-member gets 404 (anti-enumeration, IN-2).
         for user, should_pass in [(_member_user(), True), (_no_access_user(), False)]:
             if should_pass:
-                result = await check_account_access(ACCOUNT_ID, user)
-                assert result.user_id == user.user_id
-                result2 = await check_strategy_access(ACCOUNT_ID, user, "view")
-                assert result2.user_id == user.user_id
+                with patch(_RESOLVER, AsyncMock(return_value="org_test")):
+                    result = await check_account_access(ACCOUNT_ID, user)
+                    assert result.user_id == user.user_id
+                    result2 = await check_strategy_access(ACCOUNT_ID, user, "view")
+                    assert result2.user_id == user.user_id
             else:
-                with pytest.raises(FastAPIHTTPException) as exc_info:
-                    await check_account_access(ACCOUNT_ID, user)
-                assert exc_info.value.status_code == 403
-                with pytest.raises(FastAPIHTTPException) as exc_info2:
-                    await check_strategy_access(ACCOUNT_ID, user, "view")
-                assert exc_info2.value.status_code == 403
+                with (
+                    patch(_RESOLVER, AsyncMock(return_value="org_test")),
+                    patch(_AUDIT_LOGGER, return_value=mock_audit_logger),
+                ):
+                    with pytest.raises(FastAPIHTTPException) as exc_info:
+                        await check_account_access(ACCOUNT_ID, user)
+                    assert exc_info.value.status_code == 404
+                    with pytest.raises(FastAPIHTTPException) as exc_info2:
+                        await check_strategy_access(ACCOUNT_ID, user, "view")
+                    assert exc_info2.value.status_code == 404
 
         # Super-admin passes membership and edit-role gate even without explicit account entry.
         result_sa = await check_account_access(ACCOUNT_ID, super_admin_user)

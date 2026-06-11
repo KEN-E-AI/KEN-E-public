@@ -64,9 +64,10 @@ class TestAuthPermissionFlow:
         # So we need to test without org admin permissions
         user_context.organization_permissions = {}  # Remove org admin for this test
 
-        assert user_context.has_account_access("account_456") is True
-        assert user_context.has_account_access("account_789") is True
-        assert user_context.has_account_access("account_999") is False
+        # has_account_access deprecated (IN-2); verify via has_account_permission with a placeholder org
+        assert user_context.has_account_permission("account_456", "org_123", "edit") is True
+        assert user_context.has_account_permission("account_789", "org_123", "view") is True
+        assert user_context.has_account_permission("account_999", "org_123", "view") is False
 
     @pytest.mark.asyncio
     async def test_super_admin_detection(self):
@@ -108,8 +109,8 @@ class TestAuthPermissionFlow:
         assert user_context is not None
         assert user_context.is_super_admin is True
 
-        # Verify: Super admin has access to any account
-        assert user_context.has_account_access("any_account_id") is True
+        # Verify: Super admin bypass is captured by is_super_admin flag
+        assert user_context.is_super_admin is True
 
     @pytest.mark.asyncio
     async def test_old_structure_detected_logs_warning(self, caplog):
@@ -200,7 +201,7 @@ class TestAuthPermissionFlow:
         assert user_context.user_id == "new_user_999"
         assert user_context.account_permissions == {}
         assert user_context.organization_permissions == {}
-        assert user_context.has_account_access("any_account") is False
+        assert user_context.has_account_permission("any_account", "any_org", "view") is False
 
     @pytest.mark.asyncio
     async def test_user_not_in_firestore(self):
@@ -274,9 +275,9 @@ class TestAuthPermissionFlow:
         # Verify: Permission checks work correctly
         assert user_context is not None
 
-        # Check access (any role)
-        assert user_context.has_account_access("account_edit") is True
-        assert user_context.has_account_access("account_view") is True
+        # Check access via has_account_permission (has_account_access deprecated IN-2)
+        assert user_context.has_account_permission("account_edit", "test_org", "edit") is True
+        assert user_context.has_account_permission("account_view", "test_org", "view") is True
 
         # Check specific permissions (requires organization_id parameter)
         test_org_id = "test_org"

@@ -1,7 +1,7 @@
 """Integration tests for competitive knowledge graph endpoints with monitoring sync."""
 
 import os
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -38,6 +38,17 @@ class TestCompetitorEndpoints:
         app.dependency_overrides[get_current_user] = lambda: mock_user
         yield
         app.dependency_overrides.pop(get_current_user, None)
+
+    @pytest.fixture(autouse=True)
+    def _mock_org_resolver(self):
+        # IN-2: the access gate resolves the account's owning org via Neo4j.
+        # Patch it to org_test (mock_user is an org_test admin) so these
+        # competitor endpoint tests don't need a live graph.
+        with patch(
+            "src.kene_api.auth.account_org.resolve_owning_organization_id",
+            new=AsyncMock(return_value="org_test"),
+        ):
+            yield
 
     @pytest.fixture
     def mock_graph_service(self):

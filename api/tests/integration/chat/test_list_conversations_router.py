@@ -26,6 +26,7 @@ import os
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -170,6 +171,24 @@ def client() -> Generator[TestClient, None, None]:
         yield c
 
     app.dependency_overrides.pop(get_current_user_context, None)
+
+
+@pytest.fixture(autouse=True)
+def _mock_owning_org_resolver() -> Generator[None, None, None]:
+    """Resolve the test account's owning org without Neo4j (IN-2).
+
+    ``list_conversations`` now gates on ``require_account_access_for``, which
+    calls ``resolve_owning_organization_id`` (Neo4j) for every non-super-admin
+    request. The integration suite runs against the Firestore emulator only —
+    no Neo4j — so patch the resolver to a fixed org. The ``mock_user`` holds an
+    explicit ``"edit"`` account permission, so ``has_account_permission`` then
+    grants both view and edit regardless of the returned org id.
+    """
+    with patch(
+        "src.kene_api.auth.account_org.resolve_owning_organization_id",
+        new=AsyncMock(return_value="org_test"),
+    ):
+        yield
 
 
 @pytest.fixture(autouse=True)

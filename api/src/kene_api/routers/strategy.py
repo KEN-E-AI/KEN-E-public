@@ -12,7 +12,7 @@ from google.cloud.firestore_v1 import FieldFilter
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
-from ..auth.user_context import check_account_access
+from ..auth.account_org import require_account_access_for
 from ..models.strategy_models import (
     StrategyAuditEntry,
     StrategyAuditLogResponse,
@@ -39,17 +39,9 @@ async def check_strategy_access(
 ) -> UserContext:
     """Check if user has required access level for strategy documents.
 
-    Delegates account membership to the shared check_account_access helper,
-    then layers the edit-role gate on top when required_level == "edit".
+    Delegates to the cross-org-safe guard. Raises 404 on denial (anti-enumeration).
     """
-    await check_account_access(account_id, user)
-
-    if required_level == "edit" and not user.has_account_access(account_id, ["edit"]):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions for edit access to account {account_id}",
-        )
-
+    await require_account_access_for(user, account_id, required_level)
     return user
 
 
@@ -95,8 +87,10 @@ async def list_strategy_documents(
         )
 
         # Determine user's access level
-        access_level = "admin" if user.is_super_admin else "edit"
-        if not user.has_account_access(account_id, ["edit"]):
+        try:
+            await require_account_access_for(user, account_id, "edit")
+            access_level = "admin" if user.is_super_admin else "edit"
+        except HTTPException:
             access_level = "view"
 
         return StrategyDocumentListResponse(
@@ -162,7 +156,11 @@ async def get_strategy_document(
         )
 
         # Determine permissions
-        can_edit = user.is_super_admin or user.has_account_access(account_id, ["edit"])
+        try:
+            await require_account_access_for(user, account_id, "edit")
+            can_edit = True
+        except HTTPException:
+            can_edit = user.is_super_admin
         can_delete = user.is_super_admin
         access_level = (
             "admin" if user.is_super_admin else ("edit" if can_edit else "view")
@@ -281,7 +279,11 @@ async def create_or_update_strategy_document(
         )
 
         # Determine permissions
-        can_edit = user.is_super_admin or user.has_account_access(account_id, ["edit"])
+        try:
+            await require_account_access_for(user, account_id, "edit")
+            can_edit = True
+        except HTTPException:
+            can_edit = user.is_super_admin
         can_delete = user.is_super_admin
         access_level = "admin" if user.is_super_admin else "edit"
 

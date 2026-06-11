@@ -28,7 +28,7 @@ Acceptance criteria covered:
     - Reads require any account access (view-role sufficient)
     - Writes require admin role
     - Super-admin always has access
-    - Users with no account access → 403 on all five endpoints
+    - Users with no account access → 404 on all five endpoints (anti-enumeration, IN-2)
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Any, ClassVar
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,6 +45,8 @@ from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.dependencies import get_firestore
 from src.kene_api.main import app
 from src.kene_api.models.agent_config_models import MAX_ACCEPTANCE_CRITERIA_CHARS
+
+_RESOLVER = "src.kene_api.auth.account_org.resolve_owning_organization_id"
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -147,6 +149,14 @@ class TestAccountAgentConfigsAuth:
         yield
         app.dependency_overrides.clear()
 
+    @pytest.fixture(autouse=True)
+    def _patch_owning_org_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Stub Neo4j resolver so tests don't require a live database.
+
+        Returns org_abc to match _account_admin()'s organization_permissions.
+        """
+        monkeypatch.setattr(_RESOLVER, AsyncMock(return_value="org_abc"))
+
     @pytest.fixture
     def client(self) -> TestClient:
         return TestClient(app, raise_server_exceptions=False)
@@ -166,24 +176,24 @@ class TestAccountAgentConfigsAuth:
         app.dependency_overrides[get_firestore] = lambda: mock
 
     # ------------------------------------------------------------------
-    # No-access user → 403 on all five endpoints
+    # No-access user → 404 on all five endpoints (anti-enumeration, IN-2)
     # ------------------------------------------------------------------
 
-    def test_no_access_user_get_list_is_403(self, client: TestClient) -> None:
+    def test_no_access_user_get_list_is_404(self, client: TestClient) -> None:
         """User with no permissions cannot list configs."""
         self._install_user(_no_access_user())
         self._install_db()
         resp = client.get(BASE_URL + "/")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_no_access_user_get_single_is_403(self, client: TestClient) -> None:
+    def test_no_access_user_get_single_is_404(self, client: TestClient) -> None:
         """User with no permissions cannot read a specific config."""
         self._install_user(_no_access_user())
         self._install_db()
         resp = client.get(BASE_URL + "/some_agent")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_no_access_user_post_is_403(self, client: TestClient) -> None:
+    def test_no_access_user_post_is_404(self, client: TestClient) -> None:
         """User with no permissions cannot create a custom agent."""
         self._install_user(_no_access_user())
         self._install_db()
@@ -193,24 +203,24 @@ class TestAccountAgentConfigsAuth:
             "model": "gemini-2.5-flash",
         }
         resp = client.post(BASE_URL + "/", json=body)
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_no_access_user_put_is_403(self, client: TestClient) -> None:
+    def test_no_access_user_put_is_404(self, client: TestClient) -> None:
         """User with no permissions cannot upsert an overlay."""
         self._install_user(_no_access_user())
         self._install_db()
         resp = client.put(BASE_URL + "/some_agent", json={})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_no_access_user_delete_is_403(self, client: TestClient) -> None:
+    def test_no_access_user_delete_is_404(self, client: TestClient) -> None:
         """User with no permissions cannot delete a config."""
         self._install_user(_no_access_user())
         self._install_db()
         resp = client.delete(BASE_URL + "/some_agent")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     # ------------------------------------------------------------------
-    # View-only user — reads allowed; writes denied (403)
+    # View-only user — reads allowed; writes denied (404 per anti-enumeration, IN-2)
     # ------------------------------------------------------------------
 
     def test_view_only_user_get_list_is_allowed(self, client: TestClient) -> None:
@@ -221,8 +231,8 @@ class TestAccountAgentConfigsAuth:
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_view_only_user_post_is_403(self, client: TestClient) -> None:
-        """View-role user cannot create a custom agent (admin required for writes)."""
+    def test_view_only_user_post_is_404(self, client: TestClient) -> None:
+        """View-role user cannot create a custom agent (edit required for writes)."""
         self._install_user(_view_only_user())
         self._install_db()
         body = {
@@ -231,21 +241,21 @@ class TestAccountAgentConfigsAuth:
             "model": "gemini-2.5-flash",
         }
         resp = client.post(BASE_URL + "/", json=body)
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_view_only_user_put_is_403(self, client: TestClient) -> None:
-        """View-role user cannot upsert an overlay (admin required for writes)."""
+    def test_view_only_user_put_is_404(self, client: TestClient) -> None:
+        """View-role user cannot upsert an overlay (edit required for writes)."""
         self._install_user(_view_only_user())
         self._install_db()
         resp = client.put(BASE_URL + "/some_agent", json={})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
-    def test_view_only_user_delete_is_403(self, client: TestClient) -> None:
-        """View-role user cannot delete a config (admin required for writes)."""
+    def test_view_only_user_delete_is_404(self, client: TestClient) -> None:
+        """View-role user cannot delete a config (edit required for writes)."""
         self._install_user(_view_only_user())
         self._install_db()
         resp = client.delete(BASE_URL + "/some_agent")
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     # ------------------------------------------------------------------
     # Super-admin → 200/201 on all endpoints (auth passes; data may be empty)

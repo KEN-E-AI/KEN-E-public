@@ -8,7 +8,7 @@ emulator required.
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +17,8 @@ from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.dependencies import get_firestore
 from src.kene_api.main import app
 from src.kene_api.services import account_tools_service
+
+_RESOLVER = "src.kene_api.auth.account_org.resolve_owning_organization_id"
 
 ACCOUNT_ID = "acc_test_001"
 URL = f"/api/v1/accounts/{ACCOUNT_ID}/tools"
@@ -113,6 +115,12 @@ def _reset_overrides() -> None:
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _patch_owning_org_resolver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub Neo4j resolver so tests don't require a live database."""
+    monkeypatch.setattr(_RESOLVER, AsyncMock(return_value="org_test"))
+
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
@@ -127,10 +135,10 @@ def _install(user: UserContext, db: MagicMock) -> None:
 
 
 class TestAccountToolsAuth:
-    def test_stranger_is_forbidden(self, client: TestClient) -> None:
+    def test_stranger_is_not_found(self, client: TestClient) -> None:
         _install(_stranger(), _db_no_integrations())
         resp = client.get(URL)
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     def test_account_member_can_read(self, client: TestClient) -> None:
         _install(_account_member(), _db_no_integrations())
