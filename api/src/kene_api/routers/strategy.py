@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
+from ..auth.account_org import compute_account_access_level, require_account_access_for
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
-from ..auth.account_org import require_account_access_for
 from ..models.strategy_models import (
     StrategyAuditEntry,
     StrategyAuditLogResponse,
@@ -86,12 +86,8 @@ async def list_strategy_documents(
             request=request,
         )
 
-        # Determine user's access level
-        try:
-            await require_account_access_for(user, account_id, "edit")
-            access_level = "admin" if user.is_super_admin else "edit"
-        except HTTPException:
-            access_level = "view"
+        # Determine user's access level — reuses the cached resolver (no second Neo4j hop).
+        access_level = await compute_account_access_level(user, account_id) or "view"
 
         return StrategyDocumentListResponse(
             documents=documents, total_count=len(documents), access_level=access_level
@@ -155,16 +151,10 @@ async def get_strategy_document(
             version=document.version,
         )
 
-        # Determine permissions
-        try:
-            await require_account_access_for(user, account_id, "edit")
-            can_edit = True
-        except HTTPException:
-            can_edit = user.is_super_admin
+        # Determine permissions — reuses the cached resolver (no second Neo4j hop).
+        access_level = await compute_account_access_level(user, account_id) or "view"
+        can_edit = access_level in ("admin", "edit")
         can_delete = user.is_super_admin
-        access_level = (
-            "admin" if user.is_super_admin else ("edit" if can_edit else "view")
-        )
 
         return StrategyDocumentResponse(
             document=document,
@@ -278,14 +268,14 @@ async def create_or_update_strategy_document(
             changes=changes,
         )
 
-        # Determine permissions
-        try:
-            await require_account_access_for(user, account_id, "edit")
-            can_edit = True
-        except HTTPException:
-            can_edit = user.is_super_admin
+        # Determine permissions — reuses the cached resolver (no second Neo4j hop).
+        # The gate above already confirmed edit access, so access_level is "edit" or
+        # "admin". None can only occur if the resolver has a transient error between
+        # the gate call and here (extremely narrow window); fall back to "edit" as the
+        # minimum confirmed level rather than "view".
+        access_level = await compute_account_access_level(user, account_id) or "edit"
+        can_edit = True
         can_delete = user.is_super_admin
-        access_level = "admin" if user.is_super_admin else "edit"
 
         return StrategyDocumentResponse(
             document=document,
