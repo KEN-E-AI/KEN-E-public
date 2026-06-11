@@ -97,10 +97,11 @@ class TestStreamCompletionSseAuthor:
     async def test_single_author_turn_no_sidecar(self) -> None:
         """A stream where author is always "model" produces no event: author frames.
 
-        Golden-file back-compat: the existing SSE bytes are preserved exactly.
+        Golden-file: aside from CH-71's initial keep-alive ping, single-author
+        SSE bytes are unchanged — no event: author sidecar frames.
         """
         output = await self._run_sse(("text", "hello world", "model"))
-        assert output == "data: hello world\n\ndata: [DONE]\n\n", (
+        assert output == ": ping 0\n\ndata: hello world\n\ndata: [DONE]\n\n", (
             f"Unexpected SSE output: {output!r}"
         )
 

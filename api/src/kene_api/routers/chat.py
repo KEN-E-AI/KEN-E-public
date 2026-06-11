@@ -179,6 +179,58 @@ def _is_function_event_part(part: dict) -> bool:
 # test_chat_helpers.py keeps the two in sync.
 _VISUALIZATION_TOOL_NAME = "create_visualization"
 
+# CH-71: friendly copy for known tool names. Fallback: f"Running {tool_name}…"
+# transfer_to_agent is handled in _status_label_for_function_call (needs args).
+_STATUS_LABELS: dict[str, str] = {
+    "create_visualization": "Creating visualization…",
+    "set_todo_list": "Updating task list…",
+    "update_todo_list": "Updating task list…",
+    "run_report_mt": "Running GA report…",
+    "run_realtime_report_mt": "Running GA realtime report…",
+    "get_account_summaries_mt": "Fetching GA accounts…",
+    "get_property_details_mt": "Fetching GA property details…",
+}
+
+
+def _status_label_for_function_call(part: dict) -> str | None:
+    """Return a friendly status label for a function_call part, or None if not a call.
+
+    Returns None for function_response parts (status emitted at entry, not exit).
+    For transfer_to_agent, extracts agent_name from args for a personalized label.
+    Unknown tools fall back to f"Running {tool_name}…".
+    """
+    fc = part.get("function_call")
+    if not isinstance(fc, dict):
+        return None
+    tool_name = fc.get("name", "")
+    if not isinstance(tool_name, str) or not tool_name:
+        return None
+    if tool_name == "transfer_to_agent":
+        args = fc.get("args")
+        agent_name = args.get("agent_name") if isinstance(args, dict) else None
+        if agent_name and isinstance(agent_name, str):
+            return f"Dispatching {agent_name[:128]}…"
+        return "Dispatching specialist…"
+    return _STATUS_LABELS.get(tool_name) or f"Running {tool_name[:128]}…"
+
+
+# CH-71: idle threshold (seconds) before the streaming queue-poller emits a
+# heartbeat ping. Keep < the client's silence-timeout / 3 (45 s) so three pings
+# are missed before the client declares the stream dead.
+_HEARTBEAT_IDLE_SECONDS = 15.0
+
+
+def _should_emit_heartbeat(
+    now: float, last_chunk_at: float, interval: float = _HEARTBEAT_IDLE_SECONDS
+) -> bool:
+    """Return True when the queue-poller has been idle >= *interval* seconds.
+
+    Pure decision split out of stream_chat_completion's threaded poll loop so the
+    cadence is unit-testable without thread/time scaffolding (CH-71). ``now`` and
+    ``last_chunk_at`` are ``time.monotonic()`` readings.
+    """
+    return now - last_chunk_at >= interval
+
 
 def _function_event_invokes(part: dict, tool_name: str) -> bool:
     """Return True iff *part* is a function_call or function_response for *tool_name*.
@@ -235,21 +287,22 @@ def _format_sse(channel: str, text: str, seq: int = 0, author: str = "model") ->
     """Format a Server-Sent Event frame for the given channel.
 
     Args:
-        channel: "text", "reasoning", or "author".
+        channel: "text", "reasoning", "status", or "author".
         text: The payload text (for the "author" channel, this IS the author name).
-        seq: Monotonically increasing sequence number (only meaningful for reasoning).
+        seq: Monotonically increasing sequence number (only meaningful for reasoning
+            and status).
         author: The author identity string; defaults to ``"model"``.  When the
-            channel is ``"reasoning"`` and ``author`` differs from ``"model"``,
-            the JSON payload includes an ``"author"`` key so fan-out turns can be
-            attributed to the emitting specialist in the UI.
+            channel is ``"reasoning"`` or ``"status"`` and ``author`` differs from
+            ``"model"``, the JSON payload includes an ``"author"`` key so fan-out
+            turns can be attributed to the emitting specialist in the UI.
 
     Returns:
         A complete SSE frame string ready to be yielded to the client.
 
-    SSE framing safety: the reasoning channel uses ``json.dumps`` so embedded
-    newlines are escaped automatically. The text channel splits on newlines and
-    emits one ``data:`` prefix per line per the SSE spec, preventing a
-    multi-line model fragment from introducing a spurious event boundary.
+    SSE framing safety: the reasoning and status channels use ``json.dumps`` so
+    embedded newlines are escaped automatically. The text channel splits on
+    newlines and emits one ``data:`` prefix per line per the SSE spec, preventing
+    a multi-line model fragment from introducing a spurious event boundary.
     """
     if channel == "author":
         # Strip newlines so a malformed agent author name cannot inject synthetic
@@ -261,6 +314,11 @@ def _format_sse(channel: str, text: str, seq: int = 0, author: str = "model") ->
         if author != "model":
             payload["author"] = author
         return f"event: reasoning\ndata: {json.dumps(payload)}\n\n"
+    if channel == "status":
+        payload = {"label": text, "seq": seq}
+        if author != "model":
+            payload["author"] = author
+        return f"event: status\ndata: {json.dumps(payload)}\n\n"
     # SSE spec §9.2.6: multi-line data uses one "data:" prefix per line.
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     data = "".join(f"data: {line}\n" for line in lines)
@@ -2341,12 +2399,15 @@ class AgentEngineClient:
         Yields:
             Tuples of ``(channel, text, author)`` where ``channel`` is one of
             ``"text"``, ``"reasoning"``, ``"session"`` (emitted at most once when a
-            ``pending_`` placeholder is resolved to the real session id), or
+            ``pending_`` placeholder is resolved to the real session id),
             ``"tool_call"`` (emitted at most once per turn when a
             ``create_visualization`` function-call/response part is observed — used
             by ``_stream_completion_sse`` to gate the per-turn artifact extraction
-            round-trip, AH-157).  ``author`` identifies the emitting specialist
-            (``"model"`` for the default single-agent case).
+            round-trip, AH-157), ``"status"`` (emitted for each function_call part
+            with a friendly label for display in the UI, CH-71), or ``"ping"``
+            (heartbeat emitted when the queue-poller has been idle for >= 15 s,
+            CH-71).  ``author`` identifies the emitting specialist (``"model"`` for
+            the default single-agent case).
         """
         if not self.agent_engine:
             yield (
@@ -2452,6 +2513,8 @@ class AgentEngineClient:
                     # guards the one-shot "tool_call" sentinel channel yield below.
                     _emitted_visualization_signal = False
 
+                    _last_real_chunk_at = time.monotonic()
+
                     # Yield chunks as they arrive
                     while True:
                         # Check for chunks with a timeout to avoid blocking forever
@@ -2461,8 +2524,17 @@ class AgentEngineClient:
                             # Check if thread is still alive
                             if not stream_thread.is_alive() and chunk_queue.empty():
                                 break
+                            # CH-71: heartbeat — emit a ping when idle (see
+                            # _should_emit_heartbeat / _HEARTBEAT_IDLE_SECONDS).
+                            _now = time.monotonic()
+                            if _should_emit_heartbeat(_now, _last_real_chunk_at):
+                                yield ("ping", str(int(_now)), "model")
+                                _last_real_chunk_at = _now
                             await asyncio.sleep(0.01)  # Small yield to event loop
                             continue
+
+                        # Got a real chunk — reset the heartbeat timer.
+                        _last_real_chunk_at = time.monotonic()
 
                         if chunk is None:  # End signal
                             break
@@ -2518,6 +2590,9 @@ class AgentEngineClient:
                                                     _VISUALIZATION_TOOL_NAME,
                                                     author,
                                                 )
+                                            status_label = _status_label_for_function_call(part)
+                                            if status_label is not None:
+                                                yield ("status", status_label, author)
                                         elif (
                                             isinstance(part, dict)
                                             and part.get("thought", False)
@@ -2551,6 +2626,9 @@ class AgentEngineClient:
                                                 _VISUALIZATION_TOOL_NAME,
                                                 author,
                                             )
+                                        status_label = _status_label_for_function_call(part)
+                                        if status_label is not None:
+                                            yield ("status", status_label, author)
                                     elif (
                                         isinstance(part, dict)
                                         and part.get("thought", False)
@@ -2892,6 +2970,7 @@ async def _stream_completion_sse(
     resolved_session_id = session_id
     try:
         _reasoning_seq = 0
+        _status_seq = 0
         _current_author = "model"
         # CH-69: per-author worker-draft buffers.  Each review-loop iteration
         # appends to the buffer keyed by worker-author name.  The correct signal
@@ -2937,6 +3016,14 @@ async def _stream_completion_sse(
             _worker_pending_reset.clear()
             return frames
 
+        # CH-71: emit a keep-alive comment frame immediately, before the agent
+        # engine's (potentially slow) cold-start + session resolution runs. The
+        # client arms its 45 s silence timer on the first read; without an early
+        # byte a slow first-token would trip it into spurious stream-death
+        # recovery on a turn that is merely starting. Comment frames are SSE
+        # spec-ignored, so this is invisible to the parser.
+        yield ": ping 0\n\n"
+
         async for channel, text, author in agent_client.stream_chat_completion(
             messages=messages,
             user_context=user_context,
@@ -2945,7 +3032,13 @@ async def _stream_completion_sse(
             account_id=account_id,
             accumulator=accumulator,
         ):
-            if channel == "session":
+            if channel == "ping":
+                # CH-71: heartbeat from stream_chat_completion's idle-queue poller.
+                # SSE spec comment frame — every conforming parser ignores it.
+                # The monotonic-counter suffix prevents buffering proxies from
+                # coalescing consecutive pings into a single delivery.
+                yield f": ping {text}\n\n"
+            elif channel == "session":
                 # One-time metadata frame: the pending_ placeholder has resolved.
                 # Emitted before any text/reasoning so the client can swap its
                 # URL and resume marker while the turn is in flight (CH-62).
@@ -2956,6 +3049,20 @@ async def _stream_completion_sse(
                 # was invoked this turn.  Not forwarded to SSE output; only sets the
                 # gate so artifact extraction runs at end-of-stream.
                 _visualization_seen = True
+            elif channel == "status":
+                # CH-71: ephemeral per-step UI hint. Handled BEFORE the author-
+                # based reviewer/worker branches so a worker- or reviewer-authored
+                # status is never treated as answer text and buffered/flushed —
+                # that was the CH-68/69 leak class (a worker's "Running GA report…"
+                # landing in _worker_text_buf and surfacing as an event: text
+                # frame). Reviewer activity stays display-suppressed (CH-68); a
+                # worker's progress IS surfaced. Never call
+                # _collect_worker_flush_frames here: status is transient and
+                # flushing would prematurely collapse an in-flight worker
+                # iteration (CH-69 collapse-to-final).
+                if not _is_reviewer_author(author):
+                    yield _format_sse("status", text, _status_seq, author=author)
+                    _status_seq += 1
             elif _is_reviewer_author(author):
                 # CH-68: display-only filter — reviewer sub-agent text/reasoning
                 # is suppressed from the user-visible SSE stream. The accumulator

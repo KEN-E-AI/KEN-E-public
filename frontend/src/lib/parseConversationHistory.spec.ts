@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { parseConversationHistory } from "./parseConversationHistory";
+import {
+  parseConversationHistory,
+  extractAnswerAfterLastUserMessage,
+} from "./parseConversationHistory";
 
 describe("parseConversationHistory", () => {
   it("returns [] for null, undefined, and payloads without messages/events", () => {
@@ -85,5 +88,60 @@ describe("parseConversationHistory", () => {
     });
     expect(msg.role).toBe("assistant");
     expect(msg.timestamp).toBeInstanceOf(Date);
+  });
+});
+
+describe("extractAnswerAfterLastUserMessage (CH-71 recovery)", () => {
+  it("returns the assistant answer that follows the last user message", () => {
+    const answer = extractAnswerAfterLastUserMessage({
+      events: [
+        { content: { role: "user", parts: [{ text: "Q1" }] } },
+        { content: { role: "model", parts: [{ text: "A1" }] } },
+        { content: { role: "user", parts: [{ text: "Q2" }] } },
+        { content: { role: "model", parts: [{ text: "A2" }] } },
+      ],
+    });
+    expect(answer).toBe("A2");
+  });
+
+  it("returns null when the current turn has no answer yet (last message is the user's)", () => {
+    // The prior turn's answer (A1) must NOT be returned — it pre-dates the
+    // current user turn (Q2). This is the stale-answer guard.
+    const answer = extractAnswerAfterLastUserMessage({
+      events: [
+        { content: { role: "user", parts: [{ text: "Q1" }] } },
+        { content: { role: "model", parts: [{ text: "A1" }] } },
+        { content: { role: "user", parts: [{ text: "Q2" }] } },
+      ],
+    });
+    expect(answer).toBeNull();
+  });
+
+  it("returns the answer for a first turn with no prior history", () => {
+    const answer = extractAnswerAfterLastUserMessage({
+      events: [
+        { content: { role: "user", parts: [{ text: "Only question" }] } },
+        { content: { role: "model", parts: [{ text: "Only answer" }] } },
+      ],
+    });
+    expect(answer).toBe("Only answer");
+  });
+
+  it("does not throw on the raw { session_id, events } dict (the shape that broke the old cast)", () => {
+    // Regression: the endpoint returns an object, not an array. The previous
+    // recovery code did (raw as []).slice() and threw TypeError on this.
+    expect(() =>
+      extractAnswerAfterLastUserMessage({ session_id: "s", events: [] }),
+    ).not.toThrow();
+    expect(
+      extractAnswerAfterLastUserMessage({ session_id: "s", events: [] }),
+    ).toBeNull();
+  });
+
+  it("returns null for empty / malformed payloads", () => {
+    expect(extractAnswerAfterLastUserMessage(null)).toBeNull();
+    expect(extractAnswerAfterLastUserMessage(undefined)).toBeNull();
+    expect(extractAnswerAfterLastUserMessage({})).toBeNull();
+    expect(extractAnswerAfterLastUserMessage([])).toBeNull();
   });
 });

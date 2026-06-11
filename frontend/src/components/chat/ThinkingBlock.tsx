@@ -8,6 +8,7 @@ type ThinkingBlockProps = {
   thoughts: string[];
   durationSeconds?: number;
   onStop?: () => void;
+  currentStatusLabel?: string;
 };
 
 export function ThinkingBlock({
@@ -15,9 +16,12 @@ export function ThinkingBlock({
   thoughts,
   durationSeconds,
   onStop,
+  currentStatusLabel,
 }: ThinkingBlockProps) {
   const [isOpen, setIsOpen] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [statusElapsed, setStatusElapsed] = useState(0);
+  const statusStartRef = useRef<number | null>(null);
 
   // Promote to the full bordered "card" treatment only while actively thinking.
   // Once reasoning ends, the block demotes to an inline metadata line.
@@ -40,6 +44,24 @@ export function ThinkingBlock({
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
   }, [thoughts, isOpen]);
+
+  useEffect(() => {
+    if (currentStatusLabel && isThinking) {
+      statusStartRef.current = Date.now();
+      setStatusElapsed(0);
+      const interval = setInterval(() => {
+        if (statusStartRef.current !== null) {
+          setStatusElapsed(
+            Math.floor((Date.now() - statusStartRef.current) / 1000),
+          );
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      statusStartRef.current = null;
+      setStatusElapsed(0);
+    }
+  }, [currentStatusLabel, isThinking]);
 
   const summaryText = isThinking ? "Reasoning..." : `${durationSeconds ?? 0}s`;
 
@@ -203,6 +225,12 @@ export function ThinkingBlock({
                     </p>
                   )}
                 </div>
+                {isThinking && currentStatusLabel && (
+                  <p className="text-[11px] text-[var(--color-teal-500)] italic mt-1">
+                    {currentStatusLabel}
+                    {statusElapsed > 0 ? ` (${statusElapsed}s)` : ""}
+                  </p>
+                )}
               </div>
             </motion.div>
           )}

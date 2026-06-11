@@ -384,6 +384,28 @@ export type ArtifactPayload = {
 };
 
 /**
+ * Thrown by streamChatCompletion when the stream ends abnormally.
+ * - "no_done": reader.done without seeing [DONE]
+ * - "network": fetch or reader error
+ * - "silence_timeout": no bytes received for >= 45 s
+ * sessionId is populated from the "session" event if one arrived before the error.
+ */
+export class StreamInterruptedError extends Error {
+  readonly reason: "no_done" | "network" | "silence_timeout";
+  readonly sessionId: string | null;
+
+  constructor(
+    reason: "no_done" | "network" | "silence_timeout",
+    sessionId: string | null,
+  ) {
+    super(`Stream interrupted: ${reason}`);
+    this.name = "StreamInterruptedError";
+    this.reason = reason;
+    this.sessionId = sessionId;
+  }
+}
+
+/**
  * Discriminated-union event emitted by streamChatCompletion.
  * - "text": a fragment of the assistant's answer text.
  * - "reasoning": a fragment of the model's reasoning (thought) text.
@@ -391,13 +413,15 @@ export type ArtifactPayload = {
  *   placeholder has been resolved server-side (CH-62).
  * - "artifacts": zero or more Vega-Lite chart artifacts produced this turn
  *   (AH-131/AH-143). Emitted once per turn, just before [DONE].
+ * - "status": a live per-step status label emitted by the agent (CH-71).
  * Unknown SSE event types are silently dropped.
  */
 export type StreamEvent =
   | { type: "text"; text: string; author?: string }
   | { type: "reasoning"; text: string; author?: string }
   | { type: "session"; sessionId: string }
-  | { type: "artifacts"; artifacts: ArtifactPayload[] };
+  | { type: "artifacts"; artifacts: ArtifactPayload[] }
+  | { type: "status"; label: string; author?: string };
 
 /**
  * POST /api/v1/chat/completions (streaming SSE)
@@ -532,6 +556,23 @@ export async function* streamChatCompletion(
         return null;
       }
     }
+    if (eventType === "status") {
+      try {
+        const parsed = JSON.parse(data) as {
+          label: string;
+          seq: number;
+          author?: string;
+        };
+        return {
+          type: "status",
+          label: parsed.label,
+          author: parsed.author ?? author,
+        };
+      } catch {
+        console.debug("[streamChatCompletion] malformed status payload:", data);
+        return null;
+      }
+    }
     if (eventType === "message") {
       return { type: "text", text: data, author };
     }
@@ -539,10 +580,71 @@ export async function* streamChatCompletion(
     return null;
   };
 
+  let lastSessionId: string | null = sessionId ?? null;
+  let lastByteAt = performance.now();
+  const SILENCE_TIMEOUT_MS = 45_000;
+
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const silenceRemaining =
+        SILENCE_TIMEOUT_MS - (performance.now() - lastByteAt);
+      let readResult: ReadableStreamReadResult<Uint8Array>;
+      // Cancel the timer after every read to prevent orphaned setTimeout
+      // callbacks that would trigger unhandledrejection events on long streams.
+      let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        readResult = await Promise.race([
+          reader.read(),
+          new Promise<never>((_, reject) => {
+            silenceTimer = setTimeout(
+              () =>
+                reject(
+                  new StreamInterruptedError("silence_timeout", lastSessionId),
+                ),
+              Math.max(0, silenceRemaining),
+            );
+          }),
+        ]);
+      } catch (e) {
+        if (e instanceof StreamInterruptedError) throw e;
+        // AbortError/DOMException from user cancel — let it propagate unchanged.
+        if (e instanceof DOMException || (e as Error)?.name === "AbortError") {
+          throw e;
+        }
+        throw new StreamInterruptedError("network", lastSessionId);
+      } finally {
+        if (silenceTimer !== null) clearTimeout(silenceTimer);
+      }
+
+      const { done, value } = readResult;
+
+      if (value && value.byteLength > 0) {
+        lastByteAt = performance.now();
+      }
+
+      if (done) {
+        // Flush an event left unterminated by a final blank line (server closed
+        // the stream without the trailing "\n\n").
+        if (buffer.startsWith("data: ")) {
+          dataLines.push(buffer.slice(6));
+        }
+        if (dataLines.length > 0) {
+          const data = dataLines.join("\n");
+          if (data === "[DONE]") return;
+          if (currentEvent === "author") {
+            if (data.trim()) {
+              currentAuthor = data.trim();
+            }
+          } else {
+            const event = buildEvent(currentEvent, data, currentAuthor);
+            if (event) {
+              if (event.type === "session") lastSessionId = event.sessionId;
+              yield event;
+            }
+          }
+        }
+        throw new StreamInterruptedError("no_done", lastSessionId);
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
@@ -567,6 +669,7 @@ export async function* streamChatCompletion(
             }
             const event = buildEvent(currentEvent, data, currentAuthor);
             if (event) {
+              if (event.type === "session") lastSessionId = event.sessionId;
               yield event;
             }
           }
@@ -578,28 +681,7 @@ export async function* streamChatCompletion(
           // meaningful and must round-trip into the joined payload.
           dataLines.push(line.slice(6));
         }
-        // Other SSE fields (comments ":", "id:", "retry:") are ignored.
-      }
-    }
-
-    // Flush an event left unterminated by a final blank line (server closed
-    // the stream without the trailing "\n\n").
-    if (buffer.startsWith("data: ")) {
-      dataLines.push(buffer.slice(6));
-    }
-    if (dataLines.length > 0) {
-      const data = dataLines.join("\n");
-      if (data !== "[DONE]") {
-        if (currentEvent === "author") {
-          if (data.trim()) {
-            currentAuthor = data.trim();
-          }
-        } else {
-          const event = buildEvent(currentEvent, data, currentAuthor);
-          if (event) {
-            yield event;
-          }
-        }
+        // Lines starting with ":" are SSE comments (heartbeat pings) — ignored.
       }
     }
   } finally {

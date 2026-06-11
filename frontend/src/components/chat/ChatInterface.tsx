@@ -8,6 +8,7 @@ import {
   getConversationHistory,
   isPendingSessionId,
   streamChatCompletion,
+  StreamInterruptedError,
 } from "@/lib/chatApi";
 import type { Artifact, ChatMessage, StreamEvent } from "@/lib/chatApi";
 import { Settings2 } from "lucide-react";
@@ -20,7 +21,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { AccountId } from "@/lib/branded-types";
-import { parseConversationHistory } from "@/lib/parseConversationHistory";
+import {
+  parseConversationHistory,
+  extractAnswerAfterLastUserMessage,
+} from "@/lib/parseConversationHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
 import { cn } from "@/lib/utils";
@@ -42,6 +46,7 @@ type Message = {
   artifacts?: MessageArtifact[];
   chartArtifacts?: Artifact[];
   author?: string;
+  recoveryNotice?: string;
 };
 
 type ChatInterfaceProps = {
@@ -136,6 +141,14 @@ export function ChatInterface({
   // current value without being recreated on every reasoning event.
   const liveThoughtsRef = useRef<string[]>([]);
   const [chatTextSize, setChatTextSize] = useState<TextSize>("medium");
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
+  // Ref mirrors liveStatus so handleSend (a stable useCallback) can check
+  // the current value without liveStatus appearing in its dep array.
+  const liveStatusRef = useRef<string | null>(null);
+  const [recoveryStatus, setRecoveryStatus] = useState<
+    "idle" | "recovering" | "recovered" | "waiting" | "failed"
+  >("idle");
+  const recoveryPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const handleStopRef = useRef<() => void>(() => {});
@@ -150,12 +163,20 @@ export function ChatInterface({
   // while it was in flight (open-session-then-send race).
   const turnSeqRef = useRef(0);
 
-  // Cancel any in-flight stream when the component unmounts
+  const clearRecoveryPoll = useCallback(() => {
+    if (recoveryPollRef.current !== null) {
+      clearInterval(recoveryPollRef.current);
+      recoveryPollRef.current = null;
+    }
+  }, []);
+
+  // Cancel any in-flight stream and recovery poll when the component unmounts
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      clearRecoveryPoll();
     };
-  }, []);
+  }, [clearRecoveryPoll]);
 
   // Load prior messages when a session is opened or switched. Always resets the
   // view to the selected session so switching never leaves the previous
@@ -290,6 +311,11 @@ export function ChatInterface({
     const trimmed = input.trim();
     if (!trimmed || isStreaming || isOrgInactive) return;
 
+    // Cancel any recovery poll from a previous interrupted turn before starting
+    // a new one, to prevent stale poll callbacks from overwriting the new turn's
+    // in-flight bubbles (CH-71 High finding from code review).
+    clearRecoveryPoll();
+
     // Mark a turn as started so an in-flight history fetch won't clobber it.
     turnSeqRef.current += 1;
 
@@ -374,6 +400,9 @@ export function ChatInterface({
           locallyCreatedRef.current.add(event.sessionId);
           activeSessionId = event.sessionId;
           onSessionResolved?.(event.sessionId);
+        } else if (event.type === "status") {
+          liveStatusRef.current = event.label;
+          setLiveStatus(event.label);
         } else if (event.type === "reasoning") {
           collectedThoughts = [...collectedThoughts, event.text];
           liveThoughtsRef.current = collectedThoughts;
@@ -400,6 +429,10 @@ export function ChatInterface({
             );
           }
         } else {
+          if (liveStatusRef.current !== null) {
+            liveStatusRef.current = null;
+            setLiveStatus(null);
+          }
           const incomingAuthor = event.author ?? "model";
           if (!authorBubbleMap.has(incomingAuthor)) {
             // First time seeing this author in the turn.
@@ -461,15 +494,149 @@ export function ChatInterface({
           };
         }),
       );
+      liveStatusRef.current = null;
+      setLiveStatus(null);
       setIsStreaming(false);
     } catch (err: unknown) {
       const name = (err as Error)?.name;
+      liveStatusRef.current = null;
+      setLiveStatus(null);
+
       if (name === "CanceledError" || name === "AbortError") {
         // handleStop already appended the stopped message; remove the ghost placeholder
         // (only the last in-flight bubble is a ghost — earlier finalized bubbles stay).
         setMessages((prev) => prev.filter((m) => m.id !== currentAssistantId));
+        setIsStreaming(false);
         return;
       }
+
+      if (err instanceof StreamInterruptedError) {
+        const interruptedSessionId = err.sessionId;
+        setIsStreaming(false);
+
+        // #1 (CH-71): the turn this recovery belongs to. setIsStreaming(false)
+        // above re-enables handleSend, so the user can start a new turn while a
+        // recovery fetch is mid-flight; clearInterval stops future poll ticks but
+        // cannot cancel a getConversationHistory awaited inside the current tick.
+        // Each fetch result below is dropped if turnSeqRef has since advanced.
+        const recoveryTurn = turnSeqRef.current;
+
+        // #4 (CH-71): a null or pending_ placeholder id is unrecoverable — a
+        // pending_ session does not exist server-side, so polling it would spin
+        // for the full 5-minute budget. Surface a generic error instead.
+        if (!interruptedSessionId || isPendingSessionId(interruptedSessionId)) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === currentAssistantId
+                ? { ...m, content: "An error occurred. Please try again." }
+                : m,
+            ),
+          );
+          return;
+        }
+
+        // Drop the session from locallyCreatedRef so the history effect can fire.
+        locallyCreatedRef.current.delete(interruptedSessionId);
+
+        // Every bubble id created during this (now-interrupted) turn. Recovery
+        // replaces all of them with a single recovered bubble so a multi-author
+        // turn's partial bubbles don't linger beside the recovered answer.
+        // #5 (CH-71) known limitation: extractAnswerAfterLastUserMessage returns
+        // only the final assistant message, so a fan-out turn that produced
+        // several specialist bubbles recovers just the last one. Acceptable for
+        // a recovery path — not silent data loss; the full turn persists
+        // server-side and renders in full on session reload.
+        const turnBubbleIds = new Set<string>([
+          assistantId,
+          ...Array.from(authorBubbleMap.values()).map((b) => b.id),
+        ]);
+        const applyRecoveredAnswer = (content: string) => {
+          setMessages((prev) => [
+            ...prev.filter((m) => !turnBubbleIds.has(m.id)),
+            {
+              id: currentAssistantId,
+              role: "assistant" as const,
+              content,
+              timestamp: new Date(),
+              recoveryNotice: "Connection interrupted — recovered.",
+            },
+          ]);
+          setRecoveryStatus("recovered");
+        };
+
+        setRecoveryStatus("recovering");
+        try {
+          // NB: getConversationHistory returns the raw { session_id, events }
+          // payload — it MUST be parsed (parseConversationHistory), not treated
+          // as a message array, and the answer is gated to post-date the user's
+          // turn so a prior turn's answer is never shown as "recovered" (CH-71).
+          const recovered = extractAnswerAfterLastUserMessage(
+            await getConversationHistory(interruptedSessionId),
+          );
+          // #1: a new turn started while this fetch was in flight — drop the
+          // stale result rather than write it into the new turn's bubbles.
+          if (recoveryTurn !== turnSeqRef.current) return;
+          if (recovered !== null) {
+            applyRecoveredAnswer(recovered);
+            return;
+          }
+        } catch {
+          // History fetch failed; fall through to polling.
+        }
+
+        setRecoveryStatus("waiting");
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === currentAssistantId
+              ? {
+                  ...m,
+                  content:
+                    "Connection interrupted — waiting for the agent to finish…",
+                }
+              : m,
+          ),
+        );
+
+        let attempts = 0;
+        const MAX_ATTEMPTS = 60;
+        recoveryPollRef.current = setInterval(async () => {
+          attempts += 1;
+          try {
+            const recovered = extractAnswerAfterLastUserMessage(
+              await getConversationHistory(interruptedSessionId),
+            );
+            // #1: a new turn started while this tick's fetch was in flight —
+            // drop the stale result (the new turn already cleared this poll).
+            if (recoveryTurn !== turnSeqRef.current) return;
+            if (recovered !== null) {
+              clearRecoveryPoll();
+              applyRecoveredAnswer(recovered);
+              return;
+            }
+          } catch {
+            // Ignore transient fetch errors; keep polling.
+          }
+
+          if (attempts >= MAX_ATTEMPTS) {
+            clearRecoveryPoll();
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === currentAssistantId
+                  ? {
+                      ...m,
+                      content:
+                        "Recovery timed out — open the session from the sidebar to see the result if it arrives later.",
+                    }
+                  : m,
+              ),
+            );
+            setRecoveryStatus("failed");
+          }
+        }, 5_000);
+
+        return;
+      }
+
       const message =
         (err as Error)?.message === "SESSION_CREATE_FAILED"
           ? "Couldn't start a new session. Please try again."
@@ -491,6 +658,7 @@ export function ChatInterface({
     onCreateSession,
     onSessionStarted,
     onSessionResolved,
+    clearRecoveryPoll,
   ]);
 
   const handleRetry = useCallback(
@@ -513,11 +681,34 @@ export function ChatInterface({
 
   const textSizeClass = TEXT_SIZE_CLASSES[chatTextSize];
 
+  // CH-71: announce stream-death recovery transitions to assistive tech. The
+  // recovery messages are rendered visibly in the bubble; this mirrors them
+  // into a polite live region so screen-reader users hear the reconnect /
+  // recovered / timed-out outcome (the visible bubble swap alone is silent).
+  const recoveryAnnouncement =
+    recoveryStatus === "recovering"
+      ? "Reconnecting to recover your answer…"
+      : recoveryStatus === "waiting"
+        ? "Connection interrupted. Waiting for the agent to finish…"
+        : recoveryStatus === "recovered"
+          ? "Your answer was recovered."
+          : recoveryStatus === "failed"
+            ? "Recovery timed out."
+            : "";
+
   return (
     <div
       data-testid="chat-interface"
       className="flex flex-col flex-1 min-h-0 bg-[var(--color-bg-primary)]"
     >
+      <div
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        data-testid="recovery-announcer"
+      >
+        {recoveryAnnouncement}
+      </div>
       <div className="flex-1 min-h-0 overflow-y-auto" ref={scrollRef}>
         <div className={cn("space-y-4", compact ? "p-4" : "p-6")}>
           {messages.map((message, index) => (
@@ -566,6 +757,11 @@ export function ChatInterface({
                     )}
                     {/* Assistant response: plain, document-like text — no card */}
                     <div className="px-1 py-1">
+                      {message.recoveryNotice && (
+                        <p className="text-[11px] text-[var(--color-text-tertiary)] italic mb-1">
+                          {message.recoveryNotice}
+                        </p>
+                      )}
                       <p
                         className={cn(
                           textSizeClass,
@@ -620,6 +816,7 @@ export function ChatInterface({
                   isThinking={true}
                   thoughts={liveThoughts}
                   onStop={handleStop}
+                  currentStatusLabel={liveStatus ?? undefined}
                 />
               </div>
             </div>

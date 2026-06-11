@@ -211,6 +211,8 @@ class TestStreamCompletionCancellation:
                 account_id="acc-cancel",
                 turn_uuid="turn-uuid-1",
             )
+            # CH-71: every stream leads with an initial keep-alive ping.
+            assert await gen.__anext__() == ": ping 0\n\n"
             assert await gen.__anext__() == "data: chunk-text\n\n"
             assert await gen.__anext__() == "data: chunk-text\n\n"
             # Client disconnects mid-stream.
@@ -289,6 +291,8 @@ class TestStreamCompletionCancellation:
                 account_id="acc-fail",
                 turn_uuid="turn-uuid-3",
             )
+            # CH-71: every stream leads with an initial keep-alive ping.
+            assert await gen.__anext__() == ": ping 0\n\n"
             assert await gen.__anext__() == "data: chunk-text\n\n"
             with pytest.raises(RuntimeError, match="agent exploded"):
                 await gen.__anext__()

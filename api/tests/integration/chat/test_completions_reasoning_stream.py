@@ -193,7 +193,10 @@ async def test_contentless_event_produces_no_output():
             )
         )
 
-    non_done = [f for f in frames if "[DONE]" not in f]
-    assert non_done == [], "No content frames expected when stream yields nothing"
+    # CH-71: every stream leads with a `: ping` keep-alive comment frame. It is
+    # SSE-spec-ignored (not content), so exclude comment frames alongside [DONE]
+    # when asserting that a contentless stream produced no *content* frames.
+    content = [f for f in frames if "[DONE]" not in f and not f.startswith(":")]
+    assert content == [], "No content frames expected when stream yields nothing"
     done_frames = [f for f in frames if "[DONE]" in f]
     assert len(done_frames) == 1

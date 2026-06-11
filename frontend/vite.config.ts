@@ -28,7 +28,7 @@ const spaFallbackPlugin = (): Plugin => ({
 });
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Check if we have a resolved secrets file
   const resolvedEnvPath = path.resolve(__dirname, ".env.resolved");
   const hasResolvedSecrets = fs.existsSync(resolvedEnvPath);
@@ -59,6 +59,17 @@ export default defineConfig(({ mode }) => {
       port: 8080,
     },
     plugins: [react(), spaFallbackPlugin()],
+    esbuild: {
+      // Strip console.debug from production bundles APP-WIDE — every
+      // console.debug in the codebase, not only chatApi's SSE-payload
+      // diagnostics (which motivated it: CH-71, so malformed-frame logs never
+      // reach an end-user's devtools). `pure` lets the minifier drop these
+      // no-side-effect calls during `vite build` while keeping console.warn /
+      // console.error for production diagnostics. Dev builds are unminified, so
+      // console.debug remains available locally. NB future readers: console.debug
+      // does NOT survive in prod anywhere in the app.
+      pure: command === "build" ? ["console.debug"] : [],
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

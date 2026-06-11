@@ -52,3 +52,30 @@ export function parseConversationHistory(raw: unknown): ParsedHistoryMessage[] {
     })
     .filter((msg) => msg.content !== EMPTY);
 }
+
+/**
+ * Stream-death recovery (CH-71): from the raw `GET .../history` payload, return
+ * the answer that belongs to the just-interrupted turn — the last assistant
+ * message that appears *after* the final user message in persisted history.
+ *
+ * Returns `null` when the engine has not yet persisted an answer for the current
+ * turn (so the caller keeps polling). The "after the last user message" gate is
+ * what prevents a *prior* turn's answer being shown as the recovered result when
+ * the current turn's answer has not landed yet. Timestamps aren't used because
+ * the ADK event timestamp (epoch seconds) is not reliably comparable to the
+ * client clock here.
+ */
+export function extractAnswerAfterLastUserMessage(raw: unknown): string | null {
+  const parsed = parseConversationHistory(raw);
+  let lastUserIdx = -1;
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    if (parsed[i].role === "user") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  for (let i = parsed.length - 1; i > lastUserIdx; i--) {
+    if (parsed[i].role === "assistant") return parsed[i].content;
+  }
+  return null;
+}
