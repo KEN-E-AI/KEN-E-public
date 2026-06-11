@@ -24,6 +24,7 @@ import {
   useFeatureFlag,
 } from "@/contexts/FeatureFlagsContext";
 import { ChatProvider } from "@/contexts/ChatContext";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import SelectOrganizationPage from "@/pages/SelectOrganizationPage";
@@ -240,7 +241,9 @@ const AppRoutes = () => {
         <Route
           element={
             <ProtectedRoute>
-              <LayoutC />
+              <ChatStreamProvider>
+                <LayoutC />
+              </ChatStreamProvider>
             </ProtectedRoute>
           }
         >

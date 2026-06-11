@@ -53,11 +53,20 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({
+    user: null,
+    selectedOrgAccount: null,
+    isAuthenticated: false,
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
 
 import { ChatInterface } from "../ChatInterface";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
 import { streamChatCompletion } from "@/lib/chatApi";
 
 const mockStreamChatCompletion = vi.mocked(streamChatCompletion);
@@ -99,7 +108,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     await sendMessage("hi");
 
     await waitFor(() => {
@@ -125,7 +138,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     await sendMessage("fan-out query");
 
     // Wait for specialist_b's content to appear (last yielded).
@@ -162,7 +179,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     await sendMessage("test");
 
     await waitFor(() => {
@@ -185,7 +206,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     await sendMessage("total text test");
 
     // Wait for both authors' final fragments.
@@ -211,7 +236,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     // Intro is visible before sending.
     expect(screen.getByText(/Hi! I'm your KEN-E/i)).toBeInTheDocument();
@@ -236,7 +265,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     await sendMessage("test");
 
     await waitFor(() => {
@@ -266,7 +299,11 @@ describe("ChatInterface — multi-author fan-out (AH-124)", () => {
 
     mockStreamChatCompletion.mockReturnValue(makeStream(events) as any);
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     await sendMessage("legacy");
 
     await waitFor(() => {

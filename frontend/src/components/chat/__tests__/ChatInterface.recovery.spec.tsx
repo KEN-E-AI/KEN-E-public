@@ -17,6 +17,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import type { StreamEvent } from "@/lib/chatApi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("framer-motion", () => ({
   motion: {
@@ -47,7 +48,16 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({
+    user: null,
+    selectedOrgAccount: null,
+    isAuthenticated: false,
+  }),
+}));
+
 import { ChatInterface } from "../ChatInterface";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
 import {
   streamChatCompletion,
   getConversationHistory,
@@ -133,7 +143,16 @@ describe("ChatInterface — stream-death recovery flow", () => {
       ],
     } as unknown as never);
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     await waitFor(() => {
@@ -167,7 +186,16 @@ describe("ChatInterface — stream-death recovery flow", () => {
       ],
     } as unknown as never);
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     // #1: wait on the live-region announcement (unambiguous; the visible bubble
@@ -191,7 +219,16 @@ describe("ChatInterface — stream-death recovery flow", () => {
       dyingStream(new StreamInterruptedError("no_done", null)) as any,
     );
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     await waitFor(() => {
@@ -209,7 +246,16 @@ describe("ChatInterface — stream-death recovery flow", () => {
       ) as any,
     );
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     await waitFor(() => {
@@ -232,7 +278,16 @@ describe("ChatInterface — stream-death recovery flow", () => {
       // Turn 2 streams a clean answer.
       .mockReturnValueOnce(textStream("New turn answer") as any);
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage("first question");
     // Recovery is now blocked on the in-flight history fetch.
     await waitFor(() => expect(mockHistory).toHaveBeenCalledTimes(1));

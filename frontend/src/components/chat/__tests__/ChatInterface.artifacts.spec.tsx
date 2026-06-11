@@ -62,11 +62,20 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({
+    user: null,
+    selectedOrgAccount: null,
+    isAuthenticated: false,
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
 
 import { ChatInterface } from "../ChatInterface";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
 import { streamChatCompletion } from "@/lib/chatApi";
 
 const mockStreamChatCompletion = vi.mocked(streamChatCompletion);
@@ -136,7 +145,11 @@ describe("ChatInterface — artifacts SSE integration", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "show me a chart");
@@ -160,7 +173,11 @@ describe("ChatInterface — artifacts SSE integration", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "show me two charts");
@@ -188,7 +205,11 @@ describe("ChatInterface — artifacts SSE integration", () => {
       makeStream([{ type: "text", text: "Hello" }]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "hello");
@@ -224,7 +245,11 @@ describe("ChatInterface — artifacts SSE integration", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "show me a chart");
@@ -265,7 +290,11 @@ describe("ChatInterface — artifacts SSE integration", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "show me two charts");
@@ -295,7 +324,11 @@ describe("ChatInterface — artifacts SSE integration", () => {
       makeStream([{ type: "artifacts", artifacts: [sampleArtifact] }]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "show me a chart");

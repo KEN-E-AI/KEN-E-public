@@ -46,9 +46,18 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({
+    user: null,
+    selectedOrgAccount: null,
+    isAuthenticated: false,
+  }),
+}));
+
 import { streamChatCompletion, getConversationHistory } from "@/lib/chatApi";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
 
 const mockStreamChatCompletion = vi.mocked(streamChatCompletion);
 const mockGetConversationHistory = vi.mocked(getConversationHistory);
@@ -81,7 +90,11 @@ describe("ChatInterface", () => {
   test("TC-1: SSE stream chunks are appended to the message list", async () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Hello", " world"]));
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const input = screen.getByRole("textbox", { name: /chat input/i });
     const sendBtn = screen.getByRole("button", { name: /send message/i });
@@ -111,7 +124,11 @@ describe("ChatInterface", () => {
     })();
     mockStreamChatCompletion.mockReturnValue(blockingStream);
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const input = screen.getByRole("textbox", { name: /chat input/i });
     fireEvent.change(input, { target: { value: "test" } });
@@ -138,7 +155,11 @@ describe("ChatInterface", () => {
       refetch: () => Promise.resolve(),
     });
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     expect(screen.getByRole("textbox", { name: /chat input/i })).toBeDisabled();
     expect(
@@ -147,7 +168,11 @@ describe("ChatInterface", () => {
   });
 
   test("TC-3b: composer is enabled when org status is active", () => {
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     expect(
       screen.getByRole("textbox", { name: /chat input/i }),
@@ -167,7 +192,11 @@ describe("ChatInterface", () => {
     })();
     mockStreamChatCompletion.mockReturnValue(blockingStream);
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
       target: { value: "test abort" },
@@ -207,7 +236,11 @@ describe("ChatInterface", () => {
   test("TC-MarkRead-1: useMarkRead called with sessionId and populated ref once assistant message renders", async () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Hello"]));
 
-    render(<ChatInterface sessionId="sess_123" />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_123" />
+      </ChatStreamProvider>,
+    );
 
     // On first render: sessionId is passed but no non-intro assistant message yet
     expect(mockUseMarkRead).toHaveBeenCalledWith(
@@ -238,7 +271,11 @@ describe("ChatInterface", () => {
   // ── TC-MarkRead-2: sessionId undefined → hook receives null ─────────────
 
   test("TC-MarkRead-2: useMarkRead called with sessionId: null when sessionId prop is undefined", () => {
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     expect(mockUseMarkRead).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: null, latestMessageId: null }),
@@ -250,7 +287,11 @@ describe("ChatInterface", () => {
   test("TC-4: kene-chat-text-size-change event changes message text size", async () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Hello"]));
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     // The assistant message is rendered through ChatMarkdown, so the matched
     // text lives in an inner <p> and the size class sits on its wrapper <div>.
@@ -290,7 +331,11 @@ describe("ChatInterface", () => {
       ],
     });
 
-    render(<ChatInterface sessionId="sess_hist" />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_hist" />
+      </ChatStreamProvider>,
+    );
 
     expect(await screen.findByText("earlier question")).toBeInTheDocument();
     expect(screen.getByText("earlier answer")).toBeInTheDocument();
@@ -303,7 +348,11 @@ describe("ChatInterface", () => {
   // ── TC-History-2: no sessionId stays ephemeral and never fetches ─────────
 
   test("TC-History-2: no sessionId keeps the intro and skips the history fetch", () => {
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     expect(
       screen.getByText(/I'm your KEN-E AI assistant/i),
@@ -316,7 +365,11 @@ describe("ChatInterface", () => {
   test("TC-History-3: empty history retains the intro", async () => {
     mockGetConversationHistory.mockResolvedValue({ events: [] });
 
-    render(<ChatInterface sessionId="sess_empty" />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_empty" />
+      </ChatStreamProvider>,
+    );
 
     await waitFor(() =>
       expect(mockGetConversationHistory).toHaveBeenCalledWith("sess_empty"),
@@ -332,7 +385,11 @@ describe("ChatInterface", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockGetConversationHistory.mockRejectedValue(new Error("boom"));
 
-    render(<ChatInterface sessionId="sess_err" />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_err" />
+      </ChatStreamProvider>,
+    );
 
     await waitFor(() => expect(errSpy).toHaveBeenCalled());
     expect(
@@ -351,7 +408,11 @@ describe("ChatInterface", () => {
       ],
     });
 
-    const { rerender } = render(<ChatInterface sessionId="sess_A" />);
+    const { rerender } = render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_A" />
+      </ChatStreamProvider>,
+    );
     expect(await screen.findByText("question A")).toBeInTheDocument();
 
     mockGetConversationHistory.mockResolvedValue({
@@ -360,7 +421,11 @@ describe("ChatInterface", () => {
         { content: { role: "model", parts: [{ text: "answer B" }] } },
       ],
     });
-    rerender(<ChatInterface sessionId="sess_B" />);
+    rerender(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_B" />
+      </ChatStreamProvider>,
+    );
 
     expect(await screen.findByText("question B")).toBeInTheDocument();
     // The previous session's messages must be gone (Q5 regression guard).
@@ -376,11 +441,19 @@ describe("ChatInterface", () => {
       ],
     });
 
-    const { rerender } = render(<ChatInterface sessionId="sess_full" />);
+    const { rerender } = render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_full" />
+      </ChatStreamProvider>,
+    );
     expect(await screen.findByText("old question")).toBeInTheDocument();
 
     mockGetConversationHistory.mockResolvedValue({ events: [] });
-    rerender(<ChatInterface sessionId="sess_blank" />);
+    rerender(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_blank" />
+      </ChatStreamProvider>,
+    );
 
     // Empty session → fresh intro, and the prior conversation is cleared.
     await waitFor(() =>
@@ -394,7 +467,11 @@ describe("ChatInterface", () => {
   // ── TC-History-7: a pending_ session shows the intro and skips the fetch ──
 
   test("TC-History-7: pending_ session shows the intro without fetching history", () => {
-    render(<ChatInterface sessionId="pending_abc123" />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface sessionId="pending_abc123" />
+      </ChatStreamProvider>,
+    );
 
     expect(
       screen.getByText(/I'm your KEN-E AI assistant/i),
@@ -410,10 +487,12 @@ describe("ChatInterface", () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
 
     render(
-      <ChatInterface
-        onCreateSession={onCreateSession}
-        onSessionStarted={onSessionStarted}
-      />,
+      <ChatStreamProvider>
+        <ChatInterface
+          onCreateSession={onCreateSession}
+          onSessionStarted={onSessionStarted}
+        />
+      </ChatStreamProvider>,
     );
 
     fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
@@ -437,10 +516,12 @@ describe("ChatInterface", () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
 
     const { rerender } = render(
-      <ChatInterface
-        onCreateSession={onCreateSession}
-        onSessionStarted={vi.fn()}
-      />,
+      <ChatStreamProvider>
+        <ChatInterface
+          onCreateSession={onCreateSession}
+          onSessionStarted={vi.fn()}
+        />
+      </ChatStreamProvider>,
     );
 
     fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
@@ -451,7 +532,9 @@ describe("ChatInterface", () => {
 
     // Simulate the URL moving to the new session (parent re-renders the prop).
     rerender(
-      <ChatInterface sessionId="new-sess-2" onSessionStarted={vi.fn()} />,
+      <ChatStreamProvider>
+        <ChatInterface sessionId="new-sess-2" onSessionStarted={vi.fn()} />
+      </ChatStreamProvider>,
     );
 
     // The history-load effect must skip the session we just created.
@@ -465,7 +548,9 @@ describe("ChatInterface", () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
 
     render(
-      <ChatInterface sessionId="sess_X" onCreateSession={onCreateSession} />,
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_X" onCreateSession={onCreateSession} />
+      </ChatStreamProvider>,
     );
 
     fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
@@ -485,7 +570,9 @@ describe("ChatInterface", () => {
     mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
 
     render(
-      <ChatInterface sessionId="sess_X" accountId={"acc_123" as AccountId} />,
+      <ChatStreamProvider>
+        <ChatInterface sessionId="sess_X" accountId={"acc_123" as AccountId} />
+      </ChatStreamProvider>,
     );
 
     fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
@@ -504,7 +591,11 @@ describe("ChatInterface", () => {
 
   test("TC-Defer-4: create failure shows an error and does not stream", async () => {
     const onCreateSession = vi.fn().mockResolvedValue(null);
-    render(<ChatInterface onCreateSession={onCreateSession} />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface onCreateSession={onCreateSession} />
+      </ChatStreamProvider>,
+    );
 
     fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
       target: { value: "Hello" },

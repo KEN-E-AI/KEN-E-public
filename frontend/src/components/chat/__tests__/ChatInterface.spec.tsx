@@ -55,11 +55,20 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({
+    user: null,
+    selectedOrgAccount: null,
+    isAuthenticated: false,
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
 
 import { ChatInterface } from "../ChatInterface";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
 import { streamChatCompletion } from "@/lib/chatApi";
 
 const mockStreamChatCompletion = vi.mocked(streamChatCompletion);
@@ -103,7 +112,11 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
 
     mockStreamChatCompletion.mockReturnValue(hangingStream() as any);
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "hello");
@@ -129,7 +142,11 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "hello");
@@ -149,7 +166,11 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
       ]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
     await userEvent.type(textarea, "hi");
@@ -174,7 +195,11 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
       makeStream([{ type: "text", text: "Turn 2 answer." }]) as any,
     );
 
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
 
     const textarea = screen.getByPlaceholderText(/ask me anything/i);
 
@@ -216,10 +241,12 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
 
     // Step 2: render ChatInterface with onSessionResolved prop.
     render(
-      <ChatInterface
-        sessionId="pending_abc123"
-        onSessionResolved={onSessionResolved}
-      />,
+      <ChatStreamProvider>
+        <ChatInterface
+          sessionId="pending_abc123"
+          onSessionResolved={onSessionResolved}
+        />
+      </ChatStreamProvider>,
     );
 
     // Step 3: send a message to trigger the stream.
@@ -252,39 +279,63 @@ describe("ChatInterface — compact mode (CH-61)", () => {
   });
 
   test("tip footer is NOT rendered in compact mode", () => {
-    render(<ChatInterface compact />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface compact />
+      </ChatStreamProvider>,
+    );
     // The tip footer contains "Tip:" text when not in compact mode.
     expect(screen.queryByText(/tip:/i)).not.toBeInTheDocument();
   });
 
   test("tip footer IS rendered in default (non-compact) mode", () => {
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     expect(screen.getByText(/tip:/i)).toBeInTheDocument();
   });
 
   test("composer textarea has tighter min-height class in compact mode", () => {
-    render(<ChatInterface compact />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface compact />
+      </ChatStreamProvider>,
+    );
     const textarea = screen.getByRole("textbox", { name: /chat input/i });
     expect(textarea.className).toMatch(/min-h-\[2\.5rem\]/);
     expect(textarea.className).not.toMatch(/min-h-\[3\.75rem\]/);
   });
 
   test("composer textarea has full min-height class in default mode", () => {
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     const textarea = screen.getByRole("textbox", { name: /chat input/i });
     expect(textarea.className).toMatch(/min-h-\[3\.75rem\]/);
     expect(textarea.className).not.toMatch(/min-h-\[2\.5rem\]/);
   });
 
   test("send button has smaller size class in compact mode", () => {
-    render(<ChatInterface compact />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface compact />
+      </ChatStreamProvider>,
+    );
     const button = screen.getByRole("button", { name: /send message/i });
     expect(button.className).toMatch(/\bsize-11\b/);
     expect(button.className).not.toMatch(/size-\[3\.75rem\]/);
   });
 
   test("send button has full size class in default mode", () => {
-    render(<ChatInterface />);
+    render(
+      <ChatStreamProvider>
+        <ChatInterface />
+      </ChatStreamProvider>,
+    );
     const button = screen.getByRole("button", { name: /send message/i });
     expect(button.className).toMatch(/size-\[3\.75rem\]/);
     expect(button.className).not.toMatch(/\bsize-11\b/);

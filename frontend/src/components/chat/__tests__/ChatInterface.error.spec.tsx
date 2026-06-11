@@ -48,11 +48,21 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({
+    user: null,
+    selectedOrgAccount: null,
+    isAuthenticated: false,
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports after mocks
 // ---------------------------------------------------------------------------
 
 import { ChatInterface } from "../ChatInterface";
+import { ChatStreamProvider } from "@/contexts/ChatStreamContext";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   streamChatCompletion,
   getConversationHistory,
@@ -125,7 +135,16 @@ describe("ChatInterface — server-side error events (CH-79)", () => {
       },
     );
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     // The error message must appear in the assistant bubble.
@@ -162,7 +181,16 @@ describe("ChatInterface — server-side error events (CH-79)", () => {
       },
     );
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     // The original answer text must still be visible.
@@ -206,7 +234,16 @@ describe("ChatInterface — server-side error events (CH-79)", () => {
       },
     );
 
-    render(<ChatInterface />);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ChatStreamProvider>
+          <ChatInterface />
+        </ChatStreamProvider>
+      </QueryClientProvider>,
+    );
     await sendMessage();
 
     // Wait until the immediate recovery attempt finishes and the component
