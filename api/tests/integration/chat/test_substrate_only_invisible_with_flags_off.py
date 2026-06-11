@@ -50,6 +50,11 @@ pytestmark = pytest.mark.skipif(
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
+# CH-76: GET /history resolves session ownership before the ADK call. The gate
+# only checks the resolved session is not None — the endpoint reads none of its
+# fields — so a sentinel suffices to make the gate pass.
+_OWNED_SESSION = object()
+
 _MOCK_USER = UserContext(
     user_id="test-user-123",
     email="test@example.com",
@@ -180,9 +185,22 @@ class TestSubstrateOnlyInvisibleWithFlagsOff:
         flag-gate 404 whose detail is exactly 'Not Found'.
         """
         mock_history: dict[str, Any] = {"events": [], "session_id": "test-session"}
-        with patch(
-            "src.kene_api.routers.chat.agent_client.get_conversation_history",
-            new=AsyncMock(return_value=mock_history),
+        with (
+            patch(
+                "src.kene_api.routers.chat.agent_client.get_conversation_history",
+                new=AsyncMock(return_value=mock_history),
+            ),
+            # CH-76: the endpoint now resolves session ownership before the ADK
+            # call. The emulator has no seeded side-table row, so stub the gate
+            # to pass — this test asserts flag-gating, not ownership.
+            patch(
+                "src.kene_api.chat.side_table.ChatSessionSideTableService.resolve_session_for_user",
+                new=AsyncMock(return_value=_OWNED_SESSION),
+            ),
+            patch(
+                "src.kene_api.routers.chat.agent_client._session_service",
+                new=object(),
+            ),
         ):
             response = client.get(
                 "/api/v1/chat/conversations/test-session-id/history",

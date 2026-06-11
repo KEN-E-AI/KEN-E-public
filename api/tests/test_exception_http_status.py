@@ -39,6 +39,28 @@ def _regular_user() -> MagicMock:
     return user
 
 
+def _install_history_ownership_gate(monkeypatch, *, owned: bool) -> None:
+    """Stub the chat side-table ownership gate used by GET /history (CH-76).
+
+    ``owned=True`` makes ``resolve_session_for_user`` return a session so the
+    gate passes and the inner ADK call runs; ``owned=False`` returns None so the
+    gate denies with a 404. Without this, the gate reads an empty Firestore and
+    always 404s before the inner ADK behaviour under test is reached.
+    """
+    svc = MagicMock()
+    svc.resolve_session_for_user = AsyncMock(
+        return_value=(MagicMock() if owned else None)
+    )
+    monkeypatch.setattr(
+        "src.kene_api.routers.chat.get_chat_side_table_service", lambda: svc
+    )
+    # The handler reads agent_client.session_service to pass into the gate; stub
+    # the lazily-built ADK service so property access never reaches Vertex.
+    monkeypatch.setattr(
+        "src.kene_api.routers.chat.agent_client._session_service", MagicMock()
+    )
+
+
 @pytest.fixture
 def client():
     test_client = TestClient(app)
@@ -88,7 +110,8 @@ class TestChatHistoryStatus:
     _HISTORY = "src.kene_api.routers.chat.agent_client.get_conversation_history"
 
     def test_missing_conversation_returns_404(self, client, monkeypatch):
-        monkeypatch.setattr(self._HISTORY, AsyncMock(return_value=None))
+        """Ownership gate (CH-76): a session the user does not own → 404, not 500."""
+        _install_history_ownership_gate(monkeypatch, owned=False)
         app.dependency_overrides[get_current_user_context] = _regular_user
 
         response = client.get("/api/v1/chat/conversations/sess_missing/history")
@@ -98,7 +121,9 @@ class TestChatHistoryStatus:
 
     def test_real_error_still_returns_500(self, client, monkeypatch):
         """Guard: the new `except HTTPException: raise` must not swallow genuine
-        failures — a real error still maps to 500."""
+        failures — once the ownership gate passes, a real error from the inner
+        ADK call still maps to 500."""
+        _install_history_ownership_gate(monkeypatch, owned=True)
         monkeypatch.setattr(self._HISTORY, AsyncMock(side_effect=RuntimeError("boom")))
         app.dependency_overrides[get_current_user_context] = _regular_user
 

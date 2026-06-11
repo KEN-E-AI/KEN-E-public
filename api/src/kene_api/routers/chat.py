@@ -3943,14 +3943,38 @@ async def mark_conversation_read(
 
 @router.get("/conversations/{session_id}/history")
 async def get_conversation_history(
-    session_id: str, user_context: UserContext = Depends(get_current_user_context)
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
+    user_context: UserContext = Depends(get_current_user_context),
 ):
     """
     Get the message history for a specific conversation.
+
+    Ownership-gated: returns 404 for any session the authenticated user does
+    not own on the current account (same no-existence-leak contract as
+    mark-read, /todos, /artifacts). Note: ``chat_v2_enabled`` does not gate
+    this endpoint — per api/CLAUDE.md that flag only disables the internal
+    side-table update path; public chat endpoints are unaffected.
     """
+    svc = get_chat_side_table_service()
+    user_id = user_context.user_id
+
     try:
+        meta = await svc.resolve_session_for_user(
+            user_id=user_id,
+            session_id=session_id,
+            session_service=agent_client.session_service,
+            app_name=APP_NAME,
+            org_id_resolver=_get_organization_id_for_account,
+            model_id=_get_agent_model_id(),
+        )
+        if meta is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+
         history = await agent_client.get_conversation_history(
-            user_id=user_context.user_id, session_id=session_id
+            user_id=user_id, session_id=session_id
         )
 
         if history is None:
@@ -3962,8 +3986,8 @@ async def get_conversation_history(
         return history
 
     except HTTPException:
-        # Pass through deliberate HTTP responses (e.g. the 404 above) instead of
-        # rewrapping them as a generic 500.
+        # Pass through deliberate HTTP responses (ownership 404, inner 404) instead
+        # of rewrapping them as a generic 500.
         raise
     except Exception as e:
         logger.error(f"Error getting conversation history {session_id}: {e!s}")
