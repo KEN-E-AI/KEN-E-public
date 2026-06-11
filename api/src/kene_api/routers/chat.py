@@ -3139,14 +3139,34 @@ async def _stream_completion_sse(
                     f"data: {json.dumps({'artifacts': [a.model_dump(mode='json') for a in _artifacts]})}\n\n"
                 )
         yield "data: [DONE]\n\n"
-    except (asyncio.CancelledError, GeneratorExit, Exception):
-        # SSE cancellation (GeneratorExit / CancelledError) or an agent-side
-        # failure — mark the turn failed so the finally flushes partial counts.
-        # CH-69: do NOT flush worker buffers on cancellation / exception — the
-        # user has disconnected or the turn failed; synthesising buffered text
-        # into a closed channel is incorrect.
+    except (asyncio.CancelledError, GeneratorExit):
+        # Client disconnect — mark failed and propagate so the framework knows.
+        # CH-69: do NOT flush worker buffers — the client is gone.
         turn_failed = True
         raise
+    except Exception:
+        # Genuine server-side exception (e.g. _extract_and_clear_response_artifacts,
+        # worker-buffer flush). Emit a terminal error frame so the client can
+        # distinguish "stream failed" from "stream died mid-flight" (CH-79).
+        # Log the full traceback for ops BEFORE yielding — so the trace is
+        # captured even if the yield raises (closed channel, etc.).
+        turn_failed = True
+        logger.exception(
+            "SSE outer exception — emitting terminal error frame",
+            extra=log_context(
+                component="chat",
+                action="sse_outer_exception",
+                session_id=resolved_session_id,
+            ),
+        )
+        # Best-effort: if the channel is already closed the yield will raise,
+        # but we must not let that override the original exception for logging
+        # purposes — the finally block still runs regardless.
+        try:
+            yield f"event: error\ndata: {json.dumps({'message': 'An unexpected error occurred. Please try again.'})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception:
+            pass  # channel closed before we could send — frame is best-effort
     finally:
         await _flush_stream_turn(
             session_id=resolved_session_id,

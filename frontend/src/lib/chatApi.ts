@@ -414,6 +414,11 @@ export class StreamInterruptedError extends Error {
  * - "artifacts": zero or more Vega-Lite chart artifacts produced this turn
  *   (AH-131/AH-143). Emitted once per turn, just before [DONE].
  * - "status": a live per-step status label emitted by the agent (CH-71).
+ * - "error": terminal failure frame from the server; arrives before `[DONE]`
+ *   when the stream completed but the request failed server-side. The client
+ *   should surface the message directly rather than entering the stream-death
+ *   recovery flow. Distinct from `StreamInterruptedError` (which signals
+ *   mid-flight stream death without a clean terminal frame).
  * Unknown SSE event types are silently dropped.
  */
 export type StreamEvent =
@@ -421,7 +426,8 @@ export type StreamEvent =
   | { type: "reasoning"; text: string; author?: string }
   | { type: "session"; sessionId: string }
   | { type: "artifacts"; artifacts: ArtifactPayload[] }
-  | { type: "status"; label: string; author?: string };
+  | { type: "status"; label: string; author?: string }
+  | { type: "error"; message: string };
 
 /**
  * POST /api/v1/chat/completions (streaming SSE)
@@ -570,6 +576,18 @@ export async function* streamChatCompletion(
         };
       } catch {
         console.debug("[streamChatCompletion] malformed status payload:", data);
+        return null;
+      }
+    }
+    if (eventType === "error") {
+      try {
+        const parsed = JSON.parse(data) as { message: string };
+        if (typeof parsed.message !== "string" || !parsed.message) {
+          return null;
+        }
+        return { type: "error", message: parsed.message };
+      } catch {
+        console.debug("[streamChatCompletion] malformed error payload:", data);
         return null;
       }
     }

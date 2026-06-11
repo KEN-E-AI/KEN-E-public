@@ -8,6 +8,7 @@ and its partial token counts.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -263,7 +264,7 @@ class TestStreamCompletionCancellation:
 
     @pytest.mark.asyncio
     async def test_agent_failure_mid_stream_flushes_partial_counts(self) -> None:
-        """An agent-side exception is also a failed turn — partial counts flushed."""
+        """An agent-side exception is a failed turn — error frame emitted, partial counts flushed."""
 
         async def _failing_stream(
             *, accumulator: SessionTurnAccumulator | None = None, **_kwargs: Any
@@ -291,13 +292,220 @@ class TestStreamCompletionCancellation:
                 account_id="acc-fail",
                 turn_uuid="turn-uuid-3",
             )
-            # CH-71: every stream leads with an initial keep-alive ping.
-            assert await gen.__anext__() == ": ping 0\n\n"
-            assert await gen.__anext__() == "data: chunk-text\n\n"
-            with pytest.raises(RuntimeError, match="agent exploded"):
-                await gen.__anext__()
+            collected = [item async for item in gen]
 
+        # CH-79: exception is caught — no raise escapes the generator.
+        # Error frame + [DONE] are emitted after the partial text.
+        assert any("event: error\n" in frame for frame in collected)
+        assert collected[-1] == "data: [DONE]\n\n"
         kwargs = mock_apply.call_args.kwargs
         assert kwargs["idempotency_key"] == "sess-fail:turn:inv-fail"
         assert kwargs["delta"]["input_tokens_total"].value == 200
         assert kwargs["delta"]["output_tokens_total"].value == 50
+
+
+# ---------------------------------------------------------------------------
+# _stream_completion_sse — terminal error frame (CH-79)
+# ---------------------------------------------------------------------------
+
+
+class TestStreamCompletionTerminalError:
+    """Tests for the ``except Exception:`` arm added in CH-79.
+
+    Verifies that a genuine server-side exception (not CancelledError /
+    GeneratorExit) causes the generator to:
+    - emit ``event: error\\n...`` followed by ``data: [DONE]\\n\\n``
+    - NOT raise out of the generator
+    - flush the side-table with ``turn_failed=True``
+    - NOT leak internal exception details to the SSE client
+    """
+
+    @pytest.mark.asyncio
+    async def test_empty_bubble_hard_failure_emits_error_and_done(self) -> None:
+        """Stream raises before any yielded chunk — error frame + DONE emitted, no raise."""
+
+        async def _raising_stream(*, accumulator: Any = None, **_kwargs: Any):
+            if False:
+                yield  # make it a valid async generator
+            raise RuntimeError("hard failure")
+
+        mock_apply = MagicMock(return_value={"status": "applied"})
+        with (
+            patch.object(
+                chat_module.agent_client, "stream_chat_completion", _raising_stream
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
+        ):
+            gen = chat_module._stream_completion_sse(
+                messages=[],
+                user_context=MagicMock(),
+                session_id="sess-hard",
+                conversation_name=None,
+                account_id="acc-hard",
+                turn_uuid="turn-uuid-hard",
+            )
+            # Consuming fully must NOT raise.
+            collected = [item async for item in gen]
+
+        # Initial ping + error frame + DONE — no text chunk because none was yielded.
+        assert any("event: error\n" in frame for frame in collected)
+        assert collected[-1] == "data: [DONE]\n\n"
+        # Flush happened with turn_failed=True — last_agent_stopped_at is present.
+        mock_apply.assert_called_once()
+        delta = mock_apply.call_args.kwargs["delta"]
+        assert "last_agent_stopped_at" in delta
+
+    @pytest.mark.asyncio
+    async def test_post_answer_benign_failure_emits_error_after_text(self) -> None:
+        """Stream yields one text chunk then raises — frames arrive in expected order."""
+
+        async def _partial_then_fail(
+            *, accumulator: SessionTurnAccumulator | None = None, **_kwargs: Any
+        ):
+            if accumulator is not None:
+                accumulator.add_stream_chunk(
+                    _stream_chunk("inv-ptf", prompt=100, candidates=50)
+                )
+            yield ("text", "chunk-text", "model")
+            raise RuntimeError("post-answer failure")
+
+        mock_apply = MagicMock(return_value={"status": "applied"})
+        with (
+            patch.object(
+                chat_module.agent_client,
+                "stream_chat_completion",
+                _partial_then_fail,
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
+        ):
+            gen = chat_module._stream_completion_sse(
+                messages=[],
+                user_context=MagicMock(),
+                session_id="sess-ptf",
+                conversation_name=None,
+                account_id="acc-ptf",
+                turn_uuid="turn-uuid-ptf",
+            )
+            collected = [item async for item in gen]
+
+        # Order: ping, text chunk, error frame, DONE.
+        assert collected[0] == ": ping 0\n\n"
+        assert collected[1] == "data: chunk-text\n\n"
+        last_text_idx = max(i for i, f in enumerate(collected) if "data: chunk-text" in f)
+        error_frame_idx = next(
+            i for i, f in enumerate(collected) if "event: error\n" in f
+        )
+        assert error_frame_idx == last_text_idx + 1
+        assert collected[-1] == "data: [DONE]\n\n"
+        # Side-table flushed with turn_failed=True.
+        mock_apply.assert_called_once()
+        assert mock_apply.call_args.kwargs["delta"]["input_tokens_total"].value == 100
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_unchanged_no_error_frame(self) -> None:
+        """CancelledError path still raises; no ``event: error`` frame is emitted."""
+        chunks = [_stream_chunk("inv-cancel2", prompt=10, candidates=5)]
+        mock_apply = MagicMock(return_value={"status": "applied"})
+
+        with (
+            patch.object(
+                chat_module.agent_client,
+                "stream_chat_completion",
+                _make_fake_stream(chunks),
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
+        ):
+            gen = chat_module._stream_completion_sse(
+                messages=[],
+                user_context=MagicMock(),
+                session_id="sess-ce",
+                conversation_name=None,
+                account_id="acc-ce",
+                turn_uuid="turn-uuid-ce",
+            )
+            # Consume the ping and the first text frame, then cancel.
+            assert await gen.__anext__() == ": ping 0\n\n"
+            assert await gen.__anext__() == "data: chunk-text\n\n"
+            await gen.aclose()
+
+        # None of the frames yielded before close should contain an error event.
+        # (aclose() triggers GeneratorExit — the cancellation arm, not the error arm.)
+        mock_apply.assert_called_once()
+        delta = mock_apply.call_args.kwargs["delta"]
+        # turn_failed=True is set by the cancellation arm, but no error frame is emitted.
+        assert "last_agent_stopped_at" in delta
+
+    @pytest.mark.asyncio
+    async def test_generator_exit_unchanged_no_error_frame(self) -> None:
+        """GeneratorExit (aclose) does not emit an error frame."""
+        chunks = [
+            _stream_chunk("inv-ge", prompt=20, candidates=10),
+            _stream_chunk("inv-ge", prompt=0, candidates=5),
+        ]
+        mock_apply = MagicMock(return_value={"status": "applied"})
+        collected_before_close: list[str] = []
+
+        with (
+            patch.object(
+                chat_module.agent_client,
+                "stream_chat_completion",
+                _make_fake_stream(chunks),
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
+        ):
+            gen = chat_module._stream_completion_sse(
+                messages=[],
+                user_context=MagicMock(),
+                session_id="sess-ge",
+                conversation_name=None,
+                account_id="acc-ge",
+                turn_uuid="turn-uuid-ge",
+            )
+            collected_before_close.append(await gen.__anext__())  # ping
+            collected_before_close.append(await gen.__anext__())  # first text
+            await gen.aclose()
+
+        assert not any("event: error\n" in f for f in collected_before_close)
+
+    @pytest.mark.asyncio
+    async def test_error_frame_does_not_leak_exception_repr(self) -> None:
+        """The SSE error frame contains only the sanitised message, not exception details."""
+
+        async def _leaky_stream(*, accumulator: Any = None, **_kwargs: Any):
+            if False:
+                yield
+            raise RuntimeError("secret internal details here")
+
+        mock_apply = MagicMock(return_value={"status": "applied"})
+        with (
+            patch.object(
+                chat_module.agent_client, "stream_chat_completion", _leaky_stream
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
+        ):
+            gen = chat_module._stream_completion_sse(
+                messages=[],
+                user_context=MagicMock(),
+                session_id="sess-leak",
+                conversation_name=None,
+                account_id="acc-leak",
+                turn_uuid="turn-uuid-leak",
+            )
+            collected = [item async for item in gen]
+
+        # Find the error frame.
+        error_frame = next(f for f in collected if "event: error\n" in f)
+        # Extract the data: line and parse it.
+        data_line = next(
+            line for line in error_frame.splitlines() if line.startswith("data:")
+        )
+        parsed = json.loads(data_line[len("data:"):].strip())
+        assert parsed["message"] == "An unexpected error occurred. Please try again."
+        # The raw exception text must NOT appear anywhere in the SSE output.
+        full_output = "".join(collected)
+        assert "secret internal details here" not in full_output

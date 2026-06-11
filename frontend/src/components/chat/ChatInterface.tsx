@@ -373,6 +373,8 @@ export function ChatInterface({
       },
     ]);
 
+    let hasStreamedText = false;
+
     try {
       // First message with no session → create one now (deferred creation).
       // Guard the new id against the history-load effect BEFORE navigating, so
@@ -428,6 +430,30 @@ export function ChatInterface({
               ),
             );
           }
+        } else if (event.type === "error") {
+          liveStatusRef.current = null;
+          setLiveStatus(null);
+          if (hasStreamedText) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === currentAssistantId
+                  ? {
+                      ...m,
+                      recoveryNotice:
+                        "Answer received, but a follow-up step failed.",
+                    }
+                  : m,
+              ),
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === currentAssistantId
+                  ? { ...m, content: event.message }
+                  : m,
+              ),
+            );
+          }
         } else {
           if (liveStatusRef.current !== null) {
             liveStatusRef.current = null;
@@ -472,6 +498,7 @@ export function ChatInterface({
           }
           const bubble = authorBubbleMap.get(incomingAuthor)!;
           bubble.accumulated += event.text;
+          hasStreamedText = true;
           currentAssistantId = bubble.id;
           setMessages((prev) =>
             prev.map((m) =>
