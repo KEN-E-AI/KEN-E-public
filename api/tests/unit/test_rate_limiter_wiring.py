@@ -561,3 +561,71 @@ class TestBuildRateLimiterAuditLoggerPlumbing:
         )
         assert type(limiter).__name__ == "LocalRateLimiter"
         assert limiter.audit_logger is None
+
+
+# ---------------------------------------------------------------------------
+# 6. build_rate_limiter reads KENE_RATE_LIMIT_REDIS_PREFIX for key_prefix
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRateLimiterRedisPrefix:
+    """Verify KENE_RATE_LIMIT_REDIS_PREFIX env var is read by the Redis branch factory."""
+
+    @pytest.fixture
+    def fake_redis(self) -> Any:
+        import fakeredis.aioredis  # type: ignore[import-untyped]
+        return fakeredis.aioredis.FakeRedis(decode_responses=False)
+
+    def test_default_prefix_when_env_unset(self, monkeypatch: Any, fake_redis: Any) -> None:
+        """Without KENE_RATE_LIMIT_REDIS_PREFIX, redis_limiter.key_prefix is 'kene:ratelimit'."""
+        from src.kene_api.rate_limiter import build_rate_limiter, ip_only_key_strategy
+
+        monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "redis")
+        monkeypatch.delenv("KENE_RATE_LIMIT_REDIS_PREFIX", raising=False)
+
+        limiter = build_rate_limiter(
+            name="test_prefix_default",
+            requests_per_minute=10,
+            requests_per_hour=100,
+            key_strategy=ip_only_key_strategy,
+            redis_client=fake_redis,
+        )
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
+        assert limiter.redis_limiter.key_prefix == "kene:ratelimit"
+
+    def test_env_prefix_overrides_default(self, monkeypatch: Any, fake_redis: Any) -> None:
+        """KENE_RATE_LIMIT_REDIS_PREFIX is read and passed to RedisRateLimiter.key_prefix."""
+        from src.kene_api.rate_limiter import build_rate_limiter, ip_only_key_strategy
+
+        monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "redis")
+        monkeypatch.setenv("KENE_RATE_LIMIT_REDIS_PREFIX", "myapp:rl")
+
+        limiter = build_rate_limiter(
+            name="test_prefix_env",
+            requests_per_minute=10,
+            requests_per_hour=100,
+            key_strategy=ip_only_key_strategy,
+            redis_client=fake_redis,
+        )
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
+        assert limiter.redis_limiter.key_prefix == "myapp:rl"
+
+    def test_explicit_key_prefix_kwarg_overrides_env(
+        self, monkeypatch: Any, fake_redis: Any
+    ) -> None:
+        """An explicit key_prefix kwarg takes precedence over the env var."""
+        from src.kene_api.rate_limiter import build_rate_limiter, ip_only_key_strategy
+
+        monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "redis")
+        monkeypatch.setenv("KENE_RATE_LIMIT_REDIS_PREFIX", "env:prefix")
+
+        limiter = build_rate_limiter(
+            name="test_prefix_kwarg",
+            requests_per_minute=10,
+            requests_per_hour=100,
+            key_strategy=ip_only_key_strategy,
+            redis_client=fake_redis,
+            key_prefix="explicit:prefix",
+        )
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
+        assert limiter.redis_limiter.key_prefix == "explicit:prefix"

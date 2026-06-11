@@ -72,6 +72,7 @@ For the canonical architecture, agent tree, dispatch pattern, tool-assignment mo
 | **Integrations-owned credentials** — third-party OAuth tokens live in a KMS-encrypted Firestore substrate; consumers fetch per-invocation via `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}`. Supersedes the legacy per-specialist session-state pattern. Generic OAuth flow driven by `PlatformDefinition` docs — adding a platform adds a doc, not a code branch. |
 | **Opt-in analytical layer (SAR-E + Performance)** — statistical forecasting, IRF scenario propagation, and LLM-driven per-KPI-per-week targets activate per-account only after the setup wizard completes. Pre-wizard, SAR-E endpoints return empty-shape responses and the Performance page hides its analytical tabs. |
 | **"Statistical association only"** — SAR-E outputs never claim causation. Enforced in the `performance_forecasting` specialist's system prompt, response schema, and a `make lint` CI gate that greps for banned phrases (`caused`, `because`, `due to`, …) in `sar_e_*` files. |
+| **kene-api is the shared SSE + fast edge; SSE-isolation is the long-term direction** — `POST /api/v1/chat/completions` (up to 3600 s Cloud Run wall, 1800 s app-layer deadline) runs on the same `kene-api` Cloud Run service as fast requests (auth, OAuth, billing, page loads). Capacity is sized with headroom to avoid starvation (CH-73: `containerConcurrency=20`, `maxScale=40` prod). The proper long-term fix — isolating SSE onto a dedicated `kene-api-sse-{env}` service sized independently — is tracked in CH-74. |
 
 For full decision rationale, see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) — the canonical in-repo decision log. For execution plans, see [AH-PRD-01 Review Loop](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md), [AH-PRD-02 Agent Factory](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [AH-PRD-03 GA Specialist](design/components/agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md).
 
@@ -567,7 +568,7 @@ The Shape B layout, migration tooling, deletion-sweep rewrite (account + user), 
 
 | Component | Specification | Scaling |
 |-----------|--------------|---------|
-| **API Server (Cloud Run)** | 4 vCPU, 8GB RAM | 2-10 instances based on load |
+| **API Server (Cloud Run)** | 4 vCPU, 8GB RAM, `containerConcurrency=20` | staging: 0–20 instances (scale-to-zero, `minScale=0`); prod: 1–40 instances (warm-pool, `minScale=1`). Total slot budget: staging 400, prod 800. Concurrency=20 is SSE-appropriate (each `POST /api/v1/chat/completions` holds a slot for up to 1800 s app-layer deadline). Rate-limit posture: `token_rate_limiter` 60 req/min per user (fail-open); app-layer `asyncio.wait_for(timeout=1800)` on `agent_engine.stream_query`. See [`deployment/runbooks/kene-api-capacity-and-dos-posture.md`](../deployment/runbooks/kene-api-capacity-and-dos-posture.md). SSE-endpoint isolation onto a dedicated service is the long-term direction (tracked CH-74). |
 | **Agent Engine (Vertex AI)** | Managed by Google | Auto-scaled |
 | **GA MCP Server (Cloud Run)** | 2 vCPU, 4GB RAM | On-demand |
 | **Data Pipeline service (Cloud Run)** | `kene-data-pipeline-{env}`, 2 vCPU, 4GB RAM | On-demand; per-account + per-connector rate-limit budgets |

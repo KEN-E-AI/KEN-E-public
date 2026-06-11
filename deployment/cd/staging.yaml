@@ -376,14 +376,18 @@ steps:
             --platform=managed \
             --project=${_STAGING_PROJECT_ID} \
             --allow-unauthenticated \
-            --memory=1Gi \
+            --cpu=4 \
+            --memory=8Gi \
+            --concurrency=20 \
+            --max-instances=20 \
+            --min-instances=0 \
             --port=8000 \
             --timeout=3600 \
             --cpu-boost \
             --service-account=${_API_SERVICE_ACCOUNT_EMAIL} \
             --vpc-connector=ken-e-staging-connector \
             --clear-secrets \
-            --set-env-vars "^;^DEBUG=false;HOST=0.0.0.0;ENVIRONMENT=staging;NEO4J_URI=${_NEO4J_URI};NEO4J_USERNAME=${_NEO4J_USERNAME};NEO4J_PASSWORD=${_NEO4J_PASSWORD};NEO4J_DATABASE=${_NEO4J_DATABASE};AURA_INSTANCEID=${_AURA_INSTANCEID};AURA_INSTANCENAME=${_AURA_INSTANCENAME};SUPERSET_BASE_URL=${_SUPERSET_BASE_URL};SUPERSET_USERNAME=${_SUPERSET_USERNAME};SUPERSET_PASSWORD=${_SUPERSET_PASSWORD};GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID};FIRESTORE_DATABASE_ID=(default);LOG_LEVEL=INFO;USE_APPLICATION_DEFAULT_CREDENTIALS=true;RECAPTCHA_SITE_KEY=${_RECAPTCHA_SITE_KEY_STAGING};RECAPTCHA_SECRET_KEY=${_RECAPTCHA_SECRET_KEY_STAGING};VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION};VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_STAGING};REDIS_HOST=${_REDIS_HOST_STAGING};REDIS_PORT=${_REDIS_PORT};REDIS_DB=${_REDIS_DB};SUPPRESS_REDIS_WARNING=false;SENDGRID_API_KEY=${_SENDGRID_API_KEY_STAGING};APP_BASE_URL=https://staging.app.ken-e.ai;EMAIL_FROM_ADDRESS=noreply@ken-e.ai;EMAIL_FROM_NAME=KEN-E Team;KEN_E_ENGINE_ID=${_KEN_E_ENGINE_ID_STAGING};STRATEGY_SUPERVISOR_ENGINE_ID=${_STRATEGY_SUPERVISOR_ENGINE_ID_STAGING};ENCRYPTION_KEY=${_ENCRYPTION_KEY_STAGING};GOOGLE_OAUTH_CLIENT_ID=${_GOOGLE_OAUTH_CLIENT_ID_STAGING};GOOGLE_OAUTH_CLIENT_SECRET=${_GOOGLE_OAUTH_CLIENT_SECRET_STAGING};GOOGLE_OAUTH_REDIRECT_URI=https://kene-api-staging-391472102753.us-central1.run.app/api/oauth/callback/google;FRONTEND_URL=https://staging.app.ken-e.ai;CORS_ORIGINS=https://staging.app.ken-e.ai;OPENAI_API_KEY=${_OPENAI_API_KEY_STAGING};WANDB_API_KEY=${_WANDB_API_KEY_STAGING};WANDB_PROJECT=ken-e-strategy-agent-staging;WANDB_ENTITY=ken-e;WEAVE_PROJECT_NAME=ken-e-strategy-agent-staging;VERTEX_AI_PROJECT_ID=${_STAGING_PROJECT_ID};LOAD_TEST_BYPASS_UID=${_CHAT_LOADTEST_UID};CHAT_INTERNAL_SA_ALLOWLIST=${_CHAT_INTERNAL_SA_ALLOWLIST_STAGING};CHAT_INTERNAL_OIDC_AUDIENCE=https://kene-api-staging-391472102753.us-central1.run.app"
+            --set-env-vars "^;^DEBUG=false;HOST=0.0.0.0;ENVIRONMENT=staging;NEO4J_URI=${_NEO4J_URI};NEO4J_USERNAME=${_NEO4J_USERNAME};NEO4J_PASSWORD=${_NEO4J_PASSWORD};NEO4J_DATABASE=${_NEO4J_DATABASE};AURA_INSTANCEID=${_AURA_INSTANCEID};AURA_INSTANCENAME=${_AURA_INSTANCENAME};SUPERSET_BASE_URL=${_SUPERSET_BASE_URL};SUPERSET_USERNAME=${_SUPERSET_USERNAME};SUPERSET_PASSWORD=${_SUPERSET_PASSWORD};GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID};FIRESTORE_DATABASE_ID=(default);LOG_LEVEL=INFO;USE_APPLICATION_DEFAULT_CREDENTIALS=true;RECAPTCHA_SITE_KEY=${_RECAPTCHA_SITE_KEY_STAGING};RECAPTCHA_SECRET_KEY=${_RECAPTCHA_SECRET_KEY_STAGING};VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION};VERTEX_AI_AGENT_ENGINE_ID=${_VERTEX_AI_AGENT_ENGINE_ID_STAGING};REDIS_HOST=${_REDIS_HOST_STAGING};REDIS_PORT=${_REDIS_PORT};REDIS_DB=${_REDIS_DB};SUPPRESS_REDIS_WARNING=false;SENDGRID_API_KEY=${_SENDGRID_API_KEY_STAGING};APP_BASE_URL=https://staging.app.ken-e.ai;EMAIL_FROM_ADDRESS=noreply@ken-e.ai;EMAIL_FROM_NAME=KEN-E Team;KEN_E_ENGINE_ID=${_KEN_E_ENGINE_ID_STAGING};STRATEGY_SUPERVISOR_ENGINE_ID=${_STRATEGY_SUPERVISOR_ENGINE_ID_STAGING};ENCRYPTION_KEY=${_ENCRYPTION_KEY_STAGING};GOOGLE_OAUTH_CLIENT_ID=${_GOOGLE_OAUTH_CLIENT_ID_STAGING};GOOGLE_OAUTH_CLIENT_SECRET=${_GOOGLE_OAUTH_CLIENT_SECRET_STAGING};GOOGLE_OAUTH_REDIRECT_URI=https://kene-api-staging-391472102753.us-central1.run.app/api/oauth/callback/google;FRONTEND_URL=https://staging.app.ken-e.ai;CORS_ORIGINS=https://staging.app.ken-e.ai;OPENAI_API_KEY=${_OPENAI_API_KEY_STAGING};WANDB_API_KEY=${_WANDB_API_KEY_STAGING};WANDB_PROJECT=ken-e-strategy-agent-staging;WANDB_ENTITY=ken-e;WEAVE_PROJECT_NAME=ken-e-strategy-agent-staging;VERTEX_AI_PROJECT_ID=${_STAGING_PROJECT_ID};LOAD_TEST_BYPASS_UID=${_CHAT_LOADTEST_UID};CHAT_INTERNAL_SA_ALLOWLIST=${_CHAT_INTERNAL_SA_ALLOWLIST_STAGING};CHAT_INTERNAL_OIDC_AUDIENCE=https://kene-api-staging-391472102753.us-central1.run.app;KENE_RATE_LIMIT_BACKEND=redis;KENE_RATE_LIMIT_REDIS_PREFIX=kene:ratelimit;KENE_RATE_LIMIT_TRUSTED_HOPS=1;KENE_TOKEN_RATE_LIMIT_PER_MINUTE=60;KENE_TOKEN_RATE_LIMIT_PER_HOUR=1000"
 
   # Validate load-test substitution variables before running the gate
   - name: "bash"
@@ -482,17 +486,15 @@ steps:
           exit 0
         fi
         # Staging gate — intentionally looser than the CH-PRD-02 100 ms product
-        # target.  Staging runs on a small (1 vCPU / 1 GiB) Cloud Run service
-        # whose autoscaling/concurrency are NOT pinned in this CD config —
-        # gcloud run deploy preserves the live service values (currently
-        # ~maxScale=20, default containerConcurrency=80; no --min-instances is
-        # set here, so min is whatever the live service holds, not necessarily
-        # 1).  Pinning these explicitly is tracked in CH-73.  100 polling VUs
-        # still surface scale-up + Firestore-cold-cache tail
-        # latency that dominates p95 non-deterministically across runs (build
-        # b7f69874 p95=13s, build c2d97134 p95=77s, same code).  Gate on p90
-        # instead, which sits below the scale-up tail and is consistent
-        # across runs (5.4s yesterday, 7.6s the day before, well under 15s).
+        # target.  Staging runs with pinned capacity: 4 vCPU / 8 GiB RAM,
+        # containerConcurrency=20, maxScale=20, minScale=0 (scale-to-zero).
+        # The lower per-instance concurrency (20 vs. Cloud Run default 80)
+        # forces more scale-up events for the same VU count; 100 polling VUs
+        # still surface scale-up + Firestore-cold-cache tail latency that
+        # dominates p95 non-deterministically across runs (build b7f69874
+        # p95=13s, build c2d97134 p95=77s, same code).  Gate on p90 instead,
+        # which sits below the scale-up tail and is consistent across runs
+        # (5.4s yesterday, 7.6s the day before, well under 15s).
         # The 1 % failure ratio still tolerates Cloud Run scale-up 502s.
         #
         # NOTE: the load step now runs 100 VUs / 2 min (was 1000 / 6 min) to cap

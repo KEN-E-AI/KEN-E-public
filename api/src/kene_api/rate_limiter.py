@@ -1131,12 +1131,19 @@ def build_rate_limiter(
     # Redis backend (default) — wrap in SwitchableRateLimiter.
     redis_client = kwargs.pop("redis_client", None) or _build_async_redis_client()
 
+    # Pop key_prefix before forwarding **kwargs so callers can override and the
+    # env var acts as the authoritative default (documented in api/CLAUDE.md).
+    key_prefix = kwargs.pop(
+        "key_prefix", os.environ.get("KENE_RATE_LIMIT_REDIS_PREFIX", "kene:ratelimit")
+    )
+
     redis_limiter = RedisRateLimiter(
         requests_per_minute=requests_per_minute,
         requests_per_hour=requests_per_hour,
         redis_client=redis_client,
         key_strategy=key_strategy,
         limiter_name=name,
+        key_prefix=key_prefix,
         audit_logger=audit_logger_kwarg,
         **kwargs,
     )
