@@ -1706,12 +1706,37 @@ def _create_organization_from_record(org_data: dict[str, Any]) -> Organization:
         pending_invitations=team_data.get("pending_invitations", 0),
     )
 
+    # Defensive defaults for the model's required strings. A malformed node
+    # (a load-test fixture, or a half-completed onboarding / failed-rollback org
+    # that never set these) must not 500 the whole list — the super-admin path
+    # fetches EVERY Organization node, so one junk node would otherwise take
+    # down the org selector. Coerce missing/None to "" (mirrors the agency and
+    # nested-object defaulting above) and log so the bad node stays observable.
+    organization_id = org_data.get("organization_id")
+    organization_name = org_data.get("organization_name")
+    plan = org_data.get("plan")
+    website = org_data.get("website")
+    if (
+        organization_id is None
+        or organization_name is None
+        or plan is None
+        or website is None
+    ):
+        logger.warning(
+            "Organization node %r missing required string field(s); coercing to "
+            "empty string (organization_name=%r, plan=%r, website=%r)",
+            organization_id,
+            organization_name,
+            plan,
+            website,
+        )
+
     # Create organization object
     return Organization(
-        organization_id=org_data.get("organization_id"),
-        organization_name=org_data.get("organization_name"),
-        plan=org_data.get("plan"),
-        website=org_data.get("website"),
+        organization_id=organization_id or "",
+        organization_name=organization_name or "",
+        plan=plan or "",
+        website=website or "",
         company_size=org_data.get("company_size"),
         agency=org_data.get("agency", False),
         child_organizations=org_data.get("child_organizations", []),

@@ -75,3 +75,41 @@ def test_cleanup_is_noop_without_uri(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cleanup with no NEO4J_URI is a safe no-op returning (0, 0)."""
     monkeypatch.delenv("NEO4J_URI", raising=False)
     assert seed._cleanup_neo4j_owning_org() == (0, 0)
+
+
+def test_seed_cypher_sets_organization_model_required_fields() -> None:
+    """The seeded org node must carry the Organization Pydantic model's required
+    strings, else the super-admin GET /api/v1/organizations/ 500s on the fixture.
+
+    Pins the regression where the Cypher set ``org.name`` (not
+    ``organization_name``) and omitted ``plan``/``website``. Uses an unconditional
+    ``SET`` so an already-MERGEd node missing them heals on the next run.
+    """
+    import inspect
+
+    src = inspect.getsource(seed._seed_neo4j_owning_org)
+    for prop in ("org.organization_name", "org.plan", "org.website"):
+        assert prop in src, f"seed Cypher must SET {prop}"
+    assert "ON CREATE SET org" not in src, "use unconditional SET so it heals nodes"
+
+
+def test_seed_cypher_sets_account_model_required_fields() -> None:
+    """The seeded account node must carry the Account Pydantic model's required
+    strings, else the super-admin GET /api/v1/accounts/ 500s on the same fixture
+    (both unfiltered and when filtered by the load-test org via BELONGS_TO).
+
+    Pins the gap where the Cypher set only ``account_name`` and omitted
+    ``organization_id``/``industry``/``status``/``timezone``.
+    """
+    import inspect
+
+    src = inspect.getsource(seed._seed_neo4j_owning_org)
+    for prop in (
+        "acc.account_name",
+        "acc.organization_id",
+        "acc.industry",
+        "acc.status",
+        "acc.timezone",
+    ):
+        assert prop in src, f"seed Cypher must SET {prop}"
+    assert "ON CREATE SET acc" not in src, "use unconditional SET so it heals nodes"

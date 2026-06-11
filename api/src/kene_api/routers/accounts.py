@@ -1157,15 +1157,48 @@ def _create_account_from_record(acc_data: dict[str, Any]) -> Account:
         f"[DEBUG] product_integrations in record: {acc_data.get('product_integrations')}"
     )
 
+    # Defensive defaults for the model's required strings, mirroring
+    # _create_organization_from_record in organizations.py. The super-admin
+    # accounts path runs MATCH (acc:Account) RETURN acc over EVERY node, so a
+    # single malformed node (e.g. a load-test fixture or a partially-provisioned
+    # account) would otherwise fail Account validation and 500 the whole list.
+    # Coerce missing/None required strings to "" and log so the bad node stays
+    # observable.
+    account_id = acc_data.get("account_id")
+    account_name = acc_data.get("account_name")
+    organization_id = acc_data.get("organization_id")
+    industry = acc_data.get("industry")
+    status = acc_data.get("status")
+    timezone_value = acc_data.get("timezone")
+    if (
+        account_id is None
+        or account_name is None
+        or organization_id is None
+        or industry is None
+        or status is None
+        or timezone_value is None
+    ):
+        logger.warning(
+            "Account node %r missing required string field(s); coercing to empty "
+            "string (account_name=%r, organization_id=%r, industry=%r, status=%r, "
+            "timezone=%r)",
+            account_id,
+            account_name,
+            organization_id,
+            industry,
+            status,
+            timezone_value,
+        )
+
     return Account(
-        account_id=acc_data.get("account_id"),
+        account_id=account_id or "",
         node_id=acc_data.get("node_id"),
-        account_name=acc_data.get("account_name"),
-        organization_id=acc_data.get("organization_id"),
-        industry=acc_data.get("industry"),
-        status=acc_data.get("status"),
+        account_name=account_name or "",
+        organization_id=organization_id or "",
+        industry=industry or "",
+        status=status or "",
         websites=acc_data.get("websites", []),
-        timezone=acc_data.get("timezone"),
+        timezone=timezone_value or "",
         data_region=acc_data.get("data_region", ""),
         region=acc_data.get("region", []),
         estimated_annual_ad_budget=acc_data.get("estimated_annual_ad_budget"),

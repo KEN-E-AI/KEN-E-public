@@ -473,6 +473,14 @@ def _seed_neo4j_owning_org(dry_run: bool) -> None:
     Idempotent. Property names match auth/account_org.py's resolver query
     (``Account.account_id`` → ``Organization.organization_id``). Raises on
     failure so the seed step fails loudly rather than letting the load test 404.
+
+    Both nodes also carry the strings their Pydantic models require — the org's
+    ``organization_name``/``plan``/``website`` and the account's
+    ``organization_id``/``industry``/``status``/``timezone`` (plus ``account_name``).
+    Without them the super-admin list paths (``MATCH (org:Organization) RETURN
+    org`` and ``MATCH (acc:Account) RETURN acc`` over *every* node) 500 on this
+    fixture. The unconditional ``SET`` (not ``ON CREATE SET``) heals an
+    already-MERGEd node missing them.
     """
     if dry_run:
         logger.info(
@@ -495,11 +503,17 @@ def _seed_neo4j_owning_org(dry_run: bool) -> None:
             session.run(
                 """
                 MERGE (org:Organization {organization_id: $org_id})
-                  ON CREATE SET org.name = 'Load Test Organization',
-                                org.is_load_test_fixture = true
+                  SET org.organization_name = 'Load Test Organization',
+                      org.plan = 'Free',
+                      org.website = '',
+                      org.is_load_test_fixture = true
                 MERGE (acc:Account {account_id: $account_id})
-                  ON CREATE SET acc.name = 'Load Test Account',
-                                acc.is_load_test_fixture = true
+                  SET acc.account_name = 'Load Test Account',
+                      acc.organization_id = $org_id,
+                      acc.industry = 'Load Test',
+                      acc.status = 'Active',
+                      acc.timezone = 'UTC',
+                      acc.is_load_test_fixture = true
                 MERGE (acc)-[:BELONGS_TO]->(org)
                 """,
                 org_id=_ORGANIZATION_ID,
