@@ -413,12 +413,26 @@ steps:
           echo "seed-chat-loadtest: commit does not touch chat/load-test paths — skipping seed."
           exit 0
         fi
-        uv run python api/scripts/seed_chat_load_test_data.py
+        # Run in the api/ project: its uv.lock declares neo4j (+ firestore,
+        # firebase-admin, secret-manager). The root project has no neo4j, so a
+        # bare `uv run` at /workspace would ModuleNotFoundError on the seed's
+        # neo4j import. The script's sys.path bootstrap is __file__-based, so
+        # repo-root (for shared.*) stays on path regardless of CWD.
+        uv run --directory api python scripts/seed_chat_load_test_data.py
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID}'
       - 'ENVIRONMENT=staging'
       - 'FIREBASE_PROJECT_ID=${_STAGING_PROJECT_ID}'
+      # Neo4j: the seed creates the (:Account)-[:BELONGS_TO]->(:Organization)
+      # edge that require_account_access_for (IN-2) resolves for the load-test
+      # account — without it GET /chat/conversations 404s and the load test
+      # fails. NEO4J_PASSWORD is a Secret Manager ref resolved by the seed via
+      # the build SA (project-level secretAccessor in staging).
+      - 'NEO4J_URI=${_NEO4J_URI}'
+      - 'NEO4J_USERNAME=${_NEO4J_USERNAME}'
+      - 'NEO4J_PASSWORD=${_NEO4J_PASSWORD}'
+      - 'NEO4J_DATABASE=${_NEO4J_DATABASE}'
 
   # Chat Sidebar Load Test
   # waitFors deploy-api-to-cloud-run so the load test exercises the API image

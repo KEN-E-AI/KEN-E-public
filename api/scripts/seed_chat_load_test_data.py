@@ -6,6 +6,12 @@ Creates a dedicated load-test account with 200 ChatSessionMetadata documents who
 data shape the sidebar polling load test needs to exercise pagination, ordering, and
 Firestore read throughput without touching real user data.
 
+It also creates the Neo4j `(:Account)-[:BELONGS_TO]->(:Organization)` edge that
+`require_account_access_for` (IN-2) resolves: without it, GET /chat/conversations
+returns 404 "Account not found" for every request and the sidebar load test's
+failure-ratio gate fails the staging deploy. See the "Neo4j owning-org edge"
+section below for the full rationale.
+
 Usage
 -----
   python api/scripts/seed_chat_load_test_data.py --dry-run
@@ -39,8 +45,9 @@ behaviour.
 
 Cleanup
 -------
---cleanup removes the 200 session docs, the accounts/acc_load_test document, and
-the nested user-permissions field at users/{uid} → permissions.account_permissions.acc_load_test.
+--cleanup removes the 200 session docs, the accounts/acc_load_test document, the
+nested user-permissions field at users/{uid} → permissions.account_permissions.acc_load_test,
+and the Neo4j load-test Account/Organization nodes (and their BELONGS_TO edge).
 The Firebase Auth user (chat-loadtest@ken-e-loadtest.local) is NOT deleted by
 --cleanup because Firebase Auth deletions require a separate Admin SDK call and are
 harder to undo in a load-test recovery scenario.  To delete the Auth user manually:
@@ -69,8 +76,16 @@ from typing import Any
 
 # ---------------------------------------------------------------------------
 # sys.path bootstrap — allows running as a script without package install.
+# parent.parent = api/ (for src.kene_api.*); parent.parent.parent = repo root
+# (for shared.*, which holds the canonical Secret Manager resolver used to
+# resolve NEO4J_PASSWORD below).
 # ---------------------------------------------------------------------------
-sys.path.append(str(Path(__file__).parent.parent))
+for _p in (
+    str(Path(__file__).parent.parent),
+    str(Path(__file__).parent.parent.parent),
+):
+    if _p not in sys.path:
+        sys.path.append(_p)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -398,6 +413,157 @@ def _seed_user_permissions(
     logger.info("Wrote %s", field_target)
 
 
+# ---------------------------------------------------------------------------
+# Neo4j owning-org edge
+# ---------------------------------------------------------------------------
+#
+# IN-2 (#983) migrated account-scoped endpoints — including
+# GET /api/v1/chat/conversations, which the sidebar load test hammers — from
+# the Firestore-only `UserContext.has_account_access` check to
+# `require_account_access_for`. That guard resolves the account's *owning org*
+# via a Neo4j lookup:
+#     MATCH (acc:Account {account_id: $id})-[:BELONGS_TO]->(org:Organization)
+# and returns HTTP 404 "Account not found" when no such edge exists
+# (auth/account_org.py). The Firestore fixtures above do NOT create that edge,
+# so without this step every load-test request 404s and the
+# `chat-sidebar-p95-check` failure-ratio gate fails the staging deploy.
+
+
+def _neo4j_connection_params() -> tuple[str, str, str, str]:
+    """Return (uri, username, password, database) for Neo4j, resolving secrets.
+
+    NEO4J_PASSWORD may be a Secret Manager reference (e.g.
+    ``projects/.../secrets/neo4j-password/versions/latest``) — resolved via the
+    shared resolver, same as the API config.
+
+    Raises RuntimeError when NEO4J_URI is unset, or when the password fails to
+    resolve to a non-empty value while a URI IS set. ``get_env_or_secret``
+    swallows Secret Manager fetch errors and returns its default (""), so an
+    empty resolved password almost always means a secretAccessor gap on the
+    build SA — fail loudly here rather than letting it surface downstream as a
+    confusing Neo4j auth error.
+    """
+    uri = os.environ.get("NEO4J_URI", "")
+    if not uri:
+        raise RuntimeError(
+            "NEO4J_URI is not set — cannot seed the Neo4j owning-org edge that "
+            "require_account_access_for (IN-2) requires. GET /chat/conversations "
+            "will 404 'Account not found' and the load test will fail without it."
+        )
+    from shared.secrets import get_env_or_secret
+
+    username = os.environ.get("NEO4J_USERNAME", "neo4j")
+    password = get_env_or_secret("NEO4J_PASSWORD", "") or ""
+    if not password:
+        raise RuntimeError(
+            "NEO4J_PASSWORD did not resolve to a non-empty value while NEO4J_URI "
+            "is set. get_env_or_secret returns its empty default on a Secret "
+            "Manager fetch failure — check the build SA has "
+            "secretmanager.secretAccessor on the neo4j-password secret. Failing "
+            "loudly rather than attempting a Neo4j connection with an empty "
+            "password (which would surface as a confusing auth error)."
+        )
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    return uri, username, password, database
+
+
+def _seed_neo4j_owning_org(dry_run: bool) -> None:
+    """MERGE the (:Account)-[:BELONGS_TO]->(:Organization) edge IN-2's guard needs.
+
+    Idempotent. Property names match auth/account_org.py's resolver query
+    (``Account.account_id`` → ``Organization.organization_id``). Raises on
+    failure so the seed step fails loudly rather than letting the load test 404.
+    """
+    if dry_run:
+        logger.info(
+            "DRY-RUN: would MERGE (:Account {account_id:%r})-[:BELONGS_TO]->"
+            "(:Organization {organization_id:%r}) in Neo4j",
+            LOAD_TEST_ACCOUNT_ID,
+            _ORGANIZATION_ID,
+        )
+        return
+
+    from neo4j import GraphDatabase
+
+    uri, username, password, database = _neo4j_connection_params()
+    driver = GraphDatabase.driver(
+        uri, auth=(username, password), connection_timeout=15.0
+    )
+    try:
+        driver.verify_connectivity()
+        with driver.session(database=database) as session:
+            session.run(
+                """
+                MERGE (org:Organization {organization_id: $org_id})
+                  ON CREATE SET org.name = 'Load Test Organization',
+                                org.is_load_test_fixture = true
+                MERGE (acc:Account {account_id: $account_id})
+                  ON CREATE SET acc.name = 'Load Test Account',
+                                acc.is_load_test_fixture = true
+                MERGE (acc)-[:BELONGS_TO]->(org)
+                """,
+                org_id=_ORGANIZATION_ID,
+                account_id=LOAD_TEST_ACCOUNT_ID,
+            )
+        logger.info(
+            "Neo4j: MERGEd (:Account {account_id:%r})-[:BELONGS_TO]->"
+            "(:Organization {organization_id:%r})",
+            LOAD_TEST_ACCOUNT_ID,
+            _ORGANIZATION_ID,
+        )
+    finally:
+        driver.close()
+
+
+def _cleanup_neo4j_owning_org() -> tuple[int, int]:
+    """Delete the load-test Account/Organization nodes and their edge.
+
+    Returns ``(deleted, errored)`` node counts so the caller can fold them into
+    the cleanup summary. Both deletes are guarded on ``is_load_test_fixture`` so
+    a real Account/Organization accidentally sharing the id is never touched.
+    """
+    if not os.environ.get("NEO4J_URI"):
+        logger.warning(
+            "NEO4J_URI not set — skipping Neo4j cleanup of the load-test owning-org edge."
+        )
+        return 0, 0
+    try:
+        from neo4j import GraphDatabase
+
+        uri, username, password, database = _neo4j_connection_params()
+        driver = GraphDatabase.driver(
+            uri, auth=(username, password), connection_timeout=15.0
+        )
+        try:
+            with driver.session(database=database) as session:
+                # DETACH DELETE the account (drops the BELONGS_TO edge too), then
+                # the org — both guarded on is_load_test_fixture so a real node
+                # accidentally sharing the id is never deleted.
+                acc_summary = session.run(
+                    "MATCH (acc:Account {account_id: $account_id}) "
+                    "WHERE coalesce(acc.is_load_test_fixture, false) = true "
+                    "DETACH DELETE acc",
+                    account_id=LOAD_TEST_ACCOUNT_ID,
+                ).consume()
+                org_summary = session.run(
+                    "MATCH (org:Organization {organization_id: $org_id}) "
+                    "WHERE coalesce(org.is_load_test_fixture, false) = true "
+                    "DETACH DELETE org",
+                    org_id=_ORGANIZATION_ID,
+                ).consume()
+                deleted = (
+                    acc_summary.counters.nodes_deleted
+                    + org_summary.counters.nodes_deleted
+                )
+            logger.info("Neo4j: deleted %d load-test node(s)", deleted)
+            return deleted, 0
+        finally:
+            driver.close()
+    except Exception as exc:
+        logger.error("Error during Neo4j cleanup: %s", exc, exc_info=True)
+        return 0, 1
+
+
 def _seed_sessions(
     db: Any,
     user_id: str,
@@ -625,6 +791,9 @@ def main(argv: list[str] | None = None) -> int:
         uid = _resolve_uid_for_cleanup(db, project_id)
         print(f"Cleaning up load-test fixtures for account {LOAD_TEST_ACCOUNT_ID!r}...")
         cleanup_summary = _cleanup(db, uid)
+        neo4j_deleted, neo4j_errored = _cleanup_neo4j_owning_org()
+        cleanup_summary["deleted"] += neo4j_deleted
+        cleanup_summary["errored"] += neo4j_errored
         print()
         print(json.dumps(cleanup_summary))
         if cleanup_summary["errored"] > 0:
@@ -663,8 +832,23 @@ def main(argv: list[str] | None = None) -> int:
 
     now = datetime.now(timezone.utc)
 
-    # 2. Account doc
+    # 2. Account doc (Firestore)
     _seed_account_doc(db, now, dry_run=args.dry_run)
+
+    # 2b. Neo4j owning-org edge — required by require_account_access_for (IN-2);
+    # without it GET /chat/conversations 404s and the load test fails (see the
+    # Neo4j section above for the full rationale).
+    try:
+        _seed_neo4j_owning_org(dry_run=args.dry_run)
+    except Exception as exc:
+        print(
+            f"ERROR: failed to seed the Neo4j owning-org edge: {exc}\n"
+            "GET /api/v1/chat/conversations will 404 'Account not found' without "
+            "it (require_account_access_for / IN-2), failing the sidebar load test.",
+            file=sys.stderr,
+        )
+        logger.exception("Neo4j owning-org seed failed")
+        return EXIT_ERRORS
 
     # 3. User permissions
     _seed_user_permissions(db, effective_uid, dry_run=args.dry_run)
