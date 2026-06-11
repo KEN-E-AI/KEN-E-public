@@ -168,12 +168,16 @@ async def create_visualization(
 
         # Persist to GCS + Firestore via the canonical register_artifact wrapper
         # (app/CLAUDE.md universal contract: every tool that saves an artifact
-        # MUST call register_artifact). Deferred import: kene_api is not
-        # available in the app-adk-tests CI venv but IS present in the Agent
-        # Engine runtime where the tool actually runs.
+        # MUST call register_artifact). The wrapper lives in shared/ — like
+        # shared/token_accounting — so it imports in BOTH the API container and
+        # the Agent Engine runtime (kene_api is NOT packaged into the agent, which
+        # is why the previous kene_api import silently failed and nothing
+        # persisted; see DESIGN-REVIEW-LOG).
         #
-        # Import block is separated from the call block so ImportError (missing
-        # kene_api package) is distinct from runtime errors on the actual call.
+        # The import is still guarded: in a stripped unit-test venv that lacks
+        # shared's transitive deps the tool must still return the chart. Errors on
+        # the call itself are caught below so a transient persistence failure never
+        # drops the chart from the live response.
         _register_artifact = None
         _deadline_exc: tuple[type[Exception], ...] = ()
         try:
@@ -182,14 +186,24 @@ async def create_visualization(
                 ServiceUnavailable,
             )
             from google.genai.types import Blob, Part
-            from kene_api.chat.artifacts import (  # type: ignore[import]
+
+            from shared.chat_artifacts import (  # type: ignore[import]
                 register_artifact as _register_artifact,
             )
 
             _deadline_exc = (ServiceUnavailable, DeadlineExceeded)
-        except ImportError:
-            # kene_api not available (unit-test or deploy-time venv); skip.
-            pass
+        except ImportError as exc:
+            # shared.chat_artifacts deps unavailable. Expected ONLY in a stripped
+            # unit-test venv; in the Agent Engine runtime this import must
+            # succeed, so log loudly — a silent skip here is exactly the original
+            # defect (charts never persisted) and the only symptom would be
+            # "charts vanish on reload". This log is the tripwire for a recurrence.
+            logger.warning(
+                "create_visualization: register_artifact import unavailable — "
+                "chart persistence skipped (expected only in stripped test "
+                "venvs, NOT in the Agent Engine runtime): %s",
+                exc,
+            )
 
         if _register_artifact is not None:
             filename = f"viz_{_slugify(title)}_{_iso8601_compact()}.json"

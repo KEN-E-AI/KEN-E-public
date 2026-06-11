@@ -251,6 +251,24 @@ def user_session_ids_key(user_id: str) -> str:
     return f"chat:user_sessions:{user_id}"
 
 
+def session_history_key(user_id: str, session_id: str) -> str:
+    """Generate cache key for a session's formatted conversation history.
+
+    Caches the text + chart payload returned by get_conversation_history so a
+    revisit / session-status toggle skips the Vertex get_session round-trip and
+    the GCS chart-spec fetches. Invalidated whenever the session gains a new turn
+    (see _invalidate_conversation_history_cache) so it never serves stale turns.
+
+    Keyed on (user_id, session_id) — the history endpoint's only ownership gate
+    is the user-scoped ``get_session`` call this cache short-circuits, so the key
+    MUST include user_id or a cache hit would serve one user's conversation to
+    another (cross-user IDOR).
+
+    TTL: 6 hours (safety net; new turns invalidate explicitly).
+    """
+    return f"chat:history:{user_id}:{session_id}"
+
+
 def session_metadata_key(user_id: str, session_id: str) -> str:
     """Generate cache key for session metadata.
 

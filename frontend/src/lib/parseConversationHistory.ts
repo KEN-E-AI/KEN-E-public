@@ -1,8 +1,12 @@
+import type { Artifact } from "./chatApi";
+
 export type ParsedHistoryMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  chartArtifacts?: Artifact[];
+  reasoning?: { thoughts: string[]; durationSeconds: number };
 };
 
 type HistoryPayload = {
@@ -17,6 +21,10 @@ const EMPTY = "Empty message";
  * messages. The backend returns either an `events` or a `messages` array, and
  * each entry's content takes one of three shapes (ADK part list, plain string,
  * or a `{ text }` object) — all handled here.
+ *
+ * An assistant event may also carry an `artifacts` array of persisted Vega-Lite
+ * charts (re-attached server-side from GCS). These become `chartArtifacts` so a
+ * reloaded conversation renders the same inline charts that streamed live.
  */
 export function parseConversationHistory(raw: unknown): ParsedHistoryMessage[] {
   const history = raw as HistoryPayload;
@@ -24,33 +32,63 @@ export function parseConversationHistory(raw: unknown): ParsedHistoryMessage[] {
 
   const events = history.events || history.messages || [];
 
-  return events
-    .map((event: any, index: number) => {
-      let content = EMPTY;
-      let role = "assistant";
+  return (
+    events
+      .map((event: any, index: number) => {
+        let content = EMPTY;
+        let role = "assistant";
 
-      if (event?.content?.parts?.length > 0) {
-        content =
-          event.content.parts[0].text ||
-          event.content.parts[0].content ||
-          EMPTY;
-        role = event.content.role || event.role || "assistant";
-      } else if (typeof event?.content === "string") {
-        content = event.content || EMPTY;
-        role = event.role || "assistant";
-      } else if (event?.content) {
-        content = String(event.content.text || EMPTY);
-        role = event.role || "assistant";
-      }
+        if (event?.content?.parts?.length > 0) {
+          content =
+            event.content.parts[0].text ||
+            event.content.parts[0].content ||
+            EMPTY;
+          role = event.content.role || event.role || "assistant";
+        } else if (typeof event?.content === "string") {
+          content = event.content || EMPTY;
+          role = event.role || "assistant";
+        } else if (event?.content) {
+          content = String(event.content.text || EMPTY);
+          role = event.role || "assistant";
+        }
 
-      return {
-        id: `hist-${index}`,
-        role: role === "user" ? ("user" as const) : ("assistant" as const),
-        content,
-        timestamp: new Date(event?.timestamp || Date.now()),
-      };
-    })
-    .filter((msg) => msg.content !== EMPTY);
+        const chartArtifacts: Artifact[] | undefined = Array.isArray(
+          event?.artifacts,
+        )
+          ? (event.artifacts as Artifact[])
+          : undefined;
+
+        const thoughts: string[] | undefined = Array.isArray(
+          event?.reasoning?.thoughts,
+        )
+          ? event.reasoning.thoughts
+          : undefined;
+
+        const message: ParsedHistoryMessage = {
+          id: `hist-${index}`,
+          role: role === "user" ? ("user" as const) : ("assistant" as const),
+          content,
+          timestamp: new Date(event?.timestamp || Date.now()),
+        };
+        if (chartArtifacts && chartArtifacts.length > 0) {
+          message.chartArtifacts = chartArtifacts;
+        }
+        if (thoughts && thoughts.length > 0) {
+          message.reasoning = {
+            thoughts,
+            durationSeconds: Number(event?.reasoning?.durationSeconds) || 0,
+          };
+        }
+        return message;
+      })
+      // Keep a message if it has rendered text OR carries charts — a chart-only
+      // turn (empty text) must not be dropped.
+      .filter(
+        (msg) =>
+          msg.content !== EMPTY ||
+          (msg.chartArtifacts !== undefined && msg.chartArtifacts.length > 0),
+      )
+  );
 }
 
 /**

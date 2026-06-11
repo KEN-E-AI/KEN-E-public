@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Send, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +26,11 @@ import {
   parseConversationHistory,
   extractAnswerAfterLastUserMessage,
 } from "@/lib/parseConversationHistory";
+import { ChatMarkdown } from "./ChatMarkdown";
+import {
+  chatHistoryQueryKey,
+  chatHistoryQueryOptions,
+} from "@/hooks/useChatHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
 import { cn } from "@/lib/utils";
@@ -128,6 +134,7 @@ export function ChatInterface({
   onSessionResolved,
   compact = false,
 }: ChatInterfaceProps) {
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>(() => [
     makeIntroMessage(),
   ]);
@@ -202,7 +209,12 @@ export function ChatInterface({
     const superseded = () => cancelled || turnSeqRef.current !== seqAtStart;
     (async () => {
       try {
-        const raw = await getConversationHistory(sessionId);
+        // Cached/deduped via TanStack Query so the session-status toggle (which
+        // remounts this component) and sidebar revisits reuse a recent fetch
+        // instead of re-hitting Vertex. Each completed turn invalidates the key.
+        const raw = await queryClient.fetchQuery(
+          chatHistoryQueryOptions(sessionId),
+        );
         if (superseded()) return;
         const parsed = parseConversationHistory(raw);
         setMessages(parsed.length > 0 ? parsed : [makeIntroMessage()]);
@@ -216,7 +228,7 @@ export function ChatInterface({
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, queryClient]);
 
   useEffect(() => {
     try {
@@ -524,6 +536,14 @@ export function ChatInterface({
       liveStatusRef.current = null;
       setLiveStatus(null);
       setIsStreaming(false);
+      // This turn added new messages (and possibly charts) the backend has now
+      // persisted. Mark the cached history stale so the next mount (e.g. after
+      // the session-status toggle) refetches the complete, chart-bearing turn.
+      if (activeSessionId) {
+        queryClient.invalidateQueries({
+          queryKey: chatHistoryQueryKey(activeSessionId),
+        });
+      }
     } catch (err: unknown) {
       const name = (err as Error)?.name;
       liveStatusRef.current = null;
@@ -685,6 +705,7 @@ export function ChatInterface({
     onCreateSession,
     onSessionStarted,
     onSessionResolved,
+    queryClient,
     clearRecoveryPoll,
   ]);
 
@@ -782,21 +803,19 @@ export function ChatInterface({
                         />
                       </div>
                     )}
-                    {/* Assistant response: plain, document-like text — no card */}
+                    {/* Assistant response: plain, document-like text — no card.
+                        Rendered as markdown (the agent emits **bold**, lists,
+                        headings, tables) instead of raw text. */}
                     <div className="px-1 py-1">
                       {message.recoveryNotice && (
                         <p className="text-[11px] text-[var(--color-text-tertiary)] italic mb-1">
                           {message.recoveryNotice}
                         </p>
                       )}
-                      <p
-                        className={cn(
-                          textSizeClass,
-                          "whitespace-pre-wrap leading-relaxed",
-                        )}
-                      >
-                        {message.content}
-                      </p>
+                      <ChatMarkdown
+                        content={message.content}
+                        className={cn(textSizeClass, "leading-relaxed")}
+                      />
                       {message.artifacts && message.artifacts.length > 0 && (
                         <div className="mt-3 space-y-2">
                           {message.artifacts.map((a) => (

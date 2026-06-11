@@ -38,9 +38,12 @@ describe("ThinkingBlock", () => {
     expect(screen.getByText("5s")).toBeInTheDocument();
   });
 
-  test('renders "0s" when durationSeconds is omitted', () => {
+  test('renders "Reasoned" (not "0s") when durationSeconds is omitted', () => {
+    // Reloaded reasoning often has no recorded duration; show a label rather
+    // than a misleading "0s".
     render(<ThinkingBlock isThinking={false} thoughts={[]} />);
-    expect(screen.getByText("0s")).toBeInTheDocument();
+    expect(screen.getByText("Reasoned")).toBeInTheDocument();
+    expect(screen.queryByText("0s")).not.toBeInTheDocument();
   });
 
   test("stop button is not rendered when isThinking=false", () => {

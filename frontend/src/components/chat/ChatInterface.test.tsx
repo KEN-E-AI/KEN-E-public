@@ -1,11 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  fireEvent,
-  waitFor,
-  act,
-} from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { renderWithQueryClient as render } from "@/test/utils/renderWithQueryClient";
 import { ChatInterface } from "./ChatInterface";
 import type { StreamEvent } from "@/lib/chatApi";
 import type { AccountId } from "@/lib/branded-types";
@@ -24,6 +19,18 @@ vi.mock("@/lib/chatApi", () => ({
   streamChatCompletion: vi.fn(),
   getConversationHistory: vi.fn(),
   isPendingSessionId: (id: string) => id.startsWith("pending_"),
+  // ChatInterface's catch block does `err instanceof StreamInterruptedError`
+  // (CH-71 stream-death recovery); the factory mock must export the class or
+  // the instanceof access throws on the missing export.
+  StreamInterruptedError: class StreamInterruptedError extends Error {
+    constructor(
+      public reason: "no_done" | "network" | "silence_timeout",
+      public sessionId: string | null,
+    ) {
+      super(`Stream interrupted: ${reason}`);
+      this.name = "StreamInterruptedError";
+    }
+  },
 }));
 
 vi.mock("@/hooks/useOrgStatus", () => ({
@@ -245,9 +252,13 @@ describe("ChatInterface", () => {
 
     render(<ChatInterface />);
 
+    // The assistant message is rendered through ChatMarkdown, so the matched
+    // text lives in an inner <p> and the size class sits on its wrapper <div>.
+    const sizeWrapper = () =>
+      screen.getByText(/I'm your KEN-E AI assistant/i).closest("div");
+
     // Default size: intro message uses text-base
-    const introMsg = screen.getByText(/I'm your KEN-E AI assistant/i);
-    expect(introMsg.className).toContain("text-base");
+    expect(sizeWrapper()?.className).toContain("text-base");
 
     // Dispatch the text-size change event
     act(() => {
@@ -257,7 +268,7 @@ describe("ChatInterface", () => {
     });
 
     // Messages now use text-lg
-    await waitFor(() => expect(introMsg.className).toContain("text-lg"));
+    await waitFor(() => expect(sizeWrapper()?.className).toContain("text-lg"));
 
     // Switch to small
     act(() => {
@@ -266,7 +277,7 @@ describe("ChatInterface", () => {
       );
     });
 
-    await waitFor(() => expect(introMsg.className).toContain("text-sm"));
+    await waitFor(() => expect(sizeWrapper()?.className).toContain("text-sm"));
   });
 
   // ── TC-History-1: prior messages load for a session and replace the intro ──

@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import functools
 import importlib.metadata
 import logging
 import os
@@ -29,6 +30,7 @@ from google.adk.agents.context_cache_config import ContextCacheConfig
 # ADK App configuration imports
 from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
+from google.adk.artifacts import GcsArtifactService
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from vertexai import agent_engines
 
@@ -62,11 +64,19 @@ ENV_CONFIG = {
         "project_number": "525657242938",
         "chat_internal_api_url": "sm://525657242938/kene-api-url",
         "chat_internal_api_audience": "sm://525657242938/kene-api-url",
+        # GCS bucket backing the ADK artifact service (chart specs, generated
+        # files). NOTE: the actual bucket names do NOT follow a single pattern —
+        # dev/staging are `ken-e-{env}-files-us` but prod is `ken-e-files-us`
+        # (no `production` segment). Keep in sync with `_ENV_ARTIFACT_BUCKET` /
+        # `_resolve_bucket` in `shared/chat_artifacts.py` and the signed-URL
+        # allowlist `_ALLOWED_GCS_BUCKETS` in `api/src/kene_api/chat/artifacts.py`.
+        "artifact_bucket": "ken-e-dev-files-us",
         "ga_mcp_server_url": "https://google-analytics-mcp-4quwenkusq-uc.a.run.app",
     },
     "staging": {
         "project_id": "ken-e-staging",
         "project_number": "391472102753",
+        "artifact_bucket": "ken-e-staging-files-us",
         # Use the deterministic Cloud Run URL (service-projectnumber.region.run.app),
         # NOT the legacy hash URL held in the kene-api-url secret. The chat callback
         # mints an OIDC token whose `aud` is this value; the API verifies it against
@@ -84,6 +94,8 @@ ENV_CONFIG = {
         # deployment/cd/deploy-to-prod.yaml, else the engine->API OIDC call 401s.
         "chat_internal_api_url": "https://kene-api-prod-395770269870.us-central1.run.app",
         "chat_internal_api_audience": "https://kene-api-prod-395770269870.us-central1.run.app",
+        # Prod's files bucket is `ken-e-files-us` (NOT `ken-e-production-files-us`).
+        "artifact_bucket": "ken-e-files-us",
         "ga_mcp_server_url": "https://google-analytics-mcp-4quwenkusq-uc.a.run.app",
     },
 }
@@ -551,9 +563,27 @@ def deploy_ken_e() -> str | None:
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", _capture_content
         )
 
-        # Wrap with AdkApp for deployment (pass App object, not agent directly)
-        app = agent_engines.AdkApp(app=adk_app, enable_tracing=True)
-        logger.info(f"✅ Created AdkApp with tracing enabled: {type(app)}")
+        # Wire a GCS-backed artifact service so artifacts saved by tools (e.g.
+        # create_visualization chart specs) persist durably and can be reloaded
+        # when a conversation is reopened. Without this, AdkApp falls back to an
+        # in-memory service and every artifact is lost when the instance recycles
+        # — which is why charts vanished on reload (CH chart-persistence).
+        artifact_bucket = ENV_CONFIG[os.getenv("_TARGET_ENV", "dev")]["artifact_bucket"]
+
+        # Wrap with AdkApp for deployment (pass App object, not agent directly).
+        # Use functools.partial (not a closure lambda) for the builder — it
+        # cloud-pickles reliably into the Agent Engine runtime, where the Runner
+        # calls it with no args to construct GcsArtifactService(bucket_name=...).
+        app = agent_engines.AdkApp(
+            app=adk_app,
+            enable_tracing=True,
+            artifact_service_builder=functools.partial(
+                GcsArtifactService, bucket_name=artifact_bucket
+            ),
+        )
+        logger.info(
+            f"✅ Created AdkApp with tracing + GCS artifacts (bucket={artifact_bucket}): {type(app)}"
+        )
 
         # Generate deployment name with timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

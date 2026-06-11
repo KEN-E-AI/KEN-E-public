@@ -266,9 +266,8 @@ class TestGenerateArtifactSignedUrl:
     def test_does_not_raise_for_allowed_bucket(self) -> None:
         """Allowed bucket in allowlist does not raise before signing."""
         for bucket in (
-            "ken-e-production-files-us",
+            "ken-e-files-us",  # prod (note: NOT ken-e-production-files-us)
             "ken-e-staging-files-us",
-            "ken-e-development-files-us",
             "ken-e-dev-files-us",
         ):
             gcs_path = f"gs://{bucket}/app/user/sess/file.pdf/0"

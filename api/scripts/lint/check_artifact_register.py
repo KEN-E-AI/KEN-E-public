@@ -48,7 +48,8 @@ REPO_ROOT = SCRIPT_PATH.parents[3]  # api/scripts/lint/ → repo root
 
 ALLOWLIST: frozenset[str] = frozenset(
     {
-        "api/src/kene_api/chat/artifacts.py",  # the wrapper itself
+        "shared/chat_artifacts.py",  # the wrapper itself (cross-runtime home)
+        "api/src/kene_api/chat/artifacts.py",  # re-exports the wrapper + read helpers
         "app/adk/agents/strategy_agent/artifact_utils.py",  # setup-time input loader; not a chat-session tool
     }
 )

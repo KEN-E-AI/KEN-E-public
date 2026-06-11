@@ -89,6 +89,65 @@ describe("parseConversationHistory", () => {
     expect(msg.role).toBe("assistant");
     expect(msg.timestamp).toBeInstanceOf(Date);
   });
+
+  const _chart = {
+    type: "visualization",
+    spec: { mark: "line", title: "Sessions" },
+    metadata: {
+      chart_type_suggestion: "line",
+      title: "Sessions",
+      data_source: "agent",
+    },
+  };
+
+  it("attaches re-served charts to the assistant message as chartArtifacts", () => {
+    const [msg] = parseConversationHistory({
+      events: [
+        {
+          content: { role: "model", parts: [{ text: "here is your chart" }] },
+          artifacts: [_chart],
+        },
+      ],
+    });
+    expect(msg.chartArtifacts).toEqual([_chart]);
+  });
+
+  it("keeps a chart-only turn even when its text is empty", () => {
+    const result = parseConversationHistory({
+      events: [{ content: {}, artifacts: [_chart] }],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].chartArtifacts).toEqual([_chart]);
+  });
+
+  it("omits chartArtifacts when no artifacts are present", () => {
+    const [msg] = parseConversationHistory({
+      events: [{ content: { parts: [{ text: "no charts" }] } }],
+    });
+    expect(msg.chartArtifacts).toBeUndefined();
+  });
+
+  it("restores reasoning thoughts so the thinking block re-renders", () => {
+    const [msg] = parseConversationHistory({
+      events: [
+        {
+          content: { role: "model", parts: [{ text: "the answer" }] },
+          reasoning: { thoughts: ["step one", "step two"], durationSeconds: 4 },
+        },
+      ],
+    });
+    expect(msg.reasoning).toEqual({
+      thoughts: ["step one", "step two"],
+      durationSeconds: 4,
+    });
+  });
+
+  it("omits reasoning when none is present", () => {
+    const [msg] = parseConversationHistory({
+      events: [{ content: { parts: [{ text: "no thoughts" }] } }],
+    });
+    expect(msg.reasoning).toBeUndefined();
+  });
 });
 
 describe("extractAnswerAfterLastUserMessage (CH-71 recovery)", () => {

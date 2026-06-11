@@ -6,6 +6,7 @@ import {
   ReactNode,
 } from "react";
 import api from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { toast } from "sonner";
 import { auth, authBypassEnabled, authInitialized } from "@/lib/firebase";
@@ -145,6 +146,7 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [hasSelectedWorkspace, setHasSelectedWorkspace] = useState(false);
   const [currentOrganizationId, setCurrentOrganizationId] =
@@ -260,6 +262,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.removeItem("selectedOrgAccount");
     localStorage.removeItem("orgMetadata");
     localStorage.removeItem("accountMetadata");
+    // Clear the persisted + in-memory chat query cache so the next user on a
+    // shared browser can't see the previous user's session list / conversation
+    // history (those queries are dehydrated to localStorage by App.tsx).
+    localStorage.removeItem("kene-chat-query-cache");
+    queryClient.clear();
   };
 
   const completeWorkspaceSelection = () => {

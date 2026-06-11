@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { ChevronDown, Brain, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { ChatMarkdown } from "./ChatMarkdown";
 
 type ThinkingBlockProps = {
   isThinking: boolean;
@@ -63,7 +64,14 @@ export function ThinkingBlock({
     }
   }, [currentStatusLabel, isThinking]);
 
-  const summaryText = isThinking ? "Reasoning..." : `${durationSeconds ?? 0}s`;
+  // Reloaded reasoning may not have a known duration (it isn't recorded when the
+  // thoughts and answer share one model turn). Show a label rather than a
+  // misleading "0s" in that case; live turns always have a real elapsed time.
+  const summaryText = isThinking
+    ? "Reasoning..."
+    : durationSeconds && durationSeconds > 0
+      ? `${durationSeconds}s`
+      : "Reasoned";
 
   return (
     <div className="relative rounded-[var(--radius-lg)] overflow-hidden">
@@ -209,15 +217,15 @@ export function ThinkingBlock({
                   )}
                 >
                   {thoughts.map((thought, index) => (
-                    <motion.p
+                    <motion.div
                       key={index}
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.05 }}
                       className="text-[11px] text-[var(--color-text-tertiary)] leading-relaxed"
                     >
-                      {thought}
-                    </motion.p>
+                      <ChatMarkdown content={thought} />
+                    </motion.div>
                   ))}
                   {isThinking && thoughts.length === 0 && (
                     <p className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] italic">

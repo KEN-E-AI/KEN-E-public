@@ -2306,4 +2306,42 @@ A capacity finding **corrects the framing introduced alongside Review 51**: the 
 
 ---
 
+## Review 53 — Artifact-save wrapper relocated to `shared/` (closes the Agent Engine packaging gap that silently broke chart persistence)
+
+**Date:** 2026-06-11
+**PR:** (pending)
+**Scope:** Fixes the long-standing defect where agent-created chart artifacts never persisted (charts vanished on reload). Relocates the canonical artifact-save wrapper `register_artifact` (+ the `ChatArtifactIndex` model and the GCS-path / bucket / Firestore-write helpers) from `api/src/kene_api/chat/artifacts.py` to a new `shared/chat_artifacts.py`. Wires a `GcsArtifactService` into the deployed agent (`app/adk/deploy_ken_e.py`) and reconciles the per-environment bucket map to the real bucket names. Read-side helpers stay in `kene_api`. Touches the [chat README §7.5](components/chat/README.md) artifact-wrapper contract (CH-PRD-05).
+
+### Summary
+
+CH-PRD-05 / AH-143 made `chat.artifacts.register_artifact(...)` the canonical artifact-save path — it wraps `context.save_artifact()` to write **both** the GCS blob **and** an independent Firestore `ChatArtifactIndex` provenance row, and a CI lint (`check_artifact_register.py`) forbids raw `save_artifact()` calls outside it. The durability model is deliberate: GCS holds the (durable, redeploy-safe) blob; the Firestore row is the discovery index, independent of the Vertex session store (so it survives event compaction and agent redeploys — unlike `event.actions.artifact_delta`, which compaction can drop).
+
+The design was sound; the **implementation had a packaging gap**. `register_artifact` lived in `kene_api`, but `create_visualization` (an agent tool) imported it via `from kene_api.chat.artifacts import register_artifact` inside `try/except ImportError: pass`. The Agent Engine deploy packages only `["agents", "shared", "app"]` — **not `kene_api`** — so in the deployed runtime the import silently failed, `register_artifact` (and the `save_artifact` inside it) never ran, and **no artifact was ever persisted** (verified: 0 GCS blobs, 0 Firestore rows for chart sessions). A separate gap: the deployed `AdkApp` configured **no** `artifact_service` at all, so even a direct `save_artifact` would not have reached GCS.
+
+The design had already solved this exact cross-runtime problem for billing: `shared/token_accounting.py` lives in `shared/` *"so both the API container and the Agent Engine deployment import it without sys.path trickery."* The artifact wrapper simply wasn't placed there.
+
+### Decision
+
+- **Relocate the write path to `shared/chat_artifacts.py`** (mirroring `token_accounting`): `register_artifact`, `ChatArtifactIndex`, `build_gcs_path`/`parse_gcs_path`/`_artifact_id`, `_resolve_bucket` + the env→bucket map, and the Firestore write helpers. `kene_api/chat/artifacts.py` and `kene_api/models/chat.py` **re-export** these, so every existing API import, the read helpers, and the CI lint are unaffected. `create_visualization` now imports from `shared.chat_artifacts` (still guarded for stripped unit-test venvs, but the import succeeds in the Agent Engine).
+- **Drop the `backoff` dependency** in the relocated module (replaced with a tiny manual retry) — `backoff` is not in `app/adk/requirements.txt`, so a module-level `import backoff` would have re-broken the agent-side import. The module deliberately imports only firestore + genai + pydantic (all present in the agent runtime).
+- **Wire `GcsArtifactService` into the deployed agent.** `app/adk/deploy_ken_e.py` passes `artifact_service_builder=functools.partial(GcsArtifactService, bucket_name=<env bucket>)` to `AdkApp`. Without this, `save_artifact` had no backing store.
+- **Reconcile bucket names to reality.** The real buckets do not follow one pattern: dev=`ken-e-dev-files-us`, staging=`ken-e-staging-files-us`, **prod=`ken-e-files-us`** (no `production` segment). The env→bucket map (in both `deploy_ken_e.py` `ENV_CONFIG` and `shared.chat_artifacts._resolve_bucket`) and the signed-URL allowlist (`_ALLOWED_GCS_BUCKETS`) were corrected — the allowlist previously omitted prod's real bucket, which would have rejected prod chart reads. No new buckets needed.
+- **Read-back unchanged.** `get_conversation_history` re-attaches charts via the Firestore index (`list_artifacts`) + GCS spec fetch — the durable path, immune to session-event compaction.
+- **Rejected:** a direct `save_artifact` in `create_visualization` (forbidden by the CI lint + only persists the blob, not the discovery index) and an API-side parallel persistence path (foists a second mechanism alongside the canonical wrapper). Both were disloyal to CH-PRD-05.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `shared/chat_artifacts.py` | **New.** Cross-runtime canonical write path: `register_artifact`, `ChatArtifactIndex`, path/bucket/firestore helpers (no `backoff` dep). |
+| `api/src/kene_api/chat/artifacts.py` | Now read-path + re-exports from `shared`; keeps `list_artifacts`, `fetch_visualization_spec`, `generate_artifact_signed_url`, allowlist. |
+| `api/src/kene_api/models/chat.py` | `ChatArtifactIndex` re-exported from `shared.chat_artifacts`. |
+| `app/adk/tools/function_tools/create_visualization.py` | Imports `register_artifact` from `shared.chat_artifacts`. |
+| `app/adk/deploy_ken_e.py` | `AdkApp(artifact_service_builder=GcsArtifactService(bucket))`; `ENV_CONFIG[*]["artifact_bucket"]` map. |
+| `api/scripts/lint/check_artifact_register.py` | Allow-list adds `shared/chat_artifacts.py`. |
+| `app/adk/tools/function_tools/testing.py` + `api/tests/unit/chat/test_artifacts_service.py` | Test stubs/patches repointed to `shared.chat_artifacts`. |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 53). |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

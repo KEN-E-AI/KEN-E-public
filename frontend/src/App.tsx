@@ -2,7 +2,11 @@ import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
+import { CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
+import { CHAT_HISTORY_QUERY_KEY } from "@/hooks/useChatHistory";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { BackgroundEffects } from "@/components/theme/BackgroundEffects";
 import {
@@ -99,7 +103,29 @@ const LazyFeatureFlagStatusHarness = import.meta.env.DEV
     )
   : undefined;
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Retain queries in memory long enough to be dehydrated to localStorage;
+      // the persisted cache (below) is what survives a full page reload.
+      gcTime: 1000 * 60 * 60 * 24, // 24h
+    },
+  },
+});
+
+// Persist ONLY the chat session-list + conversation-history queries to
+// localStorage, so a page reload renders the last conversation + sidebar
+// instantly from cache, then revalidates live in the background (the session
+// list keeps staleTime:0, so its status dots refresh on the next tick). Other
+// queries (auth, org status, billing, etc.) are deliberately not persisted.
+const _PERSISTED_QUERY_PREFIXES = new Set<string>([
+  CHAT_SESSIONS_QUERY_KEY,
+  CHAT_HISTORY_QUERY_KEY,
+]);
+const chatCachePersister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: "kene-chat-query-cache",
+});
 
 // Wrapper component for Authentication with navigation
 const AuthenticationPage = () => {
@@ -380,7 +406,21 @@ const AppRoutes = () => {
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <PersistQueryClientProvider
+    client={queryClient}
+    persistOptions={{
+      persister: chatCachePersister,
+      maxAge: 1000 * 60 * 60 * 24, // discard persisted cache older than 24h
+      // Bump this string whenever the persisted query shape changes, to discard
+      // incompatible cached payloads after a deploy.
+      buster: "chat-cache-v1",
+      dehydrateOptions: {
+        shouldDehydrateQuery: (q) =>
+          typeof q.queryKey?.[0] === "string" &&
+          _PERSISTED_QUERY_PREFIXES.has(q.queryKey[0] as string),
+      },
+    }}
+  >
     <TooltipProvider>
       <ThemeProvider>
         <AuthProvider>
@@ -398,7 +438,7 @@ const App = () => (
         </AuthProvider>
       </ThemeProvider>
     </TooltipProvider>
-  </QueryClientProvider>
+  </PersistQueryClientProvider>
 );
 
 export default App;

@@ -3,6 +3,7 @@ import { Search, Plus, ChevronLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
 import type { FlagKey } from "@/lib/featureFlags/types";
@@ -79,6 +80,7 @@ export function SessionsSidebar({
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    isPending,
     isError,
     isFetchNextPageError,
   } = useChatSessions({
@@ -306,7 +308,30 @@ export function SessionsSidebar({
             </p>
           )}
 
-          {!isError && allItems.length === 0 && (
+          {/* Cold-load skeleton: on the first (uncached) load there is no data
+              yet, so render placeholder rows instead of a blank panel or a
+              premature "No sessions" message. Warm reloads hydrate from the
+              persisted cache and skip this entirely. */}
+          {isPending && !isError && (
+            <div aria-hidden="true" data-testid="sessions-skeleton">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="p-2 mb-2 rounded-[var(--radius-md)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-primary)]"
+                >
+                  <div className="flex items-start gap-2">
+                    <Skeleton className="size-2 rounded-full mt-1.5 shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isError && !isPending && allItems.length === 0 && (
             <p className="text-[var(--text-body-sm)] text-[var(--color-text-tertiary)] text-center py-8">
               {debouncedQuery
                 ? "No sessions found"

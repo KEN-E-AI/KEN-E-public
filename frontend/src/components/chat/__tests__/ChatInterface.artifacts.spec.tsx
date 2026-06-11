@@ -9,7 +9,8 @@
  */
 
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act, waitFor } from "@testing-library/react";
+import { screen, act, waitFor } from "@testing-library/react";
+import { renderWithQueryClient as render } from "@/test/utils/renderWithQueryClient";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import type { StreamEvent } from "@/lib/chatApi";

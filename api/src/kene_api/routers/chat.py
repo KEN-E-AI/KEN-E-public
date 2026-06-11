@@ -20,7 +20,7 @@ from google.adk.sessions import VertexAiSessionService
 from google.cloud.exceptions import NotFound
 from pydantic import BaseModel, Field, computed_field
 
-from shared.artifact_models import Artifact
+from shared.artifact_models import Artifact, ArtifactMetadata
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
 
@@ -39,11 +39,17 @@ from ..cache import (
     ga_credentials_key,
     ga_session_creds_marker_key,
     org_context_key,
+    session_history_key,
     session_metadata_key,
     user_session_ids_key,
 )
 from ..chat.accumulator import SessionTurnAccumulator
-from ..chat.artifacts import generate_artifact_signed_url, list_artifacts
+from ..chat.artifacts import (
+    VEGALITE_MIME,
+    fetch_visualization_spec,
+    generate_artifact_signed_url,
+    list_artifacts,
+)
 from ..chat.categories import CategoryExistsError, get_chat_category_service
 from ..chat.category_assign_limiter import category_assign_limiter
 from ..chat.category_user_limiter import category_user_limiter
@@ -130,6 +136,7 @@ logger = get_structured_logger(__name__)
 ORG_CONTEXT_TTL_SECONDS = 900  # 15 minutes
 GA_CREDENTIALS_TTL_SECONDS = 600  # 10 minutes
 SESSION_METADATA_TTL_SECONDS = 86400  # 24 hours
+CONVERSATION_HISTORY_TTL_SECONDS = 21600  # 6 hours (new turns invalidate explicitly)
 
 # CRITICAL: Use this constant for all ADK session operations
 # Bug fix: Previously line 965 used "ken-e-chatbot" while others used "ken_e_chatbot"
@@ -580,6 +587,176 @@ class UpdateConversationRequest(BaseModel):
     conversation_name: str | None = Field(
         None, description="New name for the conversation"
     )
+
+
+def _invalidate_conversation_history_cache(
+    user_id: str | None, session_id: str | None
+) -> None:
+    """Drop the cached formatted history for a session (best-effort).
+
+    Called whenever a session gains a new turn or is deleted, so the next
+    history fetch rebuilds from Vertex rather than serving a stale snapshot.
+    """
+    if not user_id or not session_id:
+        return
+    try:
+        redis_service = get_redis_service()
+        if redis_service.is_available():
+            redis_service.delete(session_history_key(user_id, session_id))
+    except Exception as exc:
+        logger.warning(
+            "Failed to invalidate history cache for %s: %s", session_id, exc
+        )
+
+
+def _rewarm_conversation_history_cache(
+    user_id: str | None, session_id: str | None
+) -> None:
+    """Invalidate then asynchronously repopulate a session's history cache.
+
+    The Vertex ``get_session`` round-trip on a cache miss is ~2.4s, so the first
+    history load right after a turn (a reload, or the session-status toggle that
+    remounts the chat) would otherwise pay that cost. We invalidate immediately
+    (correctness — a load during the re-warm window gets a fresh miss, never a
+    stale snapshot), then re-fetch + re-cache off the user's critical path so the
+    likely next load is a ~10ms Redis hit instead.
+
+    Best-effort: the background re-warm swallows all errors (a failure just leaves
+    the cache cold → a normal miss next time).
+    """
+    _invalidate_conversation_history_cache(user_id, session_id)
+    if not user_id or not session_id:
+        return
+
+    async def _rewarm() -> None:
+        try:
+            await agent_client.get_conversation_history(user_id, session_id)
+        except Exception as exc:
+            logger.debug(
+                "History cache re-warm failed for %s: %s", session_id, exc
+            )
+
+    try:
+        task = asyncio.create_task(_rewarm())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+    except RuntimeError:
+        # No running loop (e.g. called from a sync context) — skip the re-warm;
+        # the invalidate above already ran, so correctness is preserved.
+        pass
+
+
+def _event_epoch(event: dict[str, Any]) -> float:
+    """Best-effort epoch seconds for a formatted history event (0.0 if absent)."""
+    ts = event.get("timestamp")
+    return float(ts) if isinstance(ts, (int, float)) else 0.0
+
+
+def _attach_artifacts_to_events(
+    events: list[dict[str, Any]],
+    artifacts: list[tuple[float, dict[str, Any]]],
+) -> None:
+    """Anchor each persisted artifact to its originating assistant turn.
+
+    ``artifacts`` is a list of ``(created_at_epoch, payload)``. Each payload is
+    appended to ``event["artifacts"]`` of the non-user (assistant/model) event
+    closest in time to when the artifact was created — the chart is produced by
+    a tool call mid-turn, just before that turn's assistant text event, so the
+    nearest-timestamp match reunites a chart with its turn even across small
+    clock skew between Firestore (``created_at``) and Vertex (event timestamp).
+
+    Mutates ``events`` in place. If there are no assistant events to anchor to,
+    the artifacts are dropped (there is no turn to attach them to).
+    """
+    anchors = [i for i, e in enumerate(events) if e.get("role") != "user"]
+    if not anchors:
+        return
+    for created_at, payload in artifacts:
+        best = min(anchors, key=lambda i: abs(_event_epoch(events[i]) - created_at))
+        events[best].setdefault("artifacts", []).append(payload)
+
+
+def _build_chart_payload(spec: dict[str, Any], filename: str) -> dict[str, Any] | None:
+    """Reconstruct the wire-shape chart artifact from a persisted Vega-Lite spec.
+
+    Produces the same ``{type, spec, metadata}`` dict the live SSE ``artifacts``
+    event emits, so the frontend renders a reloaded chart identically. Title and
+    chart type are recovered from the spec itself (``title`` / ``mark``); returns
+    ``None`` if the reconstructed artifact fails model validation.
+    """
+    try:
+        return Artifact(
+            type="visualization",
+            spec=spec,
+            metadata=ArtifactMetadata(
+                chart_type_suggestion=spec.get("mark"),
+                title=spec.get("title") or filename,
+                data_source="agent",
+            ),
+        ).model_dump(mode="json")
+    except Exception as exc:
+        logger.warning(
+            "chat.history.chart_payload_invalid",
+            extra=log_context(
+                component="chat",
+                action="build_chart_payload",
+                extra={"error": str(exc)},
+            ),
+        )
+        return None
+
+
+async def _enrich_history_with_charts(
+    user_id: str,
+    session_id: str,
+    formatted_history: dict[str, Any],
+) -> None:
+    """Re-attach persisted Vega-Lite charts to a session's history events.
+
+    Charts are streamed inline during a turn but live only in client state; on a
+    reload (or the session-status toggle that remounts the chat) the history
+    fetch must resurface them. This reads the persisted ``ChatArtifactIndex``
+    rows, downloads each Vega-Lite spec from GCS, and anchors it to its turn.
+
+    Best-effort: any failure (no side-table row, GCS error, etc.) is logged and
+    leaves the text-only history untouched — charts are additive, never a reason
+    to fail the history response.
+    """
+    try:
+        events = formatted_history.get("events") or []
+        if not events:
+            return
+
+        svc = get_chat_side_table_service()
+        meta = await asyncio.to_thread(svc.find_session_for_user, user_id, session_id)
+        if meta is None:
+            return
+
+        rows = await asyncio.to_thread(list_artifacts, meta.account_id, session_id)
+        viz_rows = [r for r in rows if r.mime_type == VEGALITE_MIME]
+        if not viz_rows:
+            return
+
+        specs = await asyncio.gather(
+            *(asyncio.to_thread(fetch_visualization_spec, r) for r in viz_rows)
+        )
+
+        payloads: list[tuple[float, dict[str, Any]]] = []
+        for row, spec in zip(viz_rows, specs, strict=True):
+            if spec is None:
+                continue
+            payload = _build_chart_payload(spec, row.filename)
+            if payload is not None:
+                payloads.append((row.created_at.timestamp(), payload))
+
+        if payloads:
+            _attach_artifacts_to_events(events, payloads)
+    except Exception as exc:
+        logger.warning(
+            "Failed to attach chart artifacts to history for %s: %s",
+            session_id,
+            exc,
+        )
 
 
 class AgentEngineClient:
@@ -1755,6 +1932,9 @@ class AgentEngineClient:
                             ids_key, cached_ids, ttl=SESSION_METADATA_TTL_SECONDS
                         )
 
+                    # Drop the cached formatted history for the deleted session.
+                    redis_service.delete(session_history_key(user_id, session_id))
+
                     logger.info(f"Deleted session from Redis cache: {session_id}")
             except Exception as e:
                 logger.warning(f"Failed to delete session from Redis: {e}")
@@ -1885,7 +2065,33 @@ class AgentEngineClient:
     async def get_conversation_history(
         self, user_id: str, session_id: str
     ) -> dict[str, Any] | None:
-        """Get conversation history from ADK session service and format it for frontend consumption."""
+        """Get conversation history from ADK session service and format it for frontend consumption.
+
+        The formatted result (text + re-attached charts) is cached in Redis to
+        skip the Vertex get_session round-trip and GCS chart fetches on revisits;
+        the cache is invalidated whenever the session gains a new turn.
+        """
+        history_cache_key = session_history_key(user_id, session_id)
+        redis_service = None
+        try:
+            redis_service = get_redis_service()
+            if redis_service.is_available():
+                cached = redis_service.get_json(history_cache_key)
+                if cached is not None:
+                    logger.info(
+                        "Conversation history cache hit",
+                        extra=log_context(
+                            component="chat",
+                            action="get_conversation_history",
+                            session_id=session_id,
+                        ),
+                    )
+                    return cached
+        except Exception as cache_err:
+            logger.warning(
+                "History cache read failed for %s: %s", session_id, cache_err
+            )
+
         try:
             t0 = time.time()
             session_data = await self.session_service.get_session(
@@ -1904,6 +2110,16 @@ class AgentEngineClient:
             if session_data and hasattr(session_data, "events"):
                 # Convert ADK session events to a frontend-friendly format
                 formatted_history = {"session_id": session_id, "events": []}
+
+                # Reasoning (thought) parts are emitted before the answer they
+                # produced — sometimes in the same event, sometimes in preceding
+                # thought-only events. Accumulate them and attach to the next
+                # answer event so the ThinkingBlock re-renders on reload.
+                # ``pending_thoughts_start_ts`` records when the first thought of a
+                # group arrived, so we can recover the thinking duration from the
+                # gap to the answer event (0 when they share one event/timestamp).
+                pending_thoughts: list[str] = []
+                pending_thoughts_start_ts: float | None = None
 
                 # Process each event in the session
                 for event in session_data.events:
@@ -1927,28 +2143,76 @@ class AgentEngineClient:
                         if hasattr(content_obj, "parts") and content_obj.parts:
                             formatted_event["content"]["parts"] = []
                             for part in content_obj.parts:
-                                # Exclude reasoning (thought=True) parts — they are
-                                # the model's chain-of-thought, not the answer. The
-                                # streaming path routes them to the "reasoning"
-                                # channel; history must drop them too, otherwise the
-                                # reasoning leaks in as the message content and the
-                                # answer is lost (CH-63).
+                                # Reasoning (thought=True) parts are the model's
+                                # chain-of-thought, not the answer — they must stay
+                                # OUT of the message content (CH-63), or the
+                                # reasoning leaks in as the answer text. Collect
+                                # them into the turn's reasoning bucket instead of
+                                # dropping them, so the ThinkingBlock can re-render
+                                # on reload (attached to the answer event below).
                                 if getattr(part, "thought", False):
+                                    thought_text = getattr(part, "text", None)
+                                    if thought_text:
+                                        if not pending_thoughts:
+                                            pending_thoughts_start_ts = _event_epoch(
+                                                formatted_event
+                                            )
+                                        pending_thoughts.append(thought_text)
                                     continue
                                 if getattr(part, "text", None):
                                     formatted_event["content"]["parts"].append(
                                         {"text": part.text}
                                     )
 
-                    # Skip content-less system events (e.g. the per-turn
-                    # ga_credentials state refresh) so they don't surface as blank
-                    # messages in the rendered history.
-                    if getattr(event, "author", None) == "system" and not (
-                        formatted_event["content"].get("parts")
-                    ):
+                    # Attach the turn's accumulated reasoning to its answer event,
+                    # so a reloaded conversation shows the same ThinkingBlock the
+                    # live turn did. Only answer events (those with text) anchor
+                    # reasoning; tool-call / system events pass it through.
+                    if formatted_event["content"].get("parts") and pending_thoughts:
+                        answer_ts = _event_epoch(formatted_event)
+                        duration = 0
+                        if pending_thoughts_start_ts and answer_ts:
+                            duration = max(
+                                0, round(answer_ts - pending_thoughts_start_ts)
+                            )
+                        formatted_event["reasoning"] = {
+                            "thoughts": pending_thoughts,
+                            "durationSeconds": duration,
+                        }
+                        pending_thoughts = []
+                        pending_thoughts_start_ts = None
+
+                    # Skip content-less events — system state refreshes (e.g. the
+                    # per-turn ga_credentials event), thought-only events (their
+                    # reasoning was hoisted to pending_thoughts above), and bare
+                    # tool-call events. None carry visible text, and the frontend
+                    # already drops them; omitting them here keeps the payload
+                    # (and its cache entry) clean.
+                    if not formatted_event["content"].get("parts"):
                         continue
 
                     formatted_history["events"].append(formatted_event)
+
+                # Re-attach persisted Vega-Lite charts so a reloaded conversation
+                # shows the charts that were streamed inline during the live turn
+                # (they live only in client state otherwise — CH chart-persistence).
+                await _enrich_history_with_charts(
+                    user_id, session_id, formatted_history
+                )
+
+                try:
+                    if redis_service is not None and redis_service.is_available():
+                        redis_service.set_json(
+                            history_cache_key,
+                            formatted_history,
+                            ttl=CONVERSATION_HISTORY_TTL_SECONDS,
+                        )
+                except Exception as cache_err:
+                    logger.warning(
+                        "History cache write failed for %s: %s",
+                        session_id,
+                        cache_err,
+                    )
 
                 logger.info(
                     f"Formatted {len(formatted_history['events'])} events for session {session_id}"
@@ -3181,6 +3445,12 @@ async def _stream_completion_sse(
             account_id=account_id,
             messages=messages,
         )
+        # This turn appended new events (and possibly new charts). Invalidate +
+        # asynchronously re-warm the history cache so the likely next load (reload
+        # / status-toggle remount) is a fast Redis hit, not a ~2.4s Vertex miss.
+        _rewarm_conversation_history_cache(
+            user_context.user_id, resolved_session_id
+        )
 
 
 @router.post("/completions", response_model=ChatResponse)
@@ -3377,6 +3647,12 @@ async def chat_completion(
                 )
                 if visualization_seen
                 else []
+            )
+
+            # This turn appended new events (and possibly new charts). Invalidate
+            # + asynchronously re-warm so the next history load is a Redis hit.
+            _rewarm_conversation_history_cache(
+                user_context.user_id, actual_session_id
             )
 
             return ChatResponse(

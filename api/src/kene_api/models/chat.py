@@ -9,6 +9,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+# ChatArtifactIndex is defined in shared/chat_artifacts.py (the cross-runtime home
+# of the canonical artifact write path, importable by both the API and the Agent
+# Engine). Re-exported here so existing `from ...models.chat import
+# ChatArtifactIndex` callers are unaffected. See DESIGN-REVIEW-LOG.
+from shared.chat_artifacts import ChatArtifactIndex as ChatArtifactIndex
 from shared.turn_delta import TurnDelta
 
 
@@ -90,27 +95,6 @@ class ChatSessionMetadata(BaseModel):
             raise ValueError("title must be 120 characters or fewer")
         return v
 
-
-class ChatArtifactIndex(BaseModel):
-    """Metadata row for one artifact stored by GcsArtifactService.
-
-    No creator field — created_by_tool=None is reserved for future user uploads
-    (no user-upload surface in v1). Non-null in v1 (agent-created artifacts only).
-    """
-
-    artifact_id: str  # sha256(session_id|filename|version)[:32]
-    session_id: str
-    filename: str
-    mime_type: str
-    size_bytes: int
-    version: int  # ADK artifact version (0..N)
-    gcs_path: (
-        str  # gs://{bucket}/{app_name}/{user_id}/{session_id}/{filename}/{version}
-    )
-    created_by_tool: str | None = (
-        None  # agent tool name; None = user upload (latent v2)
-    )
-    created_at: datetime = Field(default_factory=_now_utc)
 
 
 class ChatCategoryDefinition(BaseModel):

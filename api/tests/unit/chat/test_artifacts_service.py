@@ -66,9 +66,9 @@ class TestRegisterArtifact:
 
         with (
             patch(
-                "src.kene_api.chat.artifacts.get_firestore_client"
+                "shared.chat_artifacts._get_firestore_client"
             ) as mock_db_factory,
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             mock_db_factory.return_value = MagicMock()
             result = await register_artifact(
@@ -89,8 +89,8 @@ class TestRegisterArtifact:
         content = _make_content()
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             result = await register_artifact(
                 ctx, _FILENAME, content, created_by_tool="tool"
@@ -107,8 +107,8 @@ class TestRegisterArtifact:
         content = _make_content()
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             await register_artifact(ctx, _FILENAME, content, created_by_tool=None)
 
@@ -126,9 +126,9 @@ class TestRegisterArtifact:
 
         with (
             patch(
-                "src.kene_api.chat.artifacts.get_firestore_client"
+                "shared.chat_artifacts._get_firestore_client"
             ) as mock_db_factory,
-            patch("src.kene_api.chat.artifacts._write_artifact_batch") as mock_batch,
+            patch("shared.chat_artifacts._write_artifact_batch") as mock_batch,
             pytest.raises(RuntimeError, match="no account_id"),
         ):
             await register_artifact(ctx, _FILENAME, content, created_by_tool=None)
@@ -146,9 +146,9 @@ class TestRegisterArtifact:
         import logging
 
         with (
-            caplog.at_level(logging.ERROR, logger="src.kene_api.chat.artifacts"),
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            caplog.at_level(logging.ERROR, logger="shared.chat_artifacts"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
             pytest.raises(RuntimeError),
         ):
             await register_artifact(ctx, _FILENAME, content, created_by_tool=None)
@@ -172,13 +172,13 @@ class TestRegisterArtifact:
         )
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
+            patch("shared.chat_artifacts._get_firestore_client"),
             patch(
-                "src.kene_api.chat.artifacts._write_artifact_batch",
+                "shared.chat_artifacts._write_artifact_batch",
                 side_effect=AlreadyExists("dupe"),
             ),
             patch(
-                "src.kene_api.chat.artifacts._read_existing_artifact",
+                "shared.chat_artifacts._read_existing_artifact",
                 return_value=existing,
             ),
         ):
@@ -198,14 +198,14 @@ class TestRegisterArtifact:
         import logging
 
         with (
-            caplog.at_level(logging.WARNING, logger="src.kene_api.chat.artifacts"),
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
+            caplog.at_level(logging.WARNING, logger="shared.chat_artifacts"),
+            patch("shared.chat_artifacts._get_firestore_client"),
             patch(
-                "src.kene_api.chat.artifacts._write_artifact_batch",
+                "shared.chat_artifacts._write_artifact_batch",
                 side_effect=AlreadyExists("dupe"),
             ),
             patch(
-                "src.kene_api.chat.artifacts._read_existing_artifact", return_value=None
+                "shared.chat_artifacts._read_existing_artifact", return_value=None
             ),
         ):
             result = await register_artifact(
@@ -227,9 +227,9 @@ class TestRegisterArtifact:
         import logging
 
         with (
-            caplog.at_level(logging.INFO, logger="src.kene_api.chat.artifacts"),
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            caplog.at_level(logging.INFO, logger="shared.chat_artifacts"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             await register_artifact(ctx, _FILENAME, content, created_by_tool="mytool")
 
@@ -277,8 +277,8 @@ class TestRegisterArtifact:
         content = Part(inline_data=Blob(data=b"data", mime_type=None))
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             result = await register_artifact(
                 ctx, "document.pdf", content, created_by_tool=None
@@ -296,8 +296,8 @@ class TestRegisterArtifact:
         content = Part(inline_data=Blob(data=b"data", mime_type=None))
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             result = await register_artifact(
                 ctx, "weirdfile.xyzunknown", content, created_by_tool=None
@@ -317,8 +317,8 @@ class TestRegisterArtifact:
         content = _make_content()
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             result = await register_artifact(
                 ctx, _FILENAME, content, created_by_tool=None
@@ -327,14 +327,36 @@ class TestRegisterArtifact:
         assert "ken-e-staging-files-us" in result.gcs_path
 
     @pytest.mark.asyncio
+    async def test_bucket_fallback_prod_uses_ken_e_files_us(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Prod's real bucket is ken-e-files-us (NOT ken-e-production-files-us) —
+        # a wrong mapping silently writes prod charts to a nonexistent bucket.
+        ctx = _make_tool_context()
+        ctx._invocation_context.artifact_service = object()
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        content = _make_content()
+
+        with (
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
+        ):
+            result = await register_artifact(
+                ctx, _FILENAME, content, created_by_tool=None
+            )
+
+        assert "ken-e-files-us" in result.gcs_path
+        assert "ken-e-production-files-us" not in result.gcs_path
+
+    @pytest.mark.asyncio
     async def test_artifact_id_is_deterministic(self) -> None:
         ctx_a = _make_tool_context()
         ctx_b = _make_tool_context()
         content = _make_content()
 
         with (
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
-            patch("src.kene_api.chat.artifacts._write_artifact_batch"),
+            patch("shared.chat_artifacts._get_firestore_client"),
+            patch("shared.chat_artifacts._write_artifact_batch"),
         ):
             result_a = await register_artifact(
                 ctx_a, _FILENAME, content, created_by_tool=None
@@ -363,10 +385,10 @@ class TestRegisterArtifact:
         import logging
 
         with (
-            caplog.at_level(logging.INFO, logger="src.kene_api.chat.artifacts"),
-            patch("src.kene_api.chat.artifacts.get_firestore_client"),
+            caplog.at_level(logging.INFO, logger="shared.chat_artifacts"),
+            patch("shared.chat_artifacts._get_firestore_client"),
             patch(
-                "src.kene_api.chat.artifacts._write_artifact_batch",
+                "shared.chat_artifacts._write_artifact_batch",
                 side_effect=ServiceUnavailable("backend unavailable"),
             ),
             pytest.raises(ServiceUnavailable),
@@ -374,3 +396,60 @@ class TestRegisterArtifact:
             await register_artifact(ctx, _FILENAME, content, created_by_tool="tool")
 
         assert not any("artifact.registered" in r.message for r in caplog.records)
+
+
+class TestWriteArtifactBatchRetry:
+    """Direct tests for the manual retry loop that replaced the backoff decorator
+    (dropped so the Agent Engine runtime doesn't need the backoff dependency)."""
+
+    def _db_with_commit(self, side_effects: list[Any]) -> MagicMock:
+        """Firestore client whose batch.commit() applies the given side effects."""
+        from google.cloud import firestore  # noqa: F401  (Increment used in code)
+
+        batch = MagicMock()
+        commit = MagicMock(side_effect=side_effects)
+        batch.commit = commit
+        db = MagicMock()
+        db.batch.return_value = batch
+        return db
+
+    def test_retries_transient_then_succeeds(self) -> None:
+        from google.api_core.exceptions import ServiceUnavailable
+
+        from shared.chat_artifacts import _write_artifact_batch
+
+        db = self._db_with_commit(
+            [ServiceUnavailable("blip"), ServiceUnavailable("blip"), None]
+        )
+        with patch("shared.chat_artifacts.time.sleep"):
+            _write_artifact_batch(db, _ACCOUNT_ID, _SESSION_ID, {"k": "v"}, "aid")
+
+        # Succeeded on the 3rd attempt — committed exactly 3 times.
+        assert db.batch.return_value.commit.call_count == 3
+
+    def test_exhausts_retries_then_raises(self) -> None:
+        from google.api_core.exceptions import ServiceUnavailable
+
+        from shared.chat_artifacts import _write_artifact_batch
+
+        db = self._db_with_commit([ServiceUnavailable("down")] * 3)
+        with (
+            patch("shared.chat_artifacts.time.sleep"),
+            pytest.raises(ServiceUnavailable),
+        ):
+            _write_artifact_batch(db, _ACCOUNT_ID, _SESSION_ID, {"k": "v"}, "aid")
+
+        assert db.batch.return_value.commit.call_count == 3
+
+    def test_already_exists_not_retried(self) -> None:
+        from shared.chat_artifacts import _write_artifact_batch
+
+        db = self._db_with_commit([AlreadyExists("dup")])
+        with (
+            patch("shared.chat_artifacts.time.sleep"),
+            pytest.raises(AlreadyExists),
+        ):
+            _write_artifact_batch(db, _ACCOUNT_ID, _SESSION_ID, {"k": "v"}, "aid")
+
+        # AlreadyExists is non-retryable — committed exactly once.
+        assert db.batch.return_value.commit.call_count == 1
