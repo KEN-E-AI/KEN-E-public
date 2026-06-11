@@ -46,12 +46,23 @@ except ImportError:
     get_env_or_secret = None
 
 # Environment to GCP project mapping
+#
+# ``ga_mcp_server_url`` is the in-code source of truth for GA_MCP_SERVER_URL.
+# The GA specialist's MCP toolset is resolved per turn at runtime
+# (specialist_runtime -> mcp._expand_env_placeholders, which expands
+# ${GA_MCP_SERVER_URL} from the deployed-artifact env). A missing value is
+# caught and the toolset silently dropped (mcp.load_toolsets_for_specialist),
+# so the agent deploys green but answers with no GA tools. Keeping the value
+# here — and fail-loud injecting it via _append_ga_mcp_env_var — means dev
+# (which has no CD pipeline to set the var) gets the same guarantee as the
+# staging/prod CD configs, regardless of the gitignored .env.<env> files.
 ENV_CONFIG = {
     "dev": {
         "project_id": "ken-e-dev",
         "project_number": "525657242938",
         "chat_internal_api_url": "sm://525657242938/kene-api-url",
         "chat_internal_api_audience": "sm://525657242938/kene-api-url",
+        "ga_mcp_server_url": "https://google-analytics-mcp-4quwenkusq-uc.a.run.app",
     },
     "staging": {
         "project_id": "ken-e-staging",
@@ -64,6 +75,7 @@ ENV_CONFIG = {
         # engine->API side-table write, so status dots never populate.
         "chat_internal_api_url": "https://kene-api-staging-391472102753.us-central1.run.app",
         "chat_internal_api_audience": "https://kene-api-staging-391472102753.us-central1.run.app",
+        "ga_mcp_server_url": "https://google-analytics-mcp-4quwenkusq-uc.a.run.app",
     },
     "prod": {
         "project_id": "ken-e-production",
@@ -72,6 +84,7 @@ ENV_CONFIG = {
         # deployment/cd/deploy-to-prod.yaml, else the engine->API OIDC call 401s.
         "chat_internal_api_url": "https://kene-api-prod-395770269870.us-central1.run.app",
         "chat_internal_api_audience": "https://kene-api-prod-395770269870.us-central1.run.app",
+        "ga_mcp_server_url": "https://google-analytics-mcp-4quwenkusq-uc.a.run.app",
     },
 }
 
@@ -225,6 +238,71 @@ def _append_chat_env_vars(env_config: dict, *dest_paths: Path) -> None:
             logger.info(f"Appended CHAT_INTERNAL_API_URL/AUDIENCE to {dest_path}")
 
 
+def _append_ga_mcp_env_var(env_config: dict, *dest_paths: Path) -> None:
+    """Inject GA_MCP_SERVER_URL into the deploy process env and deployed .env.
+
+    The GA Specialist's MCP toolset is resolved per turn at runtime by
+    ``specialist_runtime`` -> ``mcp._expand_env_placeholders``, which expands
+    ``${GA_MCP_SERVER_URL}`` from the deployed-artifact env. When the variable
+    is unset, ``mcp.load_toolsets_for_specialist`` catches the resulting
+    ``MCPSchemaError`` and *silently drops* the GA toolset — the agent deploys
+    green but answers with no GA tools. ``dev`` has no CD pipeline to set the
+    var (unlike staging/prod), so it previously depended entirely on the
+    gitignored ``.env.development`` file being present and correct.
+
+    This makes ``ENV_CONFIG`` the single authoritative source and refuses to
+    deploy if it cannot resolve to a concrete URL — the same fail-loud contract
+    as ``_append_chat_env_vars``. The helper rewrites (not appends) the value so
+    a stale or duplicate ``GA_MCP_SERVER_URL`` line copied into the deployed
+    ``.env`` by ``process_env_file`` cannot win at runtime (``load_dotenv`` keeps
+    the first occurrence).
+
+    Raises:
+        RuntimeError: if ``ga_mcp_server_url`` is configured but cannot be
+            resolved to a concrete (non-``sm://``) URL.
+    """
+    url_ref = env_config.get("ga_mcp_server_url", "")
+    if not url_ref:
+        logger.warning("ga_mcp_server_url not in ENV_CONFIG; skipping")
+        return
+
+    if get_env_or_secret is None:
+        raise RuntimeError(
+            "shared.secrets.get_env_or_secret is unavailable, but "
+            "ga_mcp_server_url is configured. Fix the import or remove "
+            "the GA config from ENV_CONFIG before deploying."
+        )
+
+    # Overwrite (not setdefault) so a stray shell export cannot mask the
+    # ENV_CONFIG value and route resolution to the wrong server.
+    os.environ["GA_MCP_SERVER_URL"] = url_ref
+    ga_url = get_env_or_secret("GA_MCP_SERVER_URL")
+
+    if not ga_url or str(ga_url).startswith("sm://"):
+        raise RuntimeError(
+            f"GA_MCP_SERVER_URL did not resolve to a concrete URL (got: {ga_url!r}). "
+            "The GA specialist would ship with no GA MCP toolset (silently "
+            "dropped by mcp.load_toolsets_for_specialist). Check the "
+            "ga_mcp_server_url entry in deploy_ken_e.ENV_CONFIG."
+        )
+
+    for dest_path in dest_paths:
+        if not dest_path.exists():
+            continue
+        # Be the single authoritative writer: drop any GA_MCP_SERVER_URL line
+        # process_env_file copied from .env.<env>, then write the resolved one.
+        kept = [
+            line
+            for line in dest_path.read_text().splitlines(keepends=True)
+            if not line.strip().startswith("GA_MCP_SERVER_URL=")
+        ]
+        if kept and not kept[-1].endswith("\n"):
+            kept[-1] += "\n"
+        kept.append(f"GA_MCP_SERVER_URL={ga_url}\n")
+        dest_path.write_text("".join(kept))
+        logger.info(f"Wrote authoritative GA_MCP_SERVER_URL to {dest_path}")
+
+
 def _resolve_existing_engine_id(project_number: str) -> str | None:
     """Return the canonical KEN-E engine resource name from Secret Manager.
 
@@ -355,6 +433,14 @@ def deploy_ken_e() -> str | None:
             # Wire CHAT_INTERNAL_API_URL and CHAT_INTERNAL_API_AUDIENCE for agent callbacks
             target_env_key = os.getenv("_TARGET_ENV", "dev")
             _append_chat_env_vars(
+                ENV_CONFIG[target_env_key],
+                temp_path / ".env",
+                temp_path / "agents" / ".env",
+            )
+            # Fail-loud inject GA_MCP_SERVER_URL so the GA specialist never
+            # deploys with a silently-dropped MCP toolset (dev has no CD config
+            # to set it; staging/prod CD set it redundantly).
+            _append_ga_mcp_env_var(
                 ENV_CONFIG[target_env_key],
                 temp_path / ".env",
                 temp_path / "agents" / ".env",
