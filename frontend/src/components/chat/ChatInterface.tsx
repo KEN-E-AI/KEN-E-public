@@ -890,7 +890,7 @@ export function ChatInterface({
               }
             }}
             className={cn(
-              "resize-none rounded-[var(--radius-md)]",
+              "resize-none rounded-[var(--radius-md)] text-base",
               compact ? "min-h-[2.5rem]" : "min-h-[3.75rem]",
             )}
             disabled={isStreaming || isOrgInactive}

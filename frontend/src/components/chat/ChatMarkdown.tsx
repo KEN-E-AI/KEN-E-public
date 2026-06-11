@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 type ChatMarkdownProps = {
   content: string;
   className?: string;
+  flattenHeadings?: boolean;
 };
 
 /**
@@ -15,26 +16,57 @@ type ChatMarkdownProps = {
  * are inherited from the caller's wrapper (the chat's `textSizeClass` + token
  * colors), so a rendered message looks like the surrounding document text, just
  * with bold/lists/headings/tables/code formatted instead of raw `**`/`#`.
+ *
+ * `flattenHeadings` renders h1–h3 at body size (bold only) for the reasoning
+ * stream, where headings should stay quiet/small rather than scale up.
  */
-export function ChatMarkdown({ content, className }: ChatMarkdownProps) {
+export function ChatMarkdown({
+  content,
+  className,
+  flattenHeadings = false,
+}: ChatMarkdownProps) {
+  const flatHeading = "text-[1em] font-semibold mt-2 mb-1 first:mt-0";
   return (
     <div className={cn("leading-relaxed", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+          // `[font-size:inherit]` overrides the base `p { font-size }` element
+          // rule so the paragraph honors the caller's wrapper size (11px in the
+          // reasoning stream) instead of jumping to --text-body-lg.
+          p: ({ children }) => (
+            <p className="mb-3 last:mb-0 [font-size:inherit]">{children}</p>
+          ),
           h1: ({ children }) => (
-            <h1 className="text-[1.25em] font-semibold mt-4 mb-2 first:mt-0">
+            <h1
+              className={
+                flattenHeadings
+                  ? flatHeading
+                  : "text-[1.25em] font-semibold mt-4 mb-2 first:mt-0"
+              }
+            >
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="text-[1.15em] font-semibold mt-4 mb-2 first:mt-0">
+            <h2
+              className={
+                flattenHeadings
+                  ? flatHeading
+                  : "text-[1.15em] font-semibold mt-4 mb-2 first:mt-0"
+              }
+            >
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="text-[1.05em] font-semibold mt-3 mb-1.5 first:mt-0">
+            <h3
+              className={
+                flattenHeadings
+                  ? flatHeading
+                  : "text-[1.05em] font-semibold mt-3 mb-1.5 first:mt-0"
+              }
+            >
               {children}
             </h3>
           ),

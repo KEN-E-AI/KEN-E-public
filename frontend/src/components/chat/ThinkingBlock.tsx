@@ -224,7 +224,7 @@ export function ThinkingBlock({
                       transition={{ duration: 0.3, delay: 0.05 }}
                       className="text-[11px] text-[var(--color-text-tertiary)] leading-relaxed"
                     >
-                      <ChatMarkdown content={thought} />
+                      <ChatMarkdown content={thought} flattenHeadings />
                     </motion.div>
                   ))}
                   {isThinking && thoughts.length === 0 && (
